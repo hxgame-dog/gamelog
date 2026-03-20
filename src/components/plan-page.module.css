@@ -454,6 +454,38 @@
   gap: 8px;
 }
 
+.sideKeyList,
+.sideStatList,
+.sideChecklist {
+  display: grid;
+  gap: 8px;
+}
+
+.sideKeyItem,
+.sideStatItem,
+.sideChecklistItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  font-size: 13px;
+}
+
+.sideStatItem strong {
+  font-size: 18px;
+  line-height: 1;
+  color: var(--title);
+}
+
+.sideStatItem span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .streamLine {
   display: flex;
   align-items: center;

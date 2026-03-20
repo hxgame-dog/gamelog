@@ -721,6 +721,9 @@ export async function updatePlan(planId: string, input: unknown) {
     });
 
     return updated ? mapDbPlan(updated) : null;
+  }, {
+    maxWait: 10000,
+    timeout: 30000
   });
 }
 

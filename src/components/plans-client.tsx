@@ -335,6 +335,13 @@ function parseTemplateInputSource(content?: string | null) {
   };
 }
 
+function hasEffectiveMappings(sheet: SpreadsheetSheet) {
+  return sheet.mappings.some((item) => {
+    const target = item.target?.trim();
+    return Boolean(target && target !== "ignore");
+  });
+}
+
 function buildPlansUrl(
   projectId: string | null,
   planId?: string | null,
@@ -1875,7 +1882,7 @@ function PlanEditor({
     spreadsheetSheets.length > 0 &&
     spreadsheetSheets
       .filter((sheet) => sheet.role !== "ignore" && sheet.rowCount > 0)
-      .every((sheet) => sheet.confirmed && sheet.mappings.some((item) => item.target !== "ignore"));
+      .every((sheet) => sheet.confirmed && hasEffectiveMappings(sheet));
   const confirmedSheetCount = spreadsheetSheets.filter((sheet) => sheet.confirmed).length;
   const mappingTargetCounts = spreadsheetMappings.reduce<Record<string, number>>((acc, item) => {
     if (item.target !== "ignore") {
@@ -1883,6 +1890,8 @@ function PlanEditor({
     }
     return acc;
   }, {});
+  const spreadsheetActionLabel =
+    generationMode === "spreadsheet" ? "确认映射后生成方案" : "AI 生成方案";
 
   function showSheetActionNotice(type: "success" | "error" | "info", text: string) {
     setSheetActionNotice({ type, text });
@@ -2014,7 +2023,7 @@ function PlanEditor({
         if (sheet.name !== sheetName) {
           return sheet;
         }
-        if (!sheet.mappings.some((item) => item.target !== "ignore")) {
+        if (!hasEffectiveMappings(sheet)) {
           return sheet;
         }
         confirmed = true;
@@ -2157,7 +2166,7 @@ function PlanEditor({
       ? generationPrompt.trim().length >= 10
       : generationMode === "template"
         ? selectedTemplates.length > 0
-        : spreadsheetSheets.some((sheet) => sheet.rowCount > 0) && isSpreadsheetConfirmed;
+        : spreadsheetSheets.some((sheet) => sheet.rowCount > 0 && sheet.role !== "ignore") && isSpreadsheetConfirmed;
 
   const latestSource = activePlan.inputSources?.at(-1);
   const currentEventMappings = (activePlan.dictionaryMappings ?? []).filter(
@@ -2747,7 +2756,7 @@ function PlanEditor({
                           type="button"
                           className="button-secondary"
                           onClick={() => {
-                            if (!activeSpreadsheetSheet.mappings.some((item) => item.target !== "ignore")) {
+                            if (!hasEffectiveMappings(activeSpreadsheetSheet)) {
                               onError("请至少保留一个有效字段映射，不能全部忽略。");
                               showSheetActionNotice("error", "请至少保留一个有效字段映射，不能全部忽略。");
                               return;
@@ -2894,7 +2903,7 @@ function PlanEditor({
                 disabled={isGenerating || isPending || !canGenerate}
                 onClick={() => void handleGenerate()}
               >
-                {isGenerating ? "AI 正在生成..." : "AI 生成方案"}
+                {isGenerating ? "AI 正在生成..." : spreadsheetActionLabel}
               </button>
               <button
                 className="button-secondary"
@@ -2915,19 +2924,19 @@ function PlanEditor({
                   <p className={styles.eventSource}>本页只负责输入、识别、映射和生成，不在这里做结果审查和结构编辑。</p>
                 </div>
               </div>
-              <div className={styles.mappingSummary}>
-                <span className="pill">公共属性</span>
-                <span className="pill">事件表</span>
-                <span className="pill">字典候选</span>
-                <span className="pill">映射关系</span>
+              <div className={styles.sideKeyList}>
+                <div className={styles.sideKeyItem}>生成内容：公共属性</div>
+                <div className={styles.sideKeyItem}>生成内容：事件表</div>
+                <div className={styles.sideKeyItem}>生成内容：字典候选</div>
+                <div className={styles.sideKeyItem}>生成内容：映射关系</div>
               </div>
               <p className={styles.sideCopy}>
                 当前方案：{activePlan.name} · {activePlan.version}
               </p>
-              <div className={styles.mappingSummary}>
-                <span className="pill">{activePlan.events.length} 个事件</span>
-                <span className="pill">{activePlan.globalProperties?.length ?? 0} 个公共属性</span>
-                <span className="pill">{activePlan.dictionaries?.length ?? 0} 个字典候选</span>
+              <div className={styles.sideStatList}>
+                <div className={styles.sideStatItem}><strong>{activePlan.events.length}</strong><span>个事件</span></div>
+                <div className={styles.sideStatItem}><strong>{activePlan.globalProperties?.length ?? 0}</strong><span>个公共属性</span></div>
+                <div className={styles.sideStatItem}><strong>{activePlan.dictionaries?.length ?? 0}</strong><span>个字典候选</span></div>
               </div>
             </div>
             <div className={styles.stepFocusCard}>
@@ -2937,21 +2946,29 @@ function PlanEditor({
                   <p className={styles.eventSource}>这一页只保留最关键的两个判断。</p>
                 </div>
               </div>
-              <div className={styles.mappingSummary}>
-                <span className={`pill ${activePlan.events.length > 0 ? styles.status_completed : styles.status_waiting}`}>
-                  {activePlan.events.length > 0 ? "已有方案基础" : "等待首轮生成"}
-                </span>
-                <span className={`pill ${canGenerate ? styles.status_completed : styles.status_waiting}`}>
-                  {canGenerate ? "输入可生成" : "输入未完成"}
-                </span>
-                {generationMode === "spreadsheet" ? (
-                  <span className={`pill ${isSpreadsheetConfirmed ? styles.status_completed : styles.status_waiting}`}>
-                    {isSpreadsheetConfirmed ? "映射已确认" : "映射待确认"}
+              <div className={styles.sideChecklist}>
+                <div className={styles.sideChecklistItem}>
+                  <span className={`pill ${activePlan.events.length > 0 ? styles.status_completed : styles.status_waiting}`}>
+                    {activePlan.events.length > 0 ? "已有方案基础" : "等待首轮生成"}
                   </span>
+                </div>
+                <div className={styles.sideChecklistItem}>
+                  <span className={`pill ${canGenerate ? styles.status_completed : styles.status_waiting}`}>
+                    {canGenerate ? "输入可生成" : "输入未完成"}
+                  </span>
+                </div>
+                {generationMode === "spreadsheet" ? (
+                  <div className={styles.sideChecklistItem}>
+                    <span className={`pill ${isSpreadsheetConfirmed ? styles.status_completed : styles.status_waiting}`}>
+                      {isSpreadsheetConfirmed ? "映射已确认" : "映射待确认"}
+                    </span>
+                  </div>
                 ) : null}
               </div>
               <p className={styles.sideCopy}>
-                完成生成后，下一步去第 3 步查看公共属性、事件表和字典候选，再执行 AI 诊断与确认方案。
+                {generationMode === "spreadsheet"
+                  ? "上传和确认工作表只是保存参考输入；仍需点击“确认映射后生成方案”，系统才会基于参考表生成事件表、公共属性和字典候选。"
+                  : "完成生成后，下一步去第 3 步查看公共属性、事件表和字典候选，再执行 AI 诊断与确认方案。"}
               </p>
             </div>
             <div className={styles.stepFocusCard}>
