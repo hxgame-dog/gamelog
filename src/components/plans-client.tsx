@@ -207,29 +207,33 @@ type PersistedSpreadsheetSheet = Pick<
   "name" | "headers" | "rowCount" | "role" | "roleConfidence" | "roleReason" | "confirmed" | "mappings"
 > & {
   previewRows: SpreadsheetRow[];
+  rows: SpreadsheetRow[];
 };
 
 const PERSISTED_SPREADSHEET_PREFIX = "__OMNILOG_SPREADSHEET__";
 const PERSISTED_TEMPLATE_PREFIX = "__OMNILOG_TEMPLATE__";
 
-function serializeSpreadsheetInputSource(sheet: SpreadsheetSheet, fileName: string) {
+function serializeSpreadsheetInputSource(
+  sheets: SpreadsheetSheet[],
+  fileName: string,
+  activeSheetName: string | null
+) {
   return `${PERSISTED_SPREADSHEET_PREFIX}${JSON.stringify({
     version: 1,
     fileName,
-    activeSheetName: sheet.name,
-    sheets: [
-      {
-        name: sheet.name,
-        headers: sheet.headers,
-        rowCount: sheet.rowCount,
-        previewRows: sheet.previewRows,
-        role: sheet.role,
-        roleConfidence: sheet.roleConfidence,
-        roleReason: sheet.roleReason,
-        mappings: sheet.mappings,
-        confirmed: sheet.confirmed
-      }
-    ]
+    activeSheetName,
+    sheets: sheets.map((sheet) => ({
+      name: sheet.name,
+      headers: sheet.headers,
+      rowCount: sheet.rowCount,
+      previewRows: sheet.previewRows,
+      rows: sheet.rows,
+      role: sheet.role,
+      roleConfidence: sheet.roleConfidence,
+      roleReason: sheet.roleReason,
+      mappings: sheet.mappings,
+      confirmed: sheet.confirmed
+    }))
   })}`;
 }
 
@@ -248,7 +252,7 @@ function parseSpreadsheetInputSource(content?: string | null) {
 
       const sheets = (parsed.sheets ?? []).map((sheet) => ({
         ...sheet,
-        rows: sheet.previewRows ?? []
+        rows: sheet.rows ?? sheet.previewRows ?? []
       }));
 
       if (!sheets.length) {
@@ -2020,7 +2024,11 @@ function PlanEditor({
           appendInputSource: {
             type: "FILE",
             label: `参考工作表：${activeSpreadsheetSheet.name}`,
-            content: serializeSpreadsheetInputSource(activeSpreadsheetSheet, spreadsheetFileName || "spreadsheet.xlsx"),
+            content: serializeSpreadsheetInputSource(
+              spreadsheetSheets,
+              spreadsheetFileName || "spreadsheet.xlsx",
+              activeSpreadsheetSheet.name
+            ),
             fileName: spreadsheetFileName || null,
             mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           }

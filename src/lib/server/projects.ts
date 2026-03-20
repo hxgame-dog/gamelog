@@ -193,8 +193,39 @@ export async function deleteProjectForUser(userId: string, projectId: string) {
     throw new Error("只有项目拥有者可以删除项目。");
   }
 
-  await prisma.project.delete({
-    where: { id: projectId }
+  await prisma.$transaction(async (tx) => {
+    const plans = await tx.trackingPlan.findMany({
+      where: { projectId },
+      select: { id: true }
+    });
+    const planIds = plans.map((plan) => plan.id);
+
+    if (planIds.length) {
+      await tx.trackingPlan.deleteMany({
+        where: { id: { in: planIds } }
+      });
+    }
+
+    await tx.eventCategory.deleteMany({
+      where: { projectId }
+    });
+
+    await tx.logUpload.deleteMany({
+      where: { projectId }
+    });
+    await tx.metricSnapshot.deleteMany({
+      where: { projectId }
+    });
+    await tx.aiReport.deleteMany({
+      where: { projectId }
+    });
+    await tx.projectMember.deleteMany({
+      where: { projectId }
+    });
+
+    await tx.project.delete({
+      where: { id: projectId }
+    });
   });
 }
 
