@@ -1841,8 +1841,13 @@ function PlanEditor({
   const [spreadsheetNotice, setSpreadsheetNotice] = useState<string>("尚未上传表格。");
   const [isDiagnosing, setIsDiagnosing] = useState(false);
   const [streamLines, setStreamLines] = useState<string[]>([]);
+  const [sheetActionNotice, setSheetActionNotice] = useState<{
+    type: "success" | "error" | "info";
+    text: string;
+  } | null>(null);
   const jobPollTimerRef = useRef<number | null>(null);
   const streamTimerRef = useRef<number | null>(null);
+  const noticeTimerRef = useRef<number | null>(null);
   const [resultView, setResultView] = useState<"global" | "events" | "dictionaries">("events");
   const [eventResultMode, setEventResultMode] = useState<"cards" | "table" | "summary">("cards");
   const [schemaView, setSchemaView] = useState<"global" | "event_fields" | "dictionaries" | "mappings">("global");
@@ -1878,6 +1883,16 @@ function PlanEditor({
     }
     return acc;
   }, {});
+
+  function showSheetActionNotice(type: "success" | "error" | "info", text: string) {
+    setSheetActionNotice({ type, text });
+    if (noticeTimerRef.current) {
+      window.clearTimeout(noticeTimerRef.current);
+    }
+    noticeTimerRef.current = window.setTimeout(() => {
+      setSheetActionNotice(null);
+    }, 2600);
+  }
 
   function updateProperty(index: number, patch: Partial<EditableProperty>) {
     setEventDraft((current) => {
@@ -1970,6 +1985,7 @@ function PlanEditor({
           : sheet
       )
     );
+    showSheetActionNotice("info", "工作表角色已变更，请重新确认当前工作表后再保存。");
   }
 
   function updateSpreadsheetMapping(sheetName: string, index: number, target: string) {
@@ -1988,9 +2004,11 @@ function PlanEditor({
           : sheet
       )
     );
+    showSheetActionNotice("info", "字段映射已修改，请重新确认当前工作表。");
   }
 
   function confirmSpreadsheetSheet(sheetName: string) {
+    let confirmed = false;
     setSpreadsheetSheets((current) =>
       current.map((sheet) => {
         if (sheet.name !== sheetName) {
@@ -1999,18 +2017,26 @@ function PlanEditor({
         if (!sheet.mappings.some((item) => item.target !== "ignore")) {
           return sheet;
         }
+        confirmed = true;
         return { ...sheet, confirmed: true };
       })
     );
+    if (confirmed) {
+      showSheetActionNotice("success", `已确认工作表：${sheetName}`);
+    } else {
+      showSheetActionNotice("error", "请至少保留一个有效字段映射，不能全部忽略。");
+    }
   }
 
   function saveCurrentSpreadsheetSheet() {
     if (!activeSpreadsheetSheet) {
       onError("请先选择一个工作表。");
+      showSheetActionNotice("error", "请先选择一个工作表。");
       return;
     }
     if (!activeSpreadsheetSheet.confirmed) {
       onError("请先确认当前工作表映射，再执行保存。");
+      showSheetActionNotice("error", "请先确认当前工作表映射，再执行保存。");
       return;
     }
 
@@ -2037,9 +2063,11 @@ function PlanEditor({
       const data = await response.json();
       if (!response.ok) {
         onError(data.error || "保存当前工作表失败。");
+        showSheetActionNotice("error", data.error || "保存当前工作表失败。");
         return;
       }
       onMessage(`已保存工作表：${activeSpreadsheetSheet.name}`);
+      showSheetActionNotice("success", `已保存工作表：${activeSpreadsheetSheet.name}`);
       onRefresh(activePlan.id, activeEvent?.id ?? null, null, "generate");
     });
   }
@@ -2292,6 +2320,14 @@ function PlanEditor({
     setSelectedTemplates(["common"]);
     setGenerationPrompt(latestInput?.content ?? activePlan.summary ?? "");
   }, [activePlan, activeEvent, categories]);
+
+  useEffect(() => {
+    return () => {
+      if (noticeTimerRef.current) {
+        window.clearTimeout(noticeTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!initialFocusField) {
@@ -2713,6 +2749,7 @@ function PlanEditor({
                           onClick={() => {
                             if (!activeSpreadsheetSheet.mappings.some((item) => item.target !== "ignore")) {
                               onError("请至少保留一个有效字段映射，不能全部忽略。");
+                              showSheetActionNotice("error", "请至少保留一个有效字段映射，不能全部忽略。");
                               return;
                             }
                             confirmSpreadsheetSheet(activeSpreadsheetSheet.name);
@@ -2725,14 +2762,27 @@ function PlanEditor({
                         <button
                           type="button"
                           className="button-secondary"
-                          disabled={!activeSpreadsheetSheet.confirmed}
+                          disabled={!activeSpreadsheetSheet.confirmed || isPending}
                           onClick={() => saveCurrentSpreadsheetSheet()}
                         >
-                          保存当前工作表
+                          {isPending ? "保存中..." : "保存当前工作表"}
                         </button>
                       </div>
                     ) : null}
                   </div>
+                  {sheetActionNotice ? (
+                    <div
+                      className={
+                        sheetActionNotice.type === "success"
+                          ? styles.feedbackSuccess
+                          : sheetActionNotice.type === "error"
+                            ? styles.feedbackError
+                            : styles.feedbackInfo
+                      }
+                    >
+                      {sheetActionNotice.text}
+                    </div>
+                  ) : null}
                   {activeSpreadsheetSheet ? (
                     <div className={styles.modeHint}>
                       当前角色：{getTargetPresentation(activeSpreadsheetSheet.role, activeSpreadsheetSheet.role).label}

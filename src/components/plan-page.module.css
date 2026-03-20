@@ -1396,7 +1396,8 @@
 }
 
 .feedbackError,
-.feedbackSuccess {
+.feedbackSuccess,
+.feedbackInfo {
   margin-bottom: 12px;
   padding: 12px 14px;
   border-radius: 12px;
@@ -1413,6 +1414,12 @@
   color: var(--teal);
   background: rgba(31, 154, 133, 0.08);
   border: 1px solid rgba(31, 154, 133, 0.16);
+}
+
+.feedbackInfo {
+  color: #4f6f8f;
+  background: rgba(77, 122, 177, 0.08);
+  border: 1px solid rgba(77, 122, 177, 0.16);
 }
 
 .timelineCollapsed {
