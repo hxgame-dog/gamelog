@@ -151,6 +151,53 @@ export async function createProjectForUser(userId: string, input: unknown) {
   return project;
 }
 
+export async function deleteProjectForUser(userId: string, projectId: string) {
+  const prisma = getPrismaClient();
+
+  if (!prisma || !hasDatabaseUrl()) {
+    const store = getMemoryStore();
+    const membership = store.memberships.find((item) => item.projectId === projectId && item.userId === userId);
+    if (!membership || membership.role !== "OWNER") {
+      throw new Error("只有项目拥有者可以删除项目。");
+    }
+
+    const planIds = store.plans.filter((plan) => plan.projectId === projectId).map((plan) => plan.id);
+    const eventIds = store.events.filter((event) => planIds.includes(event.trackingPlanId)).map((event) => event.id);
+    const dictionaryIds = store.dictionaries
+      .filter((dictionary) => planIds.includes(dictionary.trackingPlanId))
+      .map((dictionary) => dictionary.id);
+
+    store.memberships = store.memberships.filter((item) => item.projectId !== projectId);
+    store.categories = store.categories.filter((item) => item.projectId !== projectId);
+    store.planDiagnoses = store.planDiagnoses.filter((item) => !planIds.includes(item.trackingPlanId));
+    store.planInputSources = store.planInputSources.filter((item) => !planIds.includes(item.trackingPlanId));
+    store.globalProperties = store.globalProperties.filter((item) => !planIds.includes(item.trackingPlanId));
+    store.dictionaryMappings = store.dictionaryMappings.filter((item) => !planIds.includes(item.trackingPlanId));
+    store.dictionaries = store.dictionaries.filter((item) => !dictionaryIds.includes(item.id));
+    store.properties = store.properties.filter((item) => !eventIds.includes(item.trackingEventId));
+    store.events = store.events.filter((item) => !eventIds.includes(item.id));
+    store.plans = store.plans.filter((item) => item.projectId !== projectId);
+    store.logUploads = store.logUploads.filter((item) => item.projectId !== projectId);
+    store.metricSnapshots = store.metricSnapshots.filter((item) => item.projectId !== projectId);
+    store.aiReports = store.aiReports.filter((item) => item.projectId !== projectId);
+    store.projects = store.projects.filter((item) => item.id !== projectId);
+    return;
+  }
+
+  const membership = await prisma.projectMember.findFirst({
+    where: { projectId, userId, role: ProjectRole.OWNER },
+    select: { id: true }
+  });
+
+  if (!membership) {
+    throw new Error("只有项目拥有者可以删除项目。");
+  }
+
+  await prisma.project.delete({
+    where: { id: projectId }
+  });
+}
+
 async function createStarterPlan(projectId: string) {
   const prisma = getPrismaClient();
 

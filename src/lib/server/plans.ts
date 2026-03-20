@@ -20,6 +20,15 @@ const updatePlanSchema = z.object({
   version: z.string().min(2).optional(),
   summary: z.string().nullable().optional(),
   status: z.nativeEnum(PlanStatus).optional(),
+  appendInputSource: z
+    .object({
+      type: z.nativeEnum(InputSourceType),
+      label: z.string().min(1),
+      content: z.string().nullable().optional(),
+      fileName: z.string().nullable().optional(),
+      mimeType: z.string().nullable().optional()
+    })
+    .optional(),
   globalProperties: z
     .array(
       z.object({
@@ -435,6 +444,18 @@ export async function updatePlan(planId: string, input: unknown) {
         plan.diagnosisStatus = "COMPLETED";
       }
     }
+    if (payload.appendInputSource) {
+      store.planInputSources.push({
+        id: crypto.randomUUID(),
+        trackingPlanId: planId,
+        type: payload.appendInputSource.type,
+        label: payload.appendInputSource.label,
+        content: payload.appendInputSource.content ?? null,
+        fileName: payload.appendInputSource.fileName ?? null,
+        mimeType: payload.appendInputSource.mimeType ?? null,
+        createdAt: Date.now()
+      });
+    }
     if (payload.globalProperties !== undefined) {
       store.globalProperties = store.globalProperties.filter((item) => item.trackingPlanId !== planId);
       payload.globalProperties.forEach((property, index) => {
@@ -646,6 +667,19 @@ export async function updatePlan(planId: string, input: unknown) {
       where: { id: planId },
       data
     });
+
+    if (payload.appendInputSource) {
+      await tx.trackingPlanInputSource.create({
+        data: {
+          trackingPlanId: planId,
+          type: payload.appendInputSource.type,
+          label: payload.appendInputSource.label,
+          content: payload.appendInputSource.content ?? null,
+          fileName: payload.appendInputSource.fileName ?? null,
+          mimeType: payload.appendInputSource.mimeType ?? null
+        }
+      });
+    }
 
     const updated = await tx.trackingPlan.findUnique({
       where: { id: planId },

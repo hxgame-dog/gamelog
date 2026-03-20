@@ -929,6 +929,18 @@ function formatInputSource(type?: string | null) {
   return "自由描述";
 }
 
+function buildSpreadsheetInputSourceContent(sheet: SpreadsheetSheet) {
+  const activeMappings = sheet.mappings.filter((item) => item.target !== "ignore");
+  const mappingLines = activeMappings.map((item) => `${item.source} -> ${item.target}`);
+  return [
+    `工作表：${sheet.name}`,
+    `角色：${getSheetRoleLabel(sheet.role)}`,
+    `行数：${sheet.rowCount}`,
+    "列映射：",
+    ...mappingLines
+  ].join("\n");
+}
+
 function getInsightCopy({
   activePlan,
   activeEvent,
@@ -1230,14 +1242,24 @@ export function PlansClient({
       index: "02",
       title: "输入与生成",
       hint: "输入需求、确认映射并生成方案包",
-      status: currentStep === "generate" ? "current" : (activePlan?.inputSources?.length ?? 0) > 0 ? "completed" : "waiting"
+      status:
+        currentStep === "generate"
+          ? "current"
+          : activePlan && ["results", "schema"].includes(currentStep) && activePlan.events.length > 0
+            ? "completed"
+            : "waiting"
     },
     {
       key: "results",
       index: "03",
       title: "方案结果区",
       hint: "审查公共属性、事件表和字典候选",
-      status: currentStep === "results" ? "current" : (activePlan?.events.length ?? 0) > 0 ? "completed" : "waiting"
+      status:
+        currentStep === "results"
+          ? "current"
+          : currentStep === "schema" || activePlan?.status === "CONFIRMED" || activePlan?.diagnosisStatus === "COMPLETED"
+            ? "completed"
+            : "waiting"
     },
     {
       key: "schema",
@@ -1695,7 +1717,9 @@ function PlanEditor({
   const [activeSheetName, setActiveSheetName] = useState<string | null>(null);
   const [spreadsheetNotice, setSpreadsheetNotice] = useState<string>("尚未上传表格。");
   const [isDiagnosing, setIsDiagnosing] = useState(false);
+  const [streamLines, setStreamLines] = useState<string[]>([]);
   const jobPollTimerRef = useRef<number | null>(null);
+  const streamTimerRef = useRef<number | null>(null);
   const [resultView, setResultView] = useState<"global" | "events" | "dictionaries">("events");
   const [eventResultMode, setEventResultMode] = useState<"cards" | "table" | "summary">("cards");
   const [schemaView, setSchemaView] = useState<"global" | "event_fields" | "dictionaries" | "mappings">("global");
@@ -1855,6 +1879,42 @@ function PlanEditor({
         return { ...sheet, confirmed: true };
       })
     );
+  }
+
+  function saveCurrentSpreadsheetSheet() {
+    if (!activeSpreadsheetSheet) {
+      onError("请先选择一个工作表。");
+      return;
+    }
+    if (!activeSpreadsheetSheet.confirmed) {
+      onError("请先确认当前工作表映射，再执行保存。");
+      return;
+    }
+
+    startTransition(async () => {
+      onError(null);
+      onMessage(null);
+      const response = await fetch(`/api/plans/${activePlan.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          appendInputSource: {
+            type: "FILE",
+            label: `参考工作表：${activeSpreadsheetSheet.name}`,
+            content: buildSpreadsheetInputSourceContent(activeSpreadsheetSheet),
+            fileName: spreadsheetFileName || null,
+            mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          }
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        onError(data.error || "保存当前工作表失败。");
+        return;
+      }
+      onMessage(`已保存工作表：${activeSpreadsheetSheet.name}`);
+      onRefresh(activePlan.id, activeEvent?.id ?? null, null, "generate");
+    });
   }
 
   function updateGlobalProperty(index: number, patch: Partial<EditableGlobalProperty>) {
@@ -2076,6 +2136,51 @@ function PlanEditor({
     onResultViewChange(nextView);
   }
 
+  function stopStream() {
+    if (streamTimerRef.current) {
+      window.clearInterval(streamTimerRef.current);
+      streamTimerRef.current = null;
+    }
+  }
+
+  function startStream(mode: GenerationMode) {
+    stopStream();
+    const sequence =
+      mode === "free_text"
+        ? [
+            "正在理解你的自由描述...",
+            "正在提取关键玩法、目标漏斗和商业化目标...",
+            "正在拆解事件表结构...",
+            "正在补公共属性、字典候选和映射关系..."
+          ]
+        : mode === "template"
+          ? [
+              "正在读取所选标准模板...",
+              "正在组合标准事件骨架...",
+              "正在补齐字段、公共属性和字典候选...",
+              "正在生成完整方案包..."
+            ]
+          : [
+              "正在读取参考表格...",
+              "正在理解工作表角色和字段映射...",
+              "正在按映射重建事件与字段结构...",
+              "正在生成方案包..."
+            ];
+
+    setStreamLines([sequence[0]]);
+    let cursor = 1;
+    streamTimerRef.current = window.setInterval(() => {
+      setStreamLines((current) => {
+        if (cursor >= sequence.length) {
+          return current;
+        }
+        const next = [...current, sequence[cursor]];
+        cursor += 1;
+        return next;
+      });
+    }, 800);
+  }
+
   async function pollJob(
     jobId: string,
     type: "GENERATE" | "DIAGNOSE",
@@ -2104,6 +2209,8 @@ function PlanEditor({
           const generatedCount = Number(job.result?.generatedCount ?? 0);
           const nextPlan = job.result?.plan as { events?: Array<{ id: string }> } | undefined;
           const nextEventId = nextPlan?.events?.[0]?.id ?? fallbackEventId ?? null;
+          stopStream();
+          setStreamLines((current) => [...current, `生成完成：已产出 ${generatedCount} 个事件。`]);
           onMessage(`Gemini 已生成 ${generatedCount} 个事件。`);
           if (nextEventId) {
             onSelectEvent(nextEventId);
@@ -2125,6 +2232,8 @@ function PlanEditor({
         }
 
         if (type === "GENERATE") {
+          stopStream();
+          setStreamLines((current) => [...current, job.error || job.message || "AI 生成失败。"]);
           onFinishGenerate({ ok: false, errorMessage: job.error || job.message });
           onError(job.error || job.message || "AI 生成失败。");
         } else {
@@ -2145,6 +2254,7 @@ function PlanEditor({
     }
 
     onStartGenerate();
+    startStream(generationMode);
 
     const payload =
       generationMode === "free_text"
@@ -2189,6 +2299,8 @@ function PlanEditor({
       });
       const data = await response.json();
       if (!response.ok) {
+        stopStream();
+        setStreamLines((current) => [...current, data.error || "AI 生成失败。"]);
         onFinishGenerate({ ok: false, errorMessage: data.error || "AI 生成失败。" });
         onError(data.error || "AI 生成失败。");
         return;
@@ -2196,6 +2308,8 @@ function PlanEditor({
       onMessage("AI 任务已创建，正在后台生成方案。");
       await pollJob(data.item?.id, "GENERATE", activeEvent?.id ?? null);
     } catch {
+      stopStream();
+      setStreamLines((current) => [...current, "网络异常，AI 生成未完成。"]);
       onFinishGenerate({ ok: false, errorMessage: "网络异常，AI 生成未完成。" });
       onError("网络异常，AI 生成未完成。");
     }
@@ -2426,6 +2540,14 @@ function PlanEditor({
                         >
                           确认当前工作表
                         </button>
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          disabled={!activeSpreadsheetSheet.confirmed}
+                          onClick={() => saveCurrentSpreadsheetSheet()}
+                        >
+                          保存当前工作表
+                        </button>
                       </div>
                     ) : null}
                   </div>
@@ -2599,6 +2721,26 @@ function PlanEditor({
               <p className={styles.sideCopy}>
                 完成生成后，下一步去第 3 步查看公共属性、事件表和字典候选，再执行 AI 诊断与确认方案。
               </p>
+            </div>
+            <div className={styles.stepFocusCard}>
+              <div className={styles.sectionHeader}>
+                <div>
+                  <p className={styles.sectionLabel}>生成进度</p>
+                  <p className={styles.eventSource}>点击 `AI 生成方案` 后，会按阶段流式显示当前进展。</p>
+                </div>
+              </div>
+              <div className={styles.streamPanel}>
+                {streamLines.length ? (
+                  streamLines.map((line, index) => (
+                    <div key={`${line}-${index}`} className={styles.streamLine}>
+                      <span className={styles.streamDot} />
+                      <span>{line}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p className={styles.sideCopy}>还没有开始生成。输入完成后点击 `AI 生成方案` 查看实时进度。</p>
+                )}
+              </div>
             </div>
           </aside>
         </div>

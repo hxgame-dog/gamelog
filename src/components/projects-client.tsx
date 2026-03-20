@@ -23,6 +23,7 @@ export function ProjectsClient({ initialProjects }: { initialProjects: Project[]
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   return (
     <div className={styles.layout}>
@@ -116,6 +117,35 @@ export function ProjectsClient({ initialProjects }: { initialProjects: Project[]
                     <a className="button-secondary" href={`/analytics/onboarding?projectId=${project.id}`}>
                       查看看板
                     </a>
+                    <button
+                      className="button-secondary"
+                      type="button"
+                      disabled={isPending && deletingId === project.id}
+                      onClick={() => {
+                        const confirmed = window.confirm(`确认删除项目「${project.name}」吗？该项目下的方案与分析数据会一起删除。`);
+                        if (!confirmed) {
+                          return;
+                        }
+                        startTransition(async () => {
+                          setDeletingId(project.id);
+                          setError(null);
+                          const response = await fetch(`/api/projects/${project.id}`, {
+                            method: "DELETE"
+                          });
+                          const data = await response.json().catch(() => ({}));
+                          if (!response.ok) {
+                            setError(data.error || "删除项目失败。");
+                            setDeletingId(null);
+                            return;
+                          }
+                          setProjects((current) => current.filter((item) => item.id !== project.id));
+                          setDeletingId(null);
+                          router.refresh();
+                        });
+                      }}
+                    >
+                      {isPending && deletingId === project.id ? "删除中..." : "删除项目"}
+                    </button>
                   </div>
                 </div>
               ))
