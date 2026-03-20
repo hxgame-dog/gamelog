@@ -426,9 +426,16 @@ function composeInputContext(payload: z.infer<typeof generatePlanSchema>) {
       (payload.templateKeys ?? []).includes(item.key)
     );
 
-    const content = selectedTemplates
-      .map((item) => `模板：${item.label}\n用途：${item.summary}\n要求：${item.prompt}`)
-      .join("\n\n");
+    const content = `__OMNILOG_TEMPLATE__${JSON.stringify({
+      version: 1,
+      templateKeys: selectedTemplates.map((item) => item.key),
+      templates: selectedTemplates.map((item) => ({
+        key: item.key,
+        label: item.label,
+        summary: item.summary,
+        prompt: item.prompt
+      }))
+    })}`;
 
     return {
       sourceContent: content,

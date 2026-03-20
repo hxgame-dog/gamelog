@@ -37,6 +37,8 @@ type Plan = {
     type: string;
     label?: string | null;
     content?: string | null;
+    fileName?: string | null;
+    mimeType?: string | null;
     createdAt: string | number | Date;
   }>;
   globalProperties?: Array<{
@@ -199,6 +201,135 @@ type SpreadsheetTargetOption = {
   description: string;
   example: string;
 };
+
+type PersistedSpreadsheetSheet = Pick<
+  SpreadsheetSheet,
+  "name" | "headers" | "rowCount" | "role" | "roleConfidence" | "roleReason" | "confirmed" | "mappings"
+> & {
+  previewRows: SpreadsheetRow[];
+};
+
+const PERSISTED_SPREADSHEET_PREFIX = "__OMNILOG_SPREADSHEET__";
+const PERSISTED_TEMPLATE_PREFIX = "__OMNILOG_TEMPLATE__";
+
+function serializeSpreadsheetInputSource(sheet: SpreadsheetSheet, fileName: string) {
+  return `${PERSISTED_SPREADSHEET_PREFIX}${JSON.stringify({
+    version: 1,
+    fileName,
+    activeSheetName: sheet.name,
+    sheets: [
+      {
+        name: sheet.name,
+        headers: sheet.headers,
+        rowCount: sheet.rowCount,
+        previewRows: sheet.previewRows,
+        role: sheet.role,
+        roleConfidence: sheet.roleConfidence,
+        roleReason: sheet.roleReason,
+        mappings: sheet.mappings,
+        confirmed: sheet.confirmed
+      }
+    ]
+  })}`;
+}
+
+function parseSpreadsheetInputSource(content?: string | null) {
+  if (!content) {
+    return null;
+  }
+
+  if (content.startsWith(PERSISTED_SPREADSHEET_PREFIX)) {
+    try {
+      const parsed = JSON.parse(content.slice(PERSISTED_SPREADSHEET_PREFIX.length)) as {
+        fileName?: string;
+        activeSheetName?: string | null;
+        sheets?: PersistedSpreadsheetSheet[];
+      };
+
+      const sheets = (parsed.sheets ?? []).map((sheet) => ({
+        ...sheet,
+        rows: sheet.previewRows ?? []
+      }));
+
+      if (!sheets.length) {
+        return null;
+      }
+
+      return {
+        fileName: parsed.fileName ?? "",
+        activeSheetName: parsed.activeSheetName ?? sheets[0]?.name ?? null,
+        sheets
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  const sheetNameMatch = content.match(/工作表：(.+)/);
+  const roleMatch = content.match(/角色：(.+)/);
+  if (!sheetNameMatch) {
+    return null;
+  }
+
+  const roleLabel = roleMatch?.[1]?.trim() ?? "";
+  const role: SpreadsheetSheetRole =
+    roleLabel.includes("公共属性")
+      ? "global_properties"
+      : roleLabel.includes("字典")
+        ? "dictionary_reference"
+        : "event_table";
+
+  return {
+    fileName: "",
+    activeSheetName: sheetNameMatch[1].trim(),
+    sheets: [
+      {
+        name: sheetNameMatch[1].trim(),
+        headers: [],
+        rowCount: 0,
+        previewRows: [],
+        rows: [],
+        role,
+        roleConfidence: "low" as const,
+        roleReason: "这是旧版保存的参考表格输入，仅恢复了工作表记录，详细映射请重新上传确认。",
+        mappings: [],
+        confirmed: true
+      }
+    ]
+  };
+}
+
+function parseTemplateInputSource(content?: string | null) {
+  if (!content) {
+    return null;
+  }
+
+  if (content.startsWith(PERSISTED_TEMPLATE_PREFIX)) {
+    try {
+      const parsed = JSON.parse(content.slice(PERSISTED_TEMPLATE_PREFIX.length)) as {
+        templateKeys?: string[];
+      };
+      return {
+        templateKeys: parsed.templateKeys ?? []
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  const labels = Array.from(content.matchAll(/模板：(.+)/g)).map((match) => match[1]?.trim()).filter(Boolean);
+  if (!labels.length) {
+    return null;
+  }
+
+  const matchedKeys = planInputTemplates
+    .filter((template) => labels.includes(template.label))
+    .map((template) => template.key);
+
+  return {
+    templateKeys: matchedKeys
+  };
+}
 
 function buildPlansUrl(
   projectId: string | null,
@@ -927,18 +1058,6 @@ function formatInputSource(type?: string | null) {
     return "参考表格";
   }
   return "自由描述";
-}
-
-function buildSpreadsheetInputSourceContent(sheet: SpreadsheetSheet) {
-  const activeMappings = sheet.mappings.filter((item) => item.target !== "ignore");
-  const mappingLines = activeMappings.map((item) => `${item.source} -> ${item.target}`);
-  return [
-    `工作表：${sheet.name}`,
-    `角色：${getSheetRoleLabel(sheet.role)}`,
-    `行数：${sheet.rowCount}`,
-    "列映射：",
-    ...mappingLines
-  ].join("\n");
 }
 
 function getInsightCopy({
@@ -1901,7 +2020,7 @@ function PlanEditor({
           appendInputSource: {
             type: "FILE",
             label: `参考工作表：${activeSpreadsheetSheet.name}`,
-            content: buildSpreadsheetInputSourceContent(activeSpreadsheetSheet),
+            content: serializeSpreadsheetInputSource(activeSpreadsheetSheet, spreadsheetFileName || "spreadsheet.xlsx"),
             fileName: spreadsheetFileName || null,
             mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           }
@@ -2111,6 +2230,61 @@ function PlanEditor({
     const missingEvents = expectedEvents.filter((eventName) => !existingEventNames.includes(eventName));
     return { groupName, eventCount: events.length, totalFields, totalMappings, missingEvents };
   });
+
+  useEffect(() => {
+    setPlanDraft({
+      name: activePlan.name,
+      version: activePlan.version,
+      summary: activePlan.summary ?? ""
+    });
+    setGlobalDraft(createGlobalPropertyDraft(activePlan));
+    setDictionaryDraft(createDictionaryDraft(activePlan));
+    setMappingDraft(createMappingDraft(activePlan));
+    setEventDraft(createDraftFromEvent(activeEvent, categories));
+    setReplaceExisting(activePlan.events.length === 0);
+
+    const latestInput = activePlan.inputSources?.at(-1);
+    if (latestInput?.type === "FILE") {
+      setGenerationMode("spreadsheet");
+      setSelectedTemplates(["common"]);
+      setGenerationPrompt(activePlan.summary ?? "");
+      const restored = parseSpreadsheetInputSource(latestInput.content);
+      if (restored) {
+        setSpreadsheetSheets(restored.sheets);
+        setSpreadsheetFileName(latestInput.fileName ?? restored.fileName ?? "");
+        setActiveSheetName(restored.activeSheetName);
+        setSpreadsheetNotice(
+          restored.sheets[0]?.headers.length
+            ? `已恢复最近保存的参考表格输入：${restored.activeSheetName ?? restored.sheets[0]?.name ?? "工作表"}。`
+            : "已恢复最近保存的参考工作表记录；由于这是旧版保存内容，若要继续调整映射，请重新上传原文件。"
+        );
+      } else {
+        setSpreadsheetSheets([]);
+        setSpreadsheetFileName(latestInput.fileName ?? "");
+        setActiveSheetName(null);
+        setSpreadsheetNotice("最近一次输入来自参考表格，但没有可恢复的工作表结构，请重新上传文件。");
+      }
+      return;
+    }
+
+    setSpreadsheetSheets([]);
+    setSpreadsheetFileName("");
+    setActiveSheetName(null);
+    setSpreadsheetNotice("尚未上传表格。");
+
+    if (latestInput?.type === "FORM") {
+      setGenerationMode("template");
+      const restoredTemplate = parseTemplateInputSource(latestInput.content);
+      setSelectedTemplates(restoredTemplate?.templateKeys?.length ? restoredTemplate.templateKeys : ["common"]);
+      setGenerationPrompt(activePlan.summary ?? "");
+      return;
+    }
+
+    setGenerationMode("free_text");
+    setSelectedTemplates(["common"]);
+    setGenerationPrompt(latestInput?.content ?? activePlan.summary ?? "");
+  }, [activePlan, activeEvent, categories]);
+
   useEffect(() => {
     if (!initialFocusField) {
       return;
