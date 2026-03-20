@@ -1,0 +1,311 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ProjectRole {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
+enum CategoryType {
+  SYSTEM
+  CUSTOM
+}
+
+enum PlanStatus {
+  DRAFT
+  DIAGNOSED
+  CONFIRMED
+}
+
+enum InputSourceType {
+  TEXT
+  FORM
+  FILE
+}
+
+enum UploadSource {
+  REAL
+  SYNTHETIC
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum AiProvider {
+  GEMINI
+}
+
+model User {
+  id           String          @id @default(cuid())
+  email        String          @unique
+  name         String
+  passwordHash String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  memberships  ProjectMember[]
+  sessions     Session[]
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Project {
+  id              String          @id @default(cuid())
+  name            String
+  slug            String          @unique
+  description     String?
+  platform        String?
+  currentVersion  String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  members         ProjectMember[]
+  categories      EventCategory[]
+  trackingPlans   TrackingPlan[]
+  logUploads      LogUpload[]
+  metricSnapshots MetricSnapshot[]
+  aiReports       AiReport[]
+}
+
+model ProjectMember {
+  id        String      @id @default(cuid())
+  role      ProjectRole @default(EDITOR)
+  createdAt DateTime    @default(now())
+  projectId String
+  userId    String
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+model EventCategory {
+  id          String        @id @default(cuid())
+  name        String
+  type        CategoryType  @default(SYSTEM)
+  color       String?
+  sortOrder   Int           @default(0)
+  isActive    Boolean       @default(true)
+  description String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  projectId   String
+  project     Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  events      TrackingEvent[]
+
+  @@unique([projectId, name])
+}
+
+model TrackingPlan {
+  id              String                    @id @default(cuid())
+  name            String
+  version         String
+  status          PlanStatus                @default(DRAFT)
+  summary         String?
+  diagnosisStatus JobStatus                 @default(PENDING)
+  confirmedAt     DateTime?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+  projectId       String
+  project         Project                   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  inputSources    TrackingPlanInputSource[]
+  events          TrackingEvent[]
+  globalProperties TrackingGlobalProperty[]
+  dictionaries    TrackingDictionary[]
+  dictionaryMappings TrackingDictionaryMapping[]
+  diagnosis       TrackingPlanDiagnosis?
+  logUploads      LogUpload[]
+
+  @@unique([projectId, version])
+}
+
+model TrackingPlanDiagnosis {
+  id             String       @id @default(cuid())
+  summary        String
+  findings       Json
+  generatedAt    DateTime     @default(now())
+  trackingPlanId String       @unique
+  trackingPlan   TrackingPlan @relation(fields: [trackingPlanId], references: [id], onDelete: Cascade)
+}
+
+model TrackingPlanInputSource {
+  id          String          @id @default(cuid())
+  type        InputSourceType
+  label       String?
+  content     String?
+  fileName    String?
+  mimeType    String?
+  createdAt   DateTime        @default(now())
+  trackingPlanId String
+  trackingPlan TrackingPlan   @relation(fields: [trackingPlanId], references: [id], onDelete: Cascade)
+}
+
+model TrackingEvent {
+  id              String             @id @default(cuid())
+  eventName       String
+  displayName     String?
+  triggerDescription String?
+  businessGoal    String?
+  notes           String?
+  sourceLabel     String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  trackingPlanId  String
+  categoryId      String
+  trackingPlan    TrackingPlan       @relation(fields: [trackingPlanId], references: [id], onDelete: Cascade)
+  category        EventCategory      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  properties      TrackingProperty[]
+  dictionaryMappings TrackingDictionaryMapping[]
+
+  @@unique([trackingPlanId, eventName])
+}
+
+model TrackingProperty {
+  id             String        @id @default(cuid())
+  name           String
+  type           String
+  isRequired     Boolean       @default(false)
+  sampleValue    String?
+  description    String?
+  sortOrder      Int           @default(0)
+  trackingEventId String
+  trackingEvent  TrackingEvent @relation(fields: [trackingEventId], references: [id], onDelete: Cascade)
+}
+
+model TrackingGlobalProperty {
+  id             String       @id @default(cuid())
+  name           String
+  type           String
+  isRequired     Boolean      @default(true)
+  sampleValue    String?
+  description    String?
+  category       String?
+  sortOrder      Int          @default(0)
+  trackingPlanId String
+  trackingPlan   TrackingPlan @relation(fields: [trackingPlanId], references: [id], onDelete: Cascade)
+
+  @@index([trackingPlanId, sortOrder])
+}
+
+model TrackingDictionary {
+  id             String                    @id @default(cuid())
+  name           String
+  configName     String
+  relatedModule  String
+  paramNames     String[]
+  purpose        String
+  handoffRule    String
+  sourceType     String
+  sortOrder      Int                       @default(0)
+  trackingPlanId String
+  trackingPlan   TrackingPlan              @relation(fields: [trackingPlanId], references: [id], onDelete: Cascade)
+  mappings       TrackingDictionaryMapping[]
+
+  @@index([trackingPlanId, sortOrder])
+}
+
+model TrackingDictionaryMapping {
+  id                String             @id @default(cuid())
+  propertyName      String
+  isRequiredMapping Boolean            @default(true)
+  mappingNote       String?
+  trackingPlanId    String
+  trackingEventId   String?
+  dictionaryId      String
+  trackingPlan      TrackingPlan       @relation(fields: [trackingPlanId], references: [id], onDelete: Cascade)
+  trackingEvent     TrackingEvent?     @relation(fields: [trackingEventId], references: [id], onDelete: SetNull)
+  dictionary        TrackingDictionary @relation(fields: [dictionaryId], references: [id], onDelete: Cascade)
+
+  @@index([trackingPlanId])
+  @@index([trackingEventId])
+  @@index([dictionaryId])
+}
+
+model LogUpload {
+  id              String       @id @default(cuid())
+  fileName        String
+  source          UploadSource @default(REAL)
+  version         String
+  rawHeaders      Json?
+  fieldMappings   Json?
+  summaryJson     Json?
+  recordCount     Int          @default(0)
+  successRate     Float?
+  errorCount      Int          @default(0)
+  unmatchedEvents Int          @default(0)
+  status          JobStatus    @default(PENDING)
+  uploadedAt      DateTime     @default(now())
+  projectId       String
+  trackingPlanId  String?
+  project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  trackingPlan    TrackingPlan? @relation(fields: [trackingPlanId], references: [id], onDelete: SetNull)
+}
+
+model MetricSnapshot {
+  id          String   @id @default(cuid())
+  metricKey   String
+  metricLabel String
+  metricValue Float
+  dimension   String?
+  version     String?
+  capturedAt  DateTime @default(now())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, metricKey, capturedAt])
+}
+
+model AiReport {
+  id           String   @id @default(cuid())
+  title        String
+  summary      String
+  riskLevel    String
+  dataSource   String
+  versionFrom  String?
+  versionTo    String?
+  generatedAt  DateTime @default(now())
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model AiProviderConfig {
+  id               String           @id @default(cuid())
+  provider         AiProvider       @unique
+  encryptedApiKey  String?
+  status           String           @default("NOT_CONFIGURED")
+  defaultModel     String?
+  lastVerifiedAt   DateTime?
+  updatedAt        DateTime         @updatedAt
+  models           AiModelRegistry[]
+}
+
+model AiModelRegistry {
+  id                String           @id @default(cuid())
+  modelName         String
+  displayName       String?
+  isAvailable       Boolean          @default(true)
+  isDefault         Boolean          @default(false)
+  supportedActions  String[]
+  detectedAt        DateTime         @default(now())
+  providerConfigId  String
+  providerConfig    AiProviderConfig @relation(fields: [providerConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([providerConfigId, modelName])
+}

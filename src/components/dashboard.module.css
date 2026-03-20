@@ -1,0 +1,182 @@
+.hero {
+  padding: 24px;
+  display: grid;
+  gap: 18px;
+}
+
+.heroTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.heroBadgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.metricGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.metricCard {
+  padding: 16px;
+}
+
+.metricHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.metricTitle {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.metricValueRow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.metricValue {
+  font-family: var(--font-number);
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.metricUnit {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.metricDelta {
+  margin-top: 10px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.sparkline {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  margin-top: 16px;
+  min-height: 60px;
+}
+
+.sparkBar {
+  flex: 1;
+  border-radius: 999px;
+  opacity: 0.9;
+}
+
+.splitGrid {
+  display: grid;
+  grid-template-columns: 1.4fr 0.9fr;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.card {
+  padding: 20px;
+}
+
+.categoryGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.categoryCard {
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+  transition: border-color 180ms ease, background 180ms ease;
+}
+
+.categoryHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.categoryTitle {
+  margin: 0;
+  font-size: 15px;
+}
+
+.categoryMeta {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.insightList,
+.taskList {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.insightItem,
+.taskItem {
+  padding: 14px;
+  border-radius: 14px;
+  background: #fcfcfb;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
+}
+
+.insightTitle,
+.taskName {
+  margin: 0;
+  font-size: 14px;
+}
+
+.insightCopy,
+.taskDetail {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.statusRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+@media (max-width: 1180px) {
+  .metricGrid,
+  .categoryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .splitGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .heroTop {
+    flex-direction: column;
+  }
+
+  .metricGrid,
+  .categoryGrid {
+    grid-template-columns: 1fr;
+  }
+}

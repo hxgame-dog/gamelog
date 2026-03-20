@@ -1,0 +1,68 @@
+.hero {
+  padding: 18px;
+}
+
+.summaryRow {
+  display: grid;
+  grid-template-columns: 1.4fr 0.6fr;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.summaryCard,
+.riskCard,
+.card {
+  padding: 18px;
+}
+
+.summaryText {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.riskBadge {
+  display: inline-flex;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 107, 107, 0.35);
+  color: var(--red);
+  background: rgba(255, 107, 107, 0.12);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.reportTitle {
+  margin: 0;
+  font-size: 14px;
+}
+
+.reportCopy {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.evidenceGrid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+@media (max-width: 1100px) {
+  .summaryRow,
+  .cards,
+  .evidenceGrid {
+    grid-template-columns: 1fr;
+  }
+}
