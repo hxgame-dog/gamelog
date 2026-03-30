@@ -25,6 +25,26 @@ export default async function ReportsPage({
   const reportView = activeProjectId ? await getAiReportView(activeProjectId, compareVersion) : null;
 
   const report = reportView?.report;
+  const evidenceNotes = reportView
+    ? [
+        {
+          title: "引导漏斗为什么重要",
+          copy: `当前引导漏斗主图反映的是 ${reportView.versionLabel} 的关键步骤完成情况。${reportView.compareVersionLabel ? `对比 ${reportView.compareVersionLabel} 时，优先关注完成率和流失节点的变化。` : "如果这里出现明显断层，通常意味着前 5 分钟体验成本变高。"}`
+        },
+        {
+          title: "异常趋势如何解读",
+          copy: "关卡趋势图不是单看高低，而是看波动是否持续。如果失败率、耗时或重试在连续批次上升，说明问题更像结构性变化，而不是偶发波动。"
+        },
+        {
+          title: "广告构成支持什么判断",
+          copy: "广告构成图用来判断不同广告位是不是在挤压主流程。完成率高但关闭率也高时，通常意味着广告位触发时机过硬。"
+        },
+        {
+          title: "公共事件健康度的作用",
+          copy: "公共事件健康度用于先排除系统层异常。如果 session、login、error 这类底层事件口径不稳定，后续玩法分析也会被污染。"
+        }
+      ]
+    : [];
 
   return (
     <AppShell currentPath="/reports">
@@ -119,6 +139,25 @@ export default async function ReportsPage({
           color={reportView?.evidence.system.color ?? "var(--blue)"}
         />
       </div>
+
+      {evidenceNotes.length ? (
+        <section className={`panel ${styles.evidenceExplainPanel}`}>
+          <div className={styles.evidenceExplainHeader}>
+            <h2 className="section-title" style={{ fontSize: 18 }}>
+              证据说明
+            </h2>
+            <span className="pill">为什么这些图支持当前结论</span>
+          </div>
+          <div className={styles.evidenceExplainGrid}>
+            {evidenceNotes.map((item) => (
+              <div key={item.title} className={styles.evidenceExplainCard}>
+                <h3 className={styles.reportTitle}>{item.title}</h3>
+                <p className={styles.reportCopy}>{item.copy}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div style={{ marginTop: 16 }}>
         <InsightCard
