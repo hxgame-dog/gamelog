@@ -1,8 +1,31 @@
 import { categories, chartSeries } from "@/data/mock-data";
 
-import { getLatestImportForProject, getMetricSnapshotsForProject } from "./imports";
+import { getImportsForProject, getLatestImportForProject, getMetricSnapshotsForProject } from "./imports";
 
 type CategoryKey = "system" | "onboarding" | "level" | "monetization" | "ads" | "custom";
+type RankedItem = { name: string; count: number; meta?: string };
+type ImportCategorySummary = {
+  metrics: Record<string, number>;
+  main: number[];
+  aux: number[];
+  auxLabels: string[];
+  ranking: RankedItem[];
+  insight: string;
+};
+
+type ImportSummary = {
+  topEvents?: RankedItem[];
+  topPlacements?: RankedItem[];
+  topLevels?: RankedItem[];
+  failReasons?: RankedItem[];
+  categories?: Partial<Record<CategoryKey, ImportCategorySummary>>;
+  overview?: {
+    activeUsers?: number;
+    healthScore?: number;
+    keyAnomalyCount?: number;
+    monetizationValue?: number;
+  };
+};
 
 const fallbackConfig = {
   system: {
@@ -141,7 +164,7 @@ function metricLookup(snapshots: Array<{ metricKey: string; metricValue: number 
   return (key: string, fallback = 0) => map.get(key) ?? fallback;
 }
 
-function buildTrend(base: number, spread = 8) {
+function buildFallbackTrend(base: number, spread = 8) {
   const safeBase = Math.max(6, Math.min(94, base));
 
   return Array.from({ length: 7 }, (_, index) => {
@@ -155,19 +178,97 @@ function formatMetric(value: number, suffix = "%") {
   return `${value.toFixed(1)}${suffix}`;
 }
 
-function buildRanking(
-  values: Array<{ name: string; count: number }>,
-  emptyLabel: string,
-  suffix: string
-) {
-  if (!values.length) {
+function normalizeSeries(values: number[], minLength = 4) {
+  const filtered = values.filter((value) => Number.isFinite(value) && value >= 0);
+  if (!filtered.length) {
+    return Array.from({ length: minLength }, () => 0);
+  }
+
+  const max = Math.max(...filtered, 1);
+  const normalized = filtered.map((value) => clampPercent((value / max) * 100));
+  return normalized.length >= minLength ? normalized : [...normalized, ...Array.from({ length: minLength - normalized.length }, () => 0)];
+}
+
+function normalizeDistribution(values: number[]) {
+  const total = values.reduce((sum, value) => sum + Math.max(value, 0), 0);
+  if (!total) {
+    return values.map(() => 0);
+  }
+  return values.map((value) => clampPercent((Math.max(value, 0) / total) * 100));
+}
+
+function buildRanking(values: RankedItem[] | undefined, emptyLabel: string, suffix: string) {
+  if (!values?.length) {
     return [[emptyLabel, "等待首批日志或模拟数据"]] as Array<[string, string]>;
   }
 
-  return values.slice(0, 3).map((item) => [item.name, `${item.count}${suffix}`] as [string, string]);
+  return values.slice(0, 5).map((item) => [item.name, item.meta ?? `${item.count}${suffix}`] as [string, string]);
 }
 
-export async function getAnalyticsCategoryData(category: CategoryKey, projectId?: string | null) {
+function buildRecentTrend(
+  snapshots: Array<{ metricKey: string; metricValue: number }>,
+  metricKey: string,
+  fallback: number[]
+) {
+  const values = snapshots
+    .filter((item) => item.metricKey === metricKey)
+    .map((item) => item.metricValue)
+    .slice(0, 7)
+    .reverse();
+
+  if (!values.length) {
+    return fallback;
+  }
+
+  if (values.length === 1) {
+    return buildFallbackTrend(values[0], 6);
+  }
+
+  return normalizeSeries(values, 7);
+}
+
+function sourceLabel(source: string | null | undefined) {
+  return source === "SYNTHETIC" ? "Synthetic 数据" : "真实数据";
+}
+
+function metricCard(label: string, current: string, compare?: string | null) {
+  return {
+    label,
+    value: current,
+    compareValue: compare ?? null
+  };
+}
+
+function versionDelta(current: number, compare: number | null | undefined, suffix = "%") {
+  if (compare === null || compare === undefined) {
+    return null;
+  }
+  const delta = current - compare;
+  const sign = delta > 0 ? "+" : "";
+  return `${sign}${delta.toFixed(1)}${suffix}`;
+}
+
+function resolveCompareImport(
+  imports: Array<{ version: string; uploadedAt?: Date | number; summaryJson?: unknown }>,
+  currentVersion: string,
+  compareVersion?: string | null
+) {
+  if (compareVersion) {
+    return imports.find((item) => item.version === compareVersion) ?? null;
+  }
+
+  return imports.find((item) => item.version !== currentVersion) ?? null;
+}
+
+function emptyCompareSeries(values: number[]) {
+  return values.map(() => 0);
+}
+
+export async function getAnalyticsCategoryData(
+  category: CategoryKey,
+  projectId?: string | null,
+  compareVersion?: string | null
+) {
   const fallback = fallbackConfig[category];
 
   if (!projectId) {
@@ -192,200 +293,249 @@ export async function getAnalyticsCategoryData(category: CategoryKey, projectId?
     };
   }
 
-  const snapshots = await getMetricSnapshotsForProject(projectId, latestImport.version);
-  const getMetric = metricLookup(snapshots);
-  const summary = (latestImport.summaryJson ?? {}) as {
-    topEvents?: Array<{ name: string; count: number }>;
-    topPlacements?: Array<{ name: string; count: number }>;
-    topLevels?: Array<{ name: string; count: number }>;
-    failReasons?: Array<{ name: string; count: number }>;
-  };
+  const allImports = await getImportsForProject(projectId);
+  const compareImport = resolveCompareImport(allImports, latestImport.version, compareVersion);
+  const versionOptions = [...new Set(allImports.map((item) => item.version))];
 
-  if (!snapshots.length) {
+  const [currentSnapshots, allSnapshots, compareSnapshots] = await Promise.all([
+    getMetricSnapshotsForProject(projectId, latestImport.version),
+    getMetricSnapshotsForProject(projectId),
+    compareImport ? getMetricSnapshotsForProject(projectId, compareImport.version) : Promise.resolve([])
+  ]);
+
+  const summary = (latestImport.summaryJson ?? {}) as ImportSummary;
+  const categorySummary = summary.categories?.[category];
+  const compareSummary = (compareImport?.summaryJson ?? {}) as ImportSummary;
+  const compareCategorySummary = compareSummary.categories?.[category];
+
+  if (!currentSnapshots.length || !categorySummary) {
     return {
       ...fallback,
       categories,
       source: latestImport.source,
-      sourceLabel: latestImport.source === "SYNTHETIC" ? "Synthetic 数据" : "真实数据",
+      sourceLabel: sourceLabel(latestImport.source),
       versionLabel: latestImport.version
     };
   }
 
+  const getMetric = metricLookup(currentSnapshots);
+  const getCompareMetric = metricLookup(compareSnapshots);
+  const base = {
+    title: fallback.title,
+    color: fallback.color,
+    categories,
+    source: latestImport.source,
+    sourceLabel: sourceLabel(latestImport.source),
+    versionLabel: latestImport.version,
+    compareVersionLabel: compareImport?.version ?? null,
+    versionOptions
+  };
+
   if (category === "system") {
-    const activeUsers = getMetric("active_users");
-    const systemEvents = getMetric("system_event_count");
-    const validRate = getMetric("import_success_rate");
-    const errorRate = clampPercent(100 - validRate);
+    const validRate = getMetric("system_valid_rate", getMetric("import_success_rate"));
+    const compareValidRate = compareImport
+      ? getCompareMetric("system_valid_rate", getCompareMetric("import_success_rate"))
+      : null;
+    const errorRate = getMetric("system_error_rate");
+    const compareErrorRate = compareImport ? getCompareMetric("system_error_rate") : null;
 
     return {
-      title: fallback.title,
-      color: fallback.color,
+      ...base,
       metrics: [
-        { label: "活跃用户", value: activeUsers.toFixed(0) },
-        { label: "公共事件量", value: systemEvents.toFixed(0) },
-        { label: "有效会话率", value: formatMetric(validRate) },
-        { label: "异常占比", value: formatMetric(errorRate) }
+        metricCard("活跃用户", getMetric("active_users").toFixed(0), compareImport ? getCompareMetric("active_users").toFixed(0) : null),
+        metricCard("公共事件量", getMetric("system_event_count").toFixed(0), compareImport ? getCompareMetric("system_event_count").toFixed(0) : null),
+        metricCard("有效会话率", formatMetric(validRate), compareValidRate !== null ? formatMetric(compareValidRate) : null),
+        metricCard("异常占比", formatMetric(errorRate), compareErrorRate !== null ? formatMetric(compareErrorRate) : null)
       ],
-      main: [activeUsers, systemEvents / 2, validRate, 100 - errorRate].map((item) =>
-        clampPercent(item > 100 ? item / Math.max(activeUsers || 1, 1) * 100 : item)
-      ),
-      trend: buildTrend(validRate, 6),
-      aux: (summary.topEvents ?? []).slice(0, 4).map((item) => item.count),
-      auxLabels: (summary.topEvents ?? []).slice(0, 4).map((item) => item.name),
-      ranking: buildRanking(summary.topEvents ?? [], "公共事件", " 次"),
+      main: normalizeSeries(categorySummary.main),
+      compareMain: compareCategorySummary ? normalizeSeries(compareCategorySummary.main) : emptyCompareSeries(normalizeSeries(categorySummary.main)),
+      trend: buildRecentTrend(allSnapshots, "system_valid_rate", fallback.trend),
+      compareTrend: compareImport
+        ? buildRecentTrend(compareSnapshots, "system_valid_rate", fallback.trend)
+        : emptyCompareSeries(buildRecentTrend(allSnapshots, "system_valid_rate", fallback.trend)),
+      aux: normalizeDistribution(categorySummary.aux),
+      auxLabels: categorySummary.auxLabels.length ? categorySummary.auxLabels : fallback.auxLabels,
+      ranking: buildRanking(categorySummary.ranking, "公共事件", " 次"),
       insight:
-        latestImport.source === "SYNTHETIC"
-          ? "当前结果来自模拟数据，适合先验证事件结构和图表布局，再导入真实日志做版本判断。"
-          : "公共事件层面的有效率稳定，适合继续作为其他玩法模块的基线参照。",
-      categories,
-      source: latestImport.source,
-      sourceLabel: latestImport.source === "SYNTHETIC" ? "Synthetic 数据" : "真实数据",
-      versionLabel: latestImport.version
+        compareImport && compareValidRate !== null
+          ? `${categorySummary.insight} 与 ${compareImport.version} 相比，有效会话率 ${versionDelta(validRate, compareValidRate)}，异常占比 ${versionDelta(errorRate, compareErrorRate)}。`
+          : categorySummary.insight
     };
   }
 
   if (category === "onboarding") {
     const reach = getMetric("onboarding_reach_rate");
-    const complete = getMetric("onboarding_completion_rate");
+    const compareReach = compareImport ? getCompareMetric("onboarding_reach_rate") : null;
+    const completion = getMetric("onboarding_completion_rate");
+    const compareCompletion = compareImport ? getCompareMetric("onboarding_completion_rate") : null;
     const drop = getMetric("onboarding_drop_rate");
-    const duration = getMetric("onboarding_avg_duration");
+    const compareDrop = compareImport ? getCompareMetric("onboarding_drop_rate") : null;
+    const avgDuration = getMetric("onboarding_avg_duration");
+    const compareDuration = compareImport ? getCompareMetric("onboarding_avg_duration") : null;
 
     return {
-      title: fallback.title,
-      color: fallback.color,
+      ...base,
       metrics: [
-        { label: "首步到达率", value: formatMetric(reach) },
-        { label: "引导完成率", value: formatMetric(complete) },
-        { label: "中途流失率", value: formatMetric(drop) },
-        { label: "平均完成时长", value: `${duration.toFixed(1)} 秒` }
+        metricCard("首步到达率", formatMetric(reach), compareReach !== null ? formatMetric(compareReach) : null),
+        metricCard("引导完成率", formatMetric(completion), compareCompletion !== null ? formatMetric(compareCompletion) : null),
+        metricCard("中途流失率", formatMetric(drop), compareDrop !== null ? formatMetric(compareDrop) : null),
+        metricCard("平均完成时长", `${avgDuration.toFixed(1)} 秒`, compareDuration !== null ? `${compareDuration.toFixed(1)} 秒` : null)
       ],
-      main: [reach, Math.max(complete + 14, 0), complete, Math.max(complete - 12, 0), Math.max(complete - 18, 0), Math.max(complete - 24, 0)].map(clampPercent),
-      trend: buildTrend(complete, 10),
-      aux: [duration * 0.6, duration * 0.8, duration, duration * 1.1, duration * 1.2, duration * 1.35].map(clampPercent),
-      auxLabels: ["步骤 1", "步骤 2", "步骤 3", "步骤 4", "步骤 5", "步骤 6"],
-      ranking: buildRanking(summary.topEvents ?? [], "引导步骤", " 次"),
+      main: normalizeSeries(categorySummary.main, 6),
+      compareMain: compareCategorySummary ? normalizeSeries(compareCategorySummary.main, 6) : emptyCompareSeries(normalizeSeries(categorySummary.main, 6)),
+      trend: buildRecentTrend(allSnapshots, "onboarding_completion_rate", fallback.trend),
+      compareTrend: compareImport
+        ? buildRecentTrend(compareSnapshots, "onboarding_completion_rate", fallback.trend)
+        : emptyCompareSeries(buildRecentTrend(allSnapshots, "onboarding_completion_rate", fallback.trend)),
+      aux: normalizeSeries(categorySummary.aux, 6),
+      auxLabels: categorySummary.auxLabels.length ? categorySummary.auxLabels : fallback.auxLabels,
+      ranking: buildRanking(categorySummary.ranking, "引导步骤", " 次"),
       insight:
-        complete < 60
-          ? "当前引导完成率偏低，建议优先检查中段步骤说明和点击反馈是否清楚。"
-          : "引导链路整体稳定，接下来更适合逐步细化关键步骤的字段定义。",
-      categories,
-      source: latestImport.source,
-      sourceLabel: latestImport.source === "SYNTHETIC" ? "Synthetic 数据" : "真实数据",
-      versionLabel: latestImport.version
+        compareImport && compareCompletion !== null
+          ? `${categorySummary.insight} 与 ${compareImport.version} 相比，引导完成率 ${versionDelta(completion, compareCompletion)}，流失率 ${versionDelta(drop, compareDrop)}。`
+          : categorySummary.insight
     };
   }
 
   if (category === "level") {
-    const startRate = getMetric("level_start_rate");
-    const complete = getMetric("level_completion_rate");
+    const start = getMetric("level_start_rate");
+    const compareStart = compareImport ? getCompareMetric("level_start_rate") : null;
+    const completion = getMetric("level_completion_rate");
+    const compareCompletion = compareImport ? getCompareMetric("level_completion_rate") : null;
     const fail = getMetric("level_fail_rate");
+    const compareFail = compareImport ? getCompareMetric("level_fail_rate") : null;
     const retry = getMetric("level_retry_avg");
+    const compareRetry = compareImport ? getCompareMetric("level_retry_avg") : null;
 
     return {
-      title: fallback.title,
-      color: fallback.color,
+      ...base,
       metrics: [
-        { label: "关卡开局率", value: formatMetric(startRate) },
-        { label: "平均通关率", value: formatMetric(complete) },
-        { label: "平均失败率", value: formatMetric(fail) },
-        { label: "平均重试次数", value: retry.toFixed(1) }
+        metricCard("关卡开局率", formatMetric(start), compareStart !== null ? formatMetric(compareStart) : null),
+        metricCard("平均通关率", formatMetric(completion), compareCompletion !== null ? formatMetric(compareCompletion) : null),
+        metricCard("平均失败率", formatMetric(fail), compareFail !== null ? formatMetric(compareFail) : null),
+        metricCard("平均重试次数", retry.toFixed(1), compareRetry !== null ? compareRetry.toFixed(1) : null)
       ],
-      main: [100, startRate, complete + 12, complete, Math.max(complete - 6, 0), Math.max(complete - 10, 0)].map(clampPercent),
-      trend: buildTrend(complete, 9),
-      aux: (summary.failReasons ?? []).slice(0, 5).map((item) => item.count),
-      auxLabels: (summary.failReasons ?? []).slice(0, 5).map((item) => item.name),
-      ranking: buildRanking(summary.topLevels ?? [], "关卡", " 次"),
+      main: normalizeSeries(categorySummary.main),
+      compareMain: compareCategorySummary ? normalizeSeries(compareCategorySummary.main) : emptyCompareSeries(normalizeSeries(categorySummary.main)),
+      trend: buildRecentTrend(allSnapshots, "level_completion_rate", fallback.trend),
+      compareTrend: compareImport
+        ? buildRecentTrend(compareSnapshots, "level_completion_rate", fallback.trend)
+        : emptyCompareSeries(buildRecentTrend(allSnapshots, "level_completion_rate", fallback.trend)),
+      aux: categorySummary.aux,
+      auxLabels: categorySummary.auxLabels.length ? categorySummary.auxLabels : fallback.auxLabels,
+      ranking: buildRanking(categorySummary.ranking, "关卡", " 次"),
       insight:
-        fail > complete
-          ? "关卡失败率高于通关率，适合优先回看失败原因和关键资源点，而不是先调整整体难度曲线。"
-          : "关卡主漏斗目前可读性不错，接下来更适合补齐失败原因和重试字段。",
-      categories,
-      source: latestImport.source,
-      sourceLabel: latestImport.source === "SYNTHETIC" ? "Synthetic 数据" : "真实数据",
-      versionLabel: latestImport.version
+        compareImport && compareCompletion !== null
+          ? `${categorySummary.insight} 与 ${compareImport.version} 相比，通关率 ${versionDelta(completion, compareCompletion)}，失败率 ${versionDelta(fail, compareFail)}。`
+          : categorySummary.insight
     };
   }
 
   if (category === "monetization") {
     const conversion = getMetric("monetization_conversion_rate");
-    const adTrigger = getMetric("ad_trigger_rate");
+    const compareConversion = compareImport ? getCompareMetric("monetization_conversion_rate") : null;
+    const eventCount = getMetric("monetization_event_count");
+    const compareEventCount = compareImport ? getCompareMetric("monetization_event_count") : null;
     const adCompletion = getMetric("ad_completion_rate");
+    const compareAdCompletion = compareImport ? getCompareMetric("ad_completion_rate") : null;
     const value = getMetric("monetization_value");
+    const compareValue = compareImport ? getCompareMetric("monetization_value") : null;
 
     return {
-      title: fallback.title,
-      color: fallback.color,
+      ...base,
       metrics: [
-        { label: "商业化转化率", value: formatMetric(conversion) },
-        { label: "广告触发率", value: formatMetric(adTrigger) },
-        { label: "广告完成率", value: formatMetric(adCompletion) },
-        { label: "价值事件金额", value: value.toFixed(2) }
+        metricCard("商业化转化率", formatMetric(conversion), compareConversion !== null ? formatMetric(compareConversion) : null),
+        metricCard("商业化事件数", eventCount.toFixed(0), compareEventCount !== null ? compareEventCount.toFixed(0) : null),
+        metricCard("广告完成率", formatMetric(adCompletion), compareAdCompletion !== null ? formatMetric(compareAdCompletion) : null),
+        metricCard("价值事件金额", value.toFixed(2), compareValue !== null ? compareValue.toFixed(2) : null)
       ],
-      main: [100, Math.max(conversion * 2.2, 8), Math.max(conversion, 4), Math.max(conversion * 0.5, 2)].map(clampPercent),
-      trend: buildTrend(Math.max(conversion * 1.5, 12), 7),
-      aux: [value, getMetric("monetization_event_count"), adTrigger, adCompletion].map(clampPercent),
-      auxLabels: ["收入", "付费事件", "广告触发", "广告完成"],
-      ranking: buildRanking(summary.topEvents ?? [], "商业化事件", " 次"),
+      main: normalizeSeries(categorySummary.main),
+      compareMain: compareCategorySummary ? normalizeSeries(compareCategorySummary.main) : emptyCompareSeries(normalizeSeries(categorySummary.main)),
+      trend: buildRecentTrend(allSnapshots, "monetization_conversion_rate", fallback.trend),
+      compareTrend: compareImport
+        ? buildRecentTrend(compareSnapshots, "monetization_conversion_rate", fallback.trend)
+        : emptyCompareSeries(buildRecentTrend(allSnapshots, "monetization_conversion_rate", fallback.trend)),
+      aux: categorySummary.aux,
+      auxLabels: categorySummary.auxLabels.length ? categorySummary.auxLabels : fallback.auxLabels,
+      ranking: buildRanking(categorySummary.ranking, "商业化事件", " 次"),
       insight:
-        latestImport.source === "SYNTHETIC"
-          ? "这批商业化结果来自模拟数据，适合先验证付费和广告事件是否被正确拆解。"
-          : "商业化指标已经具备首轮分析价值，下一步建议叠加版本对比观察曝光与转化是否同步变化。",
-      categories,
-      source: latestImport.source,
-      sourceLabel: latestImport.source === "SYNTHETIC" ? "Synthetic 数据" : "真实数据",
-      versionLabel: latestImport.version
+        compareImport && compareConversion !== null
+          ? `${categorySummary.insight} 与 ${compareImport.version} 相比，商业化转化率 ${versionDelta(conversion, compareConversion)}，价值事件金额 ${versionDelta(value, compareValue, "")}。`
+          : categorySummary.insight
     };
   }
 
   if (category === "ads") {
     const trigger = getMetric("ad_trigger_rate");
-    const complete = getMetric("ad_completion_rate");
+    const compareTrigger = compareImport ? getCompareMetric("ad_trigger_rate") : null;
+    const completion = getMetric("ad_completion_rate");
+    const compareCompletion = compareImport ? getCompareMetric("ad_completion_rate") : null;
     const reward = getMetric("ad_reward_rate");
-    const closeRate = clampPercent(100 - complete);
+    const compareReward = compareImport ? getCompareMetric("ad_reward_rate") : null;
+    const closeRate = 100 - completion;
+    const compareCloseRate = compareImport ? 100 - getCompareMetric("ad_completion_rate") : null;
 
     return {
-      title: fallback.title,
-      color: fallback.color,
+      ...base,
       metrics: [
-        { label: "广告触发率", value: formatMetric(trigger) },
-        { label: "播放完成率", value: formatMetric(complete) },
-        { label: "奖励领取率", value: formatMetric(reward) },
-        { label: "中途关闭率", value: formatMetric(closeRate) }
+        metricCard("广告触发率", formatMetric(trigger), compareTrigger !== null ? formatMetric(compareTrigger) : null),
+        metricCard("播放完成率", formatMetric(completion), compareCompletion !== null ? formatMetric(compareCompletion) : null),
+        metricCard("奖励领取率", formatMetric(reward), compareReward !== null ? formatMetric(compareReward) : null),
+        metricCard("中途关闭率", formatMetric(closeRate), compareCloseRate !== null ? formatMetric(compareCloseRate) : null)
       ],
-      main: [100, trigger, complete, reward].map(clampPercent),
-      trend: buildTrend(complete, 8),
-      aux: (summary.topPlacements ?? []).slice(0, 4).map((item) => item.count),
-      auxLabels: (summary.topPlacements ?? []).slice(0, 4).map((item) => item.name),
-      ranking: buildRanking(summary.topPlacements ?? [], "广告位", " 次"),
+      main: normalizeSeries(categorySummary.main),
+      compareMain: compareCategorySummary ? normalizeSeries(compareCategorySummary.main) : emptyCompareSeries(normalizeSeries(categorySummary.main)),
+      trend: buildRecentTrend(allSnapshots, "ad_completion_rate", fallback.trend),
+      compareTrend: compareImport
+        ? buildRecentTrend(compareSnapshots, "ad_completion_rate", fallback.trend)
+        : emptyCompareSeries(buildRecentTrend(allSnapshots, "ad_completion_rate", fallback.trend)),
+      aux: categorySummary.aux,
+      auxLabels: categorySummary.auxLabels.length ? categorySummary.auxLabels : fallback.auxLabels,
+      ranking: buildRanking(categorySummary.ranking, "广告位", " 次"),
       insight:
-        closeRate > 30
-          ? "广告中途关闭率偏高，建议先优化触发时机和承接文案。"
-          : "广告完成率表现平稳，可以继续细化不同广告位的分层表现。",
-      categories,
-      source: latestImport.source,
-      sourceLabel: latestImport.source === "SYNTHETIC" ? "Synthetic 数据" : "真实数据",
-      versionLabel: latestImport.version
+        compareImport && compareCompletion !== null
+          ? `${categorySummary.insight} 与 ${compareImport.version} 相比，广告完成率 ${versionDelta(completion, compareCompletion)}，关闭率 ${versionDelta(closeRate, compareCloseRate)}。`
+          : categorySummary.insight
     };
   }
 
+  const coverageRate = categorySummary.metrics.coverageRate ?? getMetric("import_success_rate");
+  const compareCoverageRate = compareImport ? getCompareMetric("import_success_rate") : null;
+  const usableRate = categorySummary.metrics.usableRate ?? getMetric("import_success_rate");
+  const compareUsableRate = compareImport ? getCompareMetric("import_success_rate") : null;
+  const eventCount = categorySummary.metrics.eventCount ?? ((summary.topEvents ?? []).length || 0);
+  const compareEventCount = compareCategorySummary?.metrics.eventCount ?? ((compareSummary.topEvents ?? []).length || 0);
+  const anomalyCount = categorySummary.metrics.anomalyCount ?? ((summary.failReasons ?? []).length || 0);
+  const compareAnomalyCount = compareCategorySummary?.metrics.anomalyCount ?? ((compareSummary.failReasons ?? []).length || 0);
+
   return {
-    title: fallback.title,
-    color: fallback.color,
+    ...base,
     metrics: [
-      { label: "自定义事件数", value: String((summary.topEvents ?? []).length || 0) },
-      { label: "字段覆盖率", value: formatMetric(getMetric("import_success_rate")) },
-      { label: "分析可用率", value: formatMetric(getMetric("import_success_rate")) },
-      { label: "待补异常标签", value: String((summary.failReasons ?? []).length || 0) }
+      {
+        label: "自定义事件数",
+        value: String(eventCount),
+        compareValue: compareImport ? String(compareEventCount) : null
+      },
+      { label: "字段覆盖率", value: formatMetric(coverageRate), compareValue: compareCoverageRate !== null ? formatMetric(compareCoverageRate) : null },
+      { label: "分析可用率", value: formatMetric(usableRate), compareValue: compareUsableRate !== null ? formatMetric(compareUsableRate) : null },
+      {
+        label: "待补异常标签",
+        value: String(anomalyCount),
+        compareValue: compareImport ? String(compareAnomalyCount) : null
+      }
     ],
-    main: chartSeries.levelMain,
-    trend: buildTrend(getMetric("import_success_rate"), 6),
-    aux: chartSeries.levelFailReason,
-    auxLabels: ["任务", "活动", "社交", "资源", "其他"],
-    ranking: buildRanking(summary.topEvents ?? [], "自定义事件", " 次"),
-    insight: "自定义分类已经有了第一批可视化结果，接下来更适合补齐业务语义和专项字段。",
-    categories,
-    source: latestImport.source,
-    sourceLabel: latestImport.source === "SYNTHETIC" ? "Synthetic 数据" : "真实数据",
-    versionLabel: latestImport.version
+    main: normalizeSeries(categorySummary.main),
+    compareMain: compareCategorySummary ? normalizeSeries(compareCategorySummary.main) : emptyCompareSeries(normalizeSeries(categorySummary.main)),
+    trend: buildRecentTrend(allSnapshots, "import_success_rate", fallback.trend),
+    compareTrend: compareImport
+      ? buildRecentTrend(compareSnapshots, "import_success_rate", fallback.trend)
+      : emptyCompareSeries(buildRecentTrend(allSnapshots, "import_success_rate", fallback.trend)),
+    aux: categorySummary.aux.length ? categorySummary.aux : fallback.aux,
+    auxLabels: categorySummary.auxLabels.length ? categorySummary.auxLabels : fallback.auxLabels,
+    ranking: buildRanking(categorySummary.ranking, "自定义事件", " 次"),
+    insight:
+      compareImport
+        ? `${categorySummary.insight} 与 ${compareImport.version} 相比，字段覆盖率 ${versionDelta(coverageRate, compareCoverageRate)}。`
+        : categorySummary.insight
   };
 }

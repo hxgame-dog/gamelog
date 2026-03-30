@@ -21,7 +21,7 @@ export default async function AnalyticsCategoryPage({
   searchParams
 }: {
   params: Promise<{ category: string }>;
-  searchParams: Promise<{ projectId?: string }>;
+  searchParams: Promise<{ projectId?: string; compareVersion?: string }>;
 }) {
   const user = await requireUser();
   const { category } = await params;
@@ -31,12 +31,29 @@ export default async function AnalyticsCategoryPage({
   }
 
   const projects = await getProjectsForUser(user.id);
-  const { projectId } = await searchParams;
+  const { projectId, compareVersion } = await searchParams;
   const activeProjectId = projectId ?? projects[0]?.id ?? null;
   const config = await getAnalyticsCategoryData(
     category as "system" | "onboarding" | "level" | "monetization" | "ads" | "custom",
-    activeProjectId
-  );
+    activeProjectId,
+    compareVersion
+  ) as unknown as {
+    title: string;
+    color: string;
+    sourceLabel: string;
+    versionLabel: string;
+    compareVersionLabel?: string | null;
+    versionOptions?: string[];
+    categories: ReadonlyArray<{ key: string; label: string }>;
+    metrics: Array<{ label: string; value: string; compareValue?: string | null }>;
+    main: number[];
+    trend: number[];
+    compareTrend?: number[];
+    aux: number[];
+    auxLabels: string[];
+    ranking: Array<[string, string]>;
+    insight: string;
+  };
 
   return (
     <AppShell currentPath="/analytics">
@@ -47,6 +64,7 @@ export default async function AnalyticsCategoryPage({
           <div className="header-actions">
             <span className="pill">{config.sourceLabel}</span>
             <span className="pill">版本 {config.versionLabel}</span>
+            {config.compareVersionLabel ? <span className="pill">对比 {config.compareVersionLabel}</span> : null}
             <button className="button-secondary">导出图表</button>
           </div>
         }
@@ -74,7 +92,14 @@ export default async function AnalyticsCategoryPage({
                 </a>
               ))}
             </div>
-            <VersionCompareSwitch />
+            <VersionCompareSwitch
+              currentVersion={config.versionLabel}
+              compareVersion={config.compareVersionLabel}
+              versionOptions={config.versionOptions}
+              buildHref={(version) =>
+                `/analytics/${category}${activeProjectId ? `?projectId=${activeProjectId}&compareVersion=${encodeURIComponent(version)}` : `?compareVersion=${encodeURIComponent(version)}`}`
+              }
+            />
           </div>
 
           <div className={styles.metricGrid}>
@@ -84,6 +109,9 @@ export default async function AnalyticsCategoryPage({
                 <div className={styles.metricValue} style={{ color: config.color }}>
                   {metric.value}
                 </div>
+                {metric.compareValue ? (
+                  <div className={styles.metricCompare}>对比 {config.compareVersionLabel}: {metric.compareValue}</div>
+                ) : null}
               </div>
             ))}
           </div>
@@ -98,9 +126,10 @@ export default async function AnalyticsCategoryPage({
           />
           <LineChartCard
             title="版本趋势"
-            copy="观察最近导入或模拟批次的变化，判断问题是偶发波动还是持续趋势。"
+            copy={config.compareVersionLabel ? `实线为 ${config.versionLabel}，虚线为 ${config.compareVersionLabel}。` : "观察最近导入或模拟批次的变化，判断问题是偶发波动还是持续趋势。"}
             values={config.trend}
             color={config.color}
+            compareValues={config.compareTrend}
           />
           <DonutChartCard
             title="构成分析"

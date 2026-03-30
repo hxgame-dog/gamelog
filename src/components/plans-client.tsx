@@ -1852,9 +1852,15 @@ function PlanEditor({
     type: "success" | "error" | "info";
     text: string;
   } | null>(null);
+  const [sheetActionToast, setSheetActionToast] = useState<{
+    type: "success" | "error" | "info";
+    text: string;
+  } | null>(null);
   const jobPollTimerRef = useRef<number | null>(null);
   const streamTimerRef = useRef<number | null>(null);
   const noticeTimerRef = useRef<number | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+  const spreadsheetSheetsRef = useRef<SpreadsheetSheet[]>([]);
   const [resultView, setResultView] = useState<"global" | "events" | "dictionaries">("events");
   const [eventResultMode, setEventResultMode] = useState<"cards" | "table" | "summary">("cards");
   const [schemaView, setSchemaView] = useState<"global" | "event_fields" | "dictionaries" | "mappings">("global");
@@ -1901,6 +1907,18 @@ function PlanEditor({
     noticeTimerRef.current = window.setTimeout(() => {
       setSheetActionNotice(null);
     }, 2600);
+
+    setSheetActionToast({ type, text });
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => {
+      setSheetActionToast(null);
+    }, 2600);
+  }
+
+  function getCurrentSpreadsheetSheet(sheetName: string) {
+    return spreadsheetSheetsRef.current.find((sheet) => sheet.name === sheetName) ?? null;
   }
 
   function updateProperty(index: number, patch: Partial<EditableProperty>) {
@@ -2017,24 +2035,27 @@ function PlanEditor({
   }
 
   function confirmSpreadsheetSheet(sheetName: string) {
-    let confirmed = false;
+    const currentSheet = getCurrentSpreadsheetSheet(sheetName);
+    if (!currentSheet) {
+      showSheetActionNotice("error", "当前工作表不存在，请重新选择。");
+      return false;
+    }
+
+    if (!hasEffectiveMappings(currentSheet)) {
+      showSheetActionNotice("error", "请至少保留一个有效字段映射，不能全部忽略。");
+      return false;
+    }
+
     setSpreadsheetSheets((current) =>
       current.map((sheet) => {
         if (sheet.name !== sheetName) {
           return sheet;
         }
-        if (!hasEffectiveMappings(sheet)) {
-          return sheet;
-        }
-        confirmed = true;
         return { ...sheet, confirmed: true };
       })
     );
-    if (confirmed) {
-      showSheetActionNotice("success", `已确认工作表：${sheetName}`);
-    } else {
-      showSheetActionNotice("error", "请至少保留一个有效字段映射，不能全部忽略。");
-    }
+    showSheetActionNotice("success", `已确认工作表：${sheetName}`);
+    return true;
   }
 
   function saveCurrentSpreadsheetSheet() {
@@ -2331,9 +2352,16 @@ function PlanEditor({
   }, [activePlan, activeEvent, categories]);
 
   useEffect(() => {
+    spreadsheetSheetsRef.current = spreadsheetSheets;
+  }, [spreadsheetSheets]);
+
+  useEffect(() => {
     return () => {
       if (noticeTimerRef.current) {
         window.clearTimeout(noticeTimerRef.current);
+      }
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current);
       }
     };
   }, []);
@@ -2756,12 +2784,11 @@ function PlanEditor({
                           type="button"
                           className="button-secondary"
                           onClick={() => {
-                            if (!hasEffectiveMappings(activeSpreadsheetSheet)) {
+                            const confirmed = confirmSpreadsheetSheet(activeSpreadsheetSheet.name);
+                            if (!confirmed) {
                               onError("请至少保留一个有效字段映射，不能全部忽略。");
-                              showSheetActionNotice("error", "请至少保留一个有效字段映射，不能全部忽略。");
                               return;
                             }
-                            confirmSpreadsheetSheet(activeSpreadsheetSheet.name);
                             onError(null);
                             onMessage(`已确认工作表：${activeSpreadsheetSheet.name}`);
                           }}
@@ -2925,10 +2952,10 @@ function PlanEditor({
                 </div>
               </div>
               <div className={styles.sideKeyList}>
-                <div className={styles.sideKeyItem}>生成内容：公共属性</div>
-                <div className={styles.sideKeyItem}>生成内容：事件表</div>
-                <div className={styles.sideKeyItem}>生成内容：字典候选</div>
-                <div className={styles.sideKeyItem}>生成内容：映射关系</div>
+                <div className={styles.sideKeyItem}><span>生成内容</span><strong>公共属性</strong></div>
+                <div className={styles.sideKeyItem}><span>生成内容</span><strong>事件表</strong></div>
+                <div className={styles.sideKeyItem}><span>生成内容</span><strong>字典候选</strong></div>
+                <div className={styles.sideKeyItem}><span>生成内容</span><strong>映射关系</strong></div>
               </div>
               <p className={styles.sideCopy}>
                 当前方案：{activePlan.name} · {activePlan.version}
@@ -2948,20 +2975,23 @@ function PlanEditor({
               </div>
               <div className={styles.sideChecklist}>
                 <div className={styles.sideChecklistItem}>
-                  <span className={`pill ${activePlan.events.length > 0 ? styles.status_completed : styles.status_waiting}`}>
+                  <span>方案基础</span>
+                  <strong className={activePlan.events.length > 0 ? styles.status_completed : styles.status_waiting}>
                     {activePlan.events.length > 0 ? "已有方案基础" : "等待首轮生成"}
-                  </span>
+                  </strong>
                 </div>
                 <div className={styles.sideChecklistItem}>
-                  <span className={`pill ${canGenerate ? styles.status_completed : styles.status_waiting}`}>
+                  <span>输入状态</span>
+                  <strong className={canGenerate ? styles.status_completed : styles.status_waiting}>
                     {canGenerate ? "输入可生成" : "输入未完成"}
-                  </span>
+                  </strong>
                 </div>
                 {generationMode === "spreadsheet" ? (
                   <div className={styles.sideChecklistItem}>
-                    <span className={`pill ${isSpreadsheetConfirmed ? styles.status_completed : styles.status_waiting}`}>
+                    <span>映射状态</span>
+                    <strong className={isSpreadsheetConfirmed ? styles.status_completed : styles.status_waiting}>
                       {isSpreadsheetConfirmed ? "映射已确认" : "映射待确认"}
-                    </span>
+                    </strong>
                   </div>
                 ) : null}
               </div>
@@ -2994,6 +3024,20 @@ function PlanEditor({
           </aside>
         </div>
       </section>
+      ) : null}
+
+      {sheetActionToast ? (
+        <div
+          className={
+            sheetActionToast.type === "success"
+              ? styles.toastSuccess
+              : sheetActionToast.type === "error"
+                ? styles.toastError
+                : styles.toastInfo
+          }
+        >
+          {sheetActionToast.text}
+        </div>
       ) : null}
 
       {currentStep === "results" ? (

@@ -475,6 +475,17 @@
   font-size: 13px;
 }
 
+.sideKeyItem span,
+.sideChecklistItem span {
+  color: var(--muted);
+}
+
+.sideKeyItem strong,
+.sideChecklistItem strong {
+  color: var(--title);
+  text-align: right;
+}
+
 .sideStatItem strong {
   font-size: 18px;
   line-height: 1;
@@ -496,6 +507,40 @@
   border: 1px solid var(--border);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.toastSuccess,
+.toastError,
+.toastInfo {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 40;
+  max-width: min(380px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  box-shadow: 0 14px 30px rgba(15, 23, 32, 0.12);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.toastSuccess {
+  background: #f3fcf7;
+  border-color: #cbe9d7;
+  color: #18794e;
+}
+
+.toastError {
+  background: #fff4f4;
+  border-color: #f4cccc;
+  color: #c03737;
+}
+
+.toastInfo {
+  background: #f4f8ff;
+  border-color: #d7e4ff;
+  color: #2453b3;
 }
 
 .streamDot {

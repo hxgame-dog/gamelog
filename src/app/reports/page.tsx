@@ -26,7 +26,7 @@ export default async function ReportsPage({
         copy="将版本对比、异常归因和调优建议整理成一份可阅读、可分享的分析摘要，方便团队快速对齐优先级。"
         actions={
           <div className="header-actions">
-            <VersionCompareSwitch />
+            <VersionCompareSwitch currentVersion={reportView?.versionLabel ?? "未导入"} />
             <ReportsActions projectId={activeProjectId} />
           </div>
         }

@@ -174,12 +174,33 @@ export function ProgressPanel({
   );
 }
 
-export function VersionCompareSwitch() {
+export function VersionCompareSwitch({
+  currentVersion,
+  compareVersion,
+  versionOptions,
+  buildHref
+}: {
+  currentVersion: string;
+  compareVersion?: string | null;
+  versionOptions?: string[];
+  buildHref?: (version: string) => string;
+}) {
   return (
-    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-      <span className="pill">当前版本 1.0.8</span>
-      <span className="pill">对比版本 1.0.7</span>
-      <button className="button-secondary">切换版本对比</button>
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+      <span className="pill">当前版本 {currentVersion}</span>
+      <span className="pill">{compareVersion ? `对比版本 ${compareVersion}` : "未选择对比版本"}</span>
+      {versionOptions?.length && buildHref ? (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {versionOptions
+            .filter((version) => version !== currentVersion)
+            .slice(0, 4)
+            .map((version) => (
+              <Link key={version} href={buildHref(version)} className="button-secondary">
+                对比 {version}
+              </Link>
+            ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -320,14 +341,19 @@ export function LineChartCard({
   title,
   copy,
   values,
-  color
+  color,
+  compareValues,
+  compareColor = "var(--border-strong)"
 }: {
   title: string;
   copy: string;
   values: number[];
   color: string;
+  compareValues?: number[];
+  compareColor?: string;
 }) {
   const points = linePath(values);
+  const comparePoints = compareValues?.length ? linePath(compareValues) : "";
 
   return (
     <div className={`panel ${chartStyles.chartCard}`}>
@@ -341,7 +367,22 @@ export function LineChartCard({
       <div className={chartStyles.lineWrap}>
         <div className={chartStyles.grid} />
         <svg className={chartStyles.svg} viewBox="0 0 100 100" preserveAspectRatio="none">
+          {comparePoints ? (
+            <path
+              d={comparePoints}
+              fill="none"
+              stroke={compareColor}
+              strokeWidth="2.5"
+              strokeDasharray="5 4"
+              vectorEffect="non-scaling-stroke"
+            />
+          ) : null}
           <path d={points} fill="none" stroke={color} strokeWidth="3" vectorEffect="non-scaling-stroke" />
+          {compareValues?.map((value, index) => {
+            const x = (index / (compareValues.length - 1 || 1)) * 100;
+            const y = 100 - value;
+            return <circle key={`compare-${index}`} cx={x} cy={y} r="2.2" fill={compareColor} />;
+          })}
           {values.map((value, index) => {
             const x = (index / (values.length - 1 || 1)) * 100;
             const y = 100 - value;

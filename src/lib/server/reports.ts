@@ -38,29 +38,35 @@ function buildFallbackReport(input: {
   projectName: string;
   versionLabel: string;
   dataSource: string;
+  system: Awaited<ReturnType<typeof getAnalyticsCategoryData>>;
   onboarding: Awaited<ReturnType<typeof getAnalyticsCategoryData>>;
   level: Awaited<ReturnType<typeof getAnalyticsCategoryData>>;
   monetization: Awaited<ReturnType<typeof getAnalyticsCategoryData>>;
+  ads: Awaited<ReturnType<typeof getAnalyticsCategoryData>>;
 }) {
   const onboardingCompletion = input.onboarding.metrics[1]?.value ?? "0%";
   const levelFailRate = input.level.metrics[2]?.value ?? "0%";
   const monetizationConversion = input.monetization.metrics[0]?.value ?? "0%";
+  const adCompletion = input.ads.metrics[1]?.value ?? "0%";
+  const systemErrorRate = input.system.metrics[3]?.value ?? "0%";
   const numericLevelFail = Number.parseFloat(levelFailRate);
   const numericOnboarding = Number.parseFloat(onboardingCompletion);
+  const numericAdCompletion = Number.parseFloat(adCompletion);
+  const numericSystemErrorRate = Number.parseFloat(systemErrorRate);
 
   let riskLevel: z.infer<typeof reportPayloadSchema>["riskLevel"] = "中风险";
-  if (numericLevelFail >= 45 || numericOnboarding <= 45) {
+  if (numericLevelFail >= 45 || numericOnboarding <= 45 || numericAdCompletion <= 45 || numericSystemErrorRate >= 8) {
     riskLevel = "高风险";
-  } else if (numericLevelFail >= 32 || numericOnboarding <= 60) {
+  } else if (numericLevelFail >= 32 || numericOnboarding <= 60 || numericAdCompletion <= 60 || numericSystemErrorRate >= 5) {
     riskLevel = "中高风险";
   } else if (numericLevelFail < 20 && numericOnboarding > 75) {
     riskLevel = "低风险";
   }
 
   return {
-    headline: `${input.versionLabel} 的核心波动集中在前期体验链路，引导完成率 ${onboardingCompletion}，关卡失败率 ${levelFailRate}。`,
+    headline: `${input.versionLabel} 的核心波动集中在前期体验链路，引导完成率 ${onboardingCompletion}，关卡失败率 ${levelFailRate}，广告完成率 ${adCompletion}。`,
     riskSummary: `${input.dataSource}已覆盖当前版本，当前风险等级为${riskLevel}。如果前期体验问题持续，商业化转化 ${monetizationConversion} 可能继续被拖累。`,
-    anomaly: `本批次里最明显的异常来自新手引导和关卡流程：引导完成率 ${onboardingCompletion}，关卡失败率 ${levelFailRate}，都已经足以影响后续留存与价值事件表现。`,
+    anomaly: `本批次里最明显的异常来自新手引导、关卡流程和广告完成链路：引导完成率 ${onboardingCompletion}，关卡失败率 ${levelFailRate}，广告完成率 ${adCompletion}，公共事件异常占比 ${systemErrorRate}。`,
     hypothesis: "更像是前段体验理解成本偏高，而不是单个埋点失真。优先检查关键步骤的提示时机、事件命名和失败原因字段是否能解释玩家中断。",
     recommendation: "先回到打点方案中心确认关键漏斗事件和字段，再对引导中段与高失败关卡做一次小范围调优，最后复看广告和付费链路是否一起恢复。",
     nextStep: `优先对 ${input.projectName} 的当前版本进行一次 AI 诊断和模拟/真实数据复盘，再生成下一份版本对比报告。`,
@@ -87,17 +93,21 @@ async function buildReportDraft(projectId: string) {
   }
 
   const latestImport = await getLatestImportForProject(projectId);
+  const system = await getAnalyticsCategoryData("system", projectId);
   const onboarding = await getAnalyticsCategoryData("onboarding", projectId);
   const level = await getAnalyticsCategoryData("level", projectId);
   const monetization = await getAnalyticsCategoryData("monetization", projectId);
+  const ads = await getAnalyticsCategoryData("ads", projectId);
 
   return {
     projectName,
     versionLabel: latestImport?.version ?? "未导入版本",
     dataSource: latestImport?.source === "SYNTHETIC" ? "模拟数据" : latestImport ? "真实数据" : "演示数据",
+    system,
     onboarding,
     level,
     monetization,
+    ads,
     latestImport
   };
 }
@@ -122,9 +132,11 @@ async function maybeGenerateWithGemini(draft: Awaited<ReturnType<typeof buildRep
           projectName: draft.projectName,
           versionLabel: draft.versionLabel,
           dataSource: draft.dataSource,
+          system: draft.system.metrics,
           onboarding: draft.onboarding.metrics,
           level: draft.level.metrics,
-          monetization: draft.monetization.metrics
+          monetization: draft.monetization.metrics,
+          ads: draft.ads.metrics
         },
         null,
         2
@@ -253,8 +265,11 @@ export async function getAiReportView(projectId: string) {
       dataSource: latest.dataSource,
       versionLabel: latest.versionTo ?? draft.versionLabel,
       evidence: {
+        system: draft.system,
         onboarding: draft.onboarding,
-        level: draft.level
+        level: draft.level,
+        ads: draft.ads,
+        monetization: draft.monetization
       }
     };
   }
@@ -268,8 +283,11 @@ export async function getAiReportView(projectId: string) {
     dataSource: draft.dataSource,
     versionLabel: draft.versionLabel,
     evidence: {
+      system: draft.system,
       onboarding: draft.onboarding,
-      level: draft.level
+      level: draft.level,
+      ads: draft.ads,
+      monetization: draft.monetization
     }
   };
 }

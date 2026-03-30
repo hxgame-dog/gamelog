@@ -196,11 +196,57 @@ export async function deleteProjectForUser(userId: string, projectId: string) {
   await prisma.$transaction(async (tx) => {
     const plans = await tx.trackingPlan.findMany({
       where: { projectId },
-      select: { id: true }
+      select: {
+        id: true,
+        events: {
+          select: { id: true }
+        },
+        dictionaries: {
+          select: { id: true }
+        }
+      }
     });
     const planIds = plans.map((plan) => plan.id);
+    const eventIds = plans.flatMap((plan) => plan.events.map((event) => event.id));
+    const dictionaryIds = plans.flatMap((plan) => plan.dictionaries.map((dictionary) => dictionary.id));
 
     if (planIds.length) {
+      if (eventIds.length) {
+        await tx.trackingProperty.deleteMany({
+          where: {
+            trackingEventId: { in: eventIds }
+          }
+        });
+      }
+
+      await tx.trackingDictionaryMapping.deleteMany({
+        where: { trackingPlanId: { in: planIds } }
+      });
+
+      if (dictionaryIds.length) {
+        await tx.trackingDictionary.deleteMany({
+          where: { id: { in: dictionaryIds } }
+        });
+      }
+
+      await tx.trackingGlobalProperty.deleteMany({
+        where: { trackingPlanId: { in: planIds } }
+      });
+
+      if (eventIds.length) {
+        await tx.trackingEvent.deleteMany({
+          where: { id: { in: eventIds } }
+        });
+      }
+
+      await tx.trackingPlanDiagnosis.deleteMany({
+        where: { trackingPlanId: { in: planIds } }
+      });
+
+      await tx.trackingPlanInputSource.deleteMany({
+        where: { trackingPlanId: { in: planIds } }
+      });
+
       await tx.trackingPlan.deleteMany({
         where: { id: { in: planIds } }
       });

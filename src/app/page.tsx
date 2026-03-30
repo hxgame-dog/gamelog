@@ -17,7 +17,9 @@ export default async function HomePage() {
         copy="围绕事件分类查看当前版本的数据健康度、导入状态和 AI 洞察，帮助策划、数据和研发在同一视图里对齐问题。"
         actions={
           <div className="header-actions">
-            <button className="button-primary">上传日志</button>
+            <Link href="/imports" className="button-primary">
+              上传日志
+            </Link>
           </div>
         }
       />
@@ -70,7 +72,10 @@ export default async function HomePage() {
                 </div>
                 <h3 className={styles.categoryTitle}>{category.label} 看板</h3>
                 <p className={styles.categoryMeta}>
-                  查看版本对比、核心漏斗、趋势图与 AI 洞察，保持统一视觉和统一认知路径。
+                  {"keyMetric" in category ? category.keyMetric : "等待首批导入"}
+                </p>
+                <p className={styles.categoryMeta}>
+                  {"insight" in category ? category.insight : "查看版本对比、核心漏斗、趋势图与 AI 洞察，保持统一视觉和统一认知路径。"}
                 </p>
               </Link>
             ))}
