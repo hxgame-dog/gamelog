@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import styles from "@/components/analytics-page.module.css";
+import { AnalyticsExportButton } from "@/components/analytics-export-client";
 import { AppShell } from "@/components/app-shell";
 import {
   BarChartCard,
@@ -68,7 +69,23 @@ export default async function AnalyticsCategoryPage({
             <span className="pill">{config.sourceLabel}</span>
             <span className="pill">版本 {config.versionLabel}</span>
             {config.compareVersionLabel ? <span className="pill">对比 {config.compareVersionLabel}</span> : null}
-            <button className="button-secondary">导出图表</button>
+            <AnalyticsExportButton
+              payload={{
+                title: config.title,
+                category,
+                versionLabel: config.versionLabel,
+                compareVersionLabel: config.compareVersionLabel,
+                metrics: config.metrics,
+                main: config.main,
+                compareMain: config.compareMain,
+                trend: config.trend,
+                compareTrend: config.compareTrend,
+                aux: config.aux,
+                auxLabels: config.auxLabels,
+                ranking: config.ranking,
+                detailRows: config.detailRows
+              }}
+            />
           </div>
         }
       />
