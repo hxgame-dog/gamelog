@@ -289,12 +289,16 @@ export function BarChartCard({
   title,
   copy,
   values,
-  color
+  color,
+  compareValues,
+  compareColor = "rgba(15, 23, 32, 0.18)"
 }: {
   title: string;
   copy: string;
   values: number[];
   color: string;
+  compareValues?: number[];
+  compareColor?: string;
 }) {
   return (
     <div className={`panel ${chartStyles.chartCard}`}>
@@ -306,19 +310,46 @@ export function BarChartCard({
         <span className="pill">主图</span>
       </div>
       <div className={chartStyles.bars}>
-        {values.map((value, index) => (
-          <div
-            key={`${title}-${index}`}
-            className={chartStyles.bar}
-            style={{
-              height: `${value}%`,
-              background: `linear-gradient(180deg, ${color}, rgba(255,255,255,0.08))`
-            }}
-          >
-            <span className={chartStyles.barValue}>{value}%</span>
-          </div>
-        ))}
+        {values.map((value, index) => {
+          const compareValue = compareValues?.[index];
+          return (
+            <div key={`${title}-${index}`} className={chartStyles.barGroup}>
+              {compareValue !== undefined ? (
+                <div
+                  className={`${chartStyles.bar} ${chartStyles.compareBar}`}
+                  style={{
+                    height: `${compareValue}%`,
+                    background: compareColor
+                  }}
+                >
+                  <span className={chartStyles.barValue}>{compareValue}%</span>
+                </div>
+              ) : null}
+              <div
+                className={chartStyles.bar}
+                style={{
+                  height: `${value}%`,
+                  background: `linear-gradient(180deg, ${color}, rgba(255,255,255,0.08))`
+                }}
+              >
+                <span className={chartStyles.barValue}>{value}%</span>
+              </div>
+            </div>
+          );
+        })}
       </div>
+      {compareValues?.length ? (
+        <div className={chartStyles.compareLegend}>
+          <span className={chartStyles.compareLegendItem}>
+            <span className={chartStyles.legendSwatch} style={{ background: color }} />
+            当前版本
+          </span>
+          <span className={chartStyles.compareLegendItem}>
+            <span className={chartStyles.legendSwatch} style={{ background: compareColor }} />
+            对比版本
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,7 +1,14 @@
 import styles from "@/components/report-page.module.css";
 import { AppShell } from "@/components/app-shell";
 import { ReportsActions } from "@/components/reports-client";
-import { BarChartCard, InsightCard, LineChartCard, PageHeader, VersionCompareSwitch } from "@/components/ui";
+import {
+  BarChartCard,
+  DonutChartCard,
+  InsightCard,
+  LineChartCard,
+  PageHeader,
+  VersionCompareSwitch
+} from "@/components/ui";
 import { requireUser } from "@/lib/server/auth";
 import { getProjectsForUser } from "@/lib/server/projects";
 import { getAiReportView } from "@/lib/server/reports";
@@ -87,6 +94,19 @@ export default async function ReportsPage({
           copy="趋势图优先反映最近批次的波动，辅助判断当前问题是持续还是偶发。"
           values={reportView?.evidence.level.trend ?? [28, 32, 29, 36, 42, 40, 45]}
           color="var(--red)"
+        />
+        <DonutChartCard
+          title="证据图表：广告构成"
+          copy="广告位或广告事件构成会直接影响完成率、关闭率和奖励领取表现。"
+          values={reportView?.evidence.ads.aux ?? [42, 26, 18, 14]}
+          labels={reportView?.evidence.ads.auxLabels ?? ["激励视频", "插屏", "Banner", "开屏"]}
+          colors={["var(--violet)", "var(--blue)", "var(--teal)", "var(--gold)"]}
+        />
+        <BarChartCard
+          title="证据图表：公共事件健康度"
+          copy="用于观察启动、登录、会话和错误上报这类底层事件是否稳定，排除系统层异常。"
+          values={reportView?.evidence.system.main ?? [82, 76, 68, 54]}
+          color={reportView?.evidence.system.color ?? "var(--blue)"}
         />
       </div>
 

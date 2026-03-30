@@ -47,6 +47,7 @@ export default async function AnalyticsCategoryPage({
     categories: ReadonlyArray<{ key: string; label: string }>;
     metrics: Array<{ label: string; value: string; compareValue?: string | null }>;
     main: number[];
+    compareMain?: number[];
     trend: number[];
     compareTrend?: number[];
     aux: number[];
@@ -120,9 +121,10 @@ export default async function AnalyticsCategoryPage({
         <div className={styles.chartGrid}>
           <BarChartCard
             title="核心漏斗"
-            copy="主图始终比辅助图更大，用来承载页面最重要的结论。"
+            copy={config.compareVersionLabel ? `深色柱为 ${config.versionLabel}，浅色柱为 ${config.compareVersionLabel}。` : "主图始终比辅助图更大，用来承载页面最重要的结论。"}
             values={config.main}
             color={config.color}
+            compareValues={config.compareMain}
           />
           <LineChartCard
             title="版本趋势"
