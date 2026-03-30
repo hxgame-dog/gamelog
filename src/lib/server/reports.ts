@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { getGeminiRuntimeConfig } from "./ai-config";
 import { getAnalyticsCategoryData } from "./analytics";
-import { getLatestImportForProject } from "./imports";
+import { getImportsForProject, getLatestImportForProject } from "./imports";
 import { getPrismaClient, hasDatabaseUrl } from "./prisma";
 import { getMemoryStore } from "./store";
 
@@ -92,16 +92,26 @@ async function buildReportDraft(projectId: string) {
     }
   }
 
-  const latestImport = await getLatestImportForProject(projectId);
-  const system = await getAnalyticsCategoryData("system", projectId);
-  const onboarding = await getAnalyticsCategoryData("onboarding", projectId);
-  const level = await getAnalyticsCategoryData("level", projectId);
-  const monetization = await getAnalyticsCategoryData("monetization", projectId);
-  const ads = await getAnalyticsCategoryData("ads", projectId);
+  const [latestImport, imports] = await Promise.all([
+    getLatestImportForProject(projectId),
+    getImportsForProject(projectId)
+  ]);
+  const compareVersion = latestImport
+    ? imports.find((item) => item.version !== latestImport.version)?.version ?? null
+    : null;
+  const [system, onboarding, level, monetization, ads] = await Promise.all([
+    getAnalyticsCategoryData("system", projectId, compareVersion),
+    getAnalyticsCategoryData("onboarding", projectId, compareVersion),
+    getAnalyticsCategoryData("level", projectId, compareVersion),
+    getAnalyticsCategoryData("monetization", projectId, compareVersion),
+    getAnalyticsCategoryData("ads", projectId, compareVersion)
+  ]);
 
   return {
     projectName,
     versionLabel: latestImport?.version ?? "未导入版本",
+    compareVersionLabel: compareVersion,
+    versionOptions: [...new Set(imports.map((item) => item.version))],
     dataSource: latestImport?.source === "SYNTHETIC" ? "模拟数据" : latestImport ? "真实数据" : "演示数据",
     system,
     onboarding,
@@ -131,6 +141,7 @@ async function maybeGenerateWithGemini(draft: Awaited<ReturnType<typeof buildRep
         {
           projectName: draft.projectName,
           versionLabel: draft.versionLabel,
+          compareVersionLabel: draft.compareVersionLabel,
           dataSource: draft.dataSource,
           system: draft.system.metrics,
           onboarding: draft.onboarding.metrics,
@@ -264,6 +275,8 @@ export async function getAiReportView(projectId: string) {
       riskLevel: latest.riskLevel,
       dataSource: latest.dataSource,
       versionLabel: latest.versionTo ?? draft.versionLabel,
+      compareVersionLabel: draft.compareVersionLabel,
+      versionOptions: draft.versionOptions,
       evidence: {
         system: draft.system,
         onboarding: draft.onboarding,
@@ -282,6 +295,8 @@ export async function getAiReportView(projectId: string) {
     riskLevel: fallback.riskLevel,
     dataSource: draft.dataSource,
     versionLabel: draft.versionLabel,
+    compareVersionLabel: draft.compareVersionLabel,
+    versionOptions: draft.versionOptions,
     evidence: {
       system: draft.system,
       onboarding: draft.onboarding,

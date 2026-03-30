@@ -1,7 +1,7 @@
 import { categories, metrics, overviewInsights, recentTasks } from "@/data/mock-data";
 
 import { getPrismaClient, hasDatabaseUrl } from "./prisma";
-import { getLatestImportForProject } from "./imports";
+import { getImportsForProject, getLatestImportForProject } from "./imports";
 
 type ImportSummary = {
   overview?: {
@@ -88,11 +88,31 @@ export async function getDashboardOverview() {
     };
   }
 
-  const latestImport = await getLatestImportForProject(project.id);
+  const [latestImport, allImports] = await Promise.all([
+    getLatestImportForProject(project.id),
+    getImportsForProject(project.id)
+  ]);
   const summary = (latestImport?.summaryJson ?? {}) as ImportSummary;
+  const compareImport = latestImport
+    ? allImports.find((item) => item.version !== latestImport.version) ?? null
+    : null;
+  const compareSummary = (compareImport?.summaryJson ?? {}) as ImportSummary;
   const healthScore = summary.overview?.healthScore ?? (uploadCount > 0 ? 78 : 72);
+  const compareHealthScore = compareSummary.overview?.healthScore ?? null;
   const anomalyCount = summary.overview?.keyAnomalyCount ?? 0;
+  const compareAnomalyCount = compareSummary.overview?.keyAnomalyCount ?? null;
   const sourceLabel = latestImport?.source === "SYNTHETIC" ? "模拟导入" : latestImport ? "真实导入" : "暂无导入";
+  const activeUsers = summary.overview?.activeUsers ?? 0;
+  const compareActiveUsers = compareSummary.overview?.activeUsers ?? null;
+
+  function deltaLabel(current: number, compare: number | null, suffix = "") {
+    if (compare === null || compare === undefined) {
+      return "等待对比版本";
+    }
+    const delta = current - compare;
+    const sign = delta > 0 ? "+" : "";
+    return `${sign}${delta.toFixed(1)}${suffix} vs ${compareImport?.version ?? "上一版本"}`;
+  }
 
   const dynamicInsights = Object.entries(summary.categories ?? {})
     .filter(([, value]) => value?.insight)
@@ -111,7 +131,7 @@ export async function getDashboardOverview() {
       ? {
           name: `${latestImport.version} 数据导入`,
           status: latestImport.status === "COMPLETED" ? "完成" : "处理中",
-          detail: `${latestImport.fileName} / ${((latestImport.successRate ?? 0) * 100).toFixed(1)}% 通过 / ${sourceLabel}`
+          detail: `${latestImport.fileName} / ${((latestImport.successRate ?? 0) * 100).toFixed(1)}% 通过 / ${sourceLabel}${compareImport ? ` / 对比 ${compareImport.version}` : ""}`
         }
       : {
           name: "首个导入批次",
@@ -133,7 +153,7 @@ export async function getDashboardOverview() {
   return {
     projectName: project.name,
     currentVersion: project.currentVersion ?? latestImport?.version ?? "未设置",
-    compareVersion: "上一版本",
+    compareVersion: compareImport?.version ?? "上一版本",
     storageMode: latestImport ? "database" : "database-empty",
     categories: categories.map((category) => ({
       ...category,
@@ -146,7 +166,7 @@ export async function getDashboardOverview() {
       {
         ...metrics[0],
         value: healthScore.toFixed(1),
-        delta: `${eventCount} 个事件已建档`
+        delta: compareHealthScore !== null ? deltaLabel(healthScore, compareHealthScore) : `${eventCount} 个事件已建档`
       },
       {
         ...metrics[1],
@@ -154,17 +174,29 @@ export async function getDashboardOverview() {
           latestImport?.successRate !== null && latestImport?.successRate !== undefined
             ? `${(latestImport.successRate * 100).toFixed(1)}`
             : "0.0",
-        delta: latestImport ? `${sourceLabel} / ${latestImport.fileName}` : "等待首个导入批次"
+        delta: latestImport
+          ? `${sourceLabel} / ${latestImport.fileName}${compareImport ? ` / 对比 ${compareImport.version}` : ""}`
+          : "等待首个导入批次"
       },
       {
         ...metrics[2],
         value: String(anomalyCount),
-        delta: anomalyCount > 0 ? `${anomalyCount} 个关键异常待处理` : "当前没有明显结构性异常"
+        delta:
+          compareAnomalyCount !== null
+            ? deltaLabel(anomalyCount, compareAnomalyCount, " 个异常")
+            : anomalyCount > 0
+              ? `${anomalyCount} 个关键异常待处理`
+              : "当前没有明显结构性异常"
       },
       {
         ...metrics[3],
-        value: String(reportCount),
-        delta: reportCount > 0 ? `${reportCount} 份报告可回看` : "暂无已生成报告"
+        value: String(activeUsers),
+        delta:
+          compareActiveUsers !== null
+            ? deltaLabel(activeUsers, compareActiveUsers, " 用户")
+            : reportCount > 0
+              ? `${reportCount} 份报告可回看`
+              : "暂无已生成报告"
       }
     ],
     overviewInsights: dynamicInsights.length ? dynamicInsights : overviewInsights,

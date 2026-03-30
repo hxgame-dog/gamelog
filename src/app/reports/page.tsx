@@ -33,7 +33,11 @@ export default async function ReportsPage({
         copy="将版本对比、异常归因和调优建议整理成一份可阅读、可分享的分析摘要，方便团队快速对齐优先级。"
         actions={
           <div className="header-actions">
-            <VersionCompareSwitch currentVersion={reportView?.versionLabel ?? "未导入"} />
+            <VersionCompareSwitch
+              currentVersion={reportView?.versionLabel ?? "未导入"}
+              compareVersion={reportView?.compareVersionLabel}
+              versionOptions={reportView?.versionOptions}
+            />
             <ReportsActions projectId={activeProjectId} />
           </div>
         }
@@ -55,6 +59,9 @@ export default async function ReportsPage({
             <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
               <span className="pill">{reportView?.dataSource ?? "暂无数据"}</span>
               <span className="pill">版本 {reportView?.versionLabel ?? "未导入"}</span>
+              {reportView?.compareVersionLabel ? (
+                <span className="pill">对比 {reportView.compareVersionLabel}</span>
+              ) : null}
             </div>
           </div>
         </div>
@@ -107,6 +114,18 @@ export default async function ReportsPage({
           copy="用于观察启动、登录、会话和错误上报这类底层事件是否稳定，排除系统层异常。"
           values={reportView?.evidence.system.main ?? [82, 76, 68, 54]}
           color={reportView?.evidence.system.color ?? "var(--blue)"}
+        />
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <InsightCard
+          title="版本差异摘要"
+          copy={
+            reportView?.compareVersionLabel
+              ? `当前报告默认以 ${reportView.versionLabel} 对比 ${reportView.compareVersionLabel}。优先查看引导完成率、关卡失败率、广告完成率和公共事件异常占比的变化，再决定是否继续调优。`
+              : "当前还没有可用的对比版本。建议再导入一批不同版本数据后，回来查看版本差异摘要。"
+          }
+          tone="var(--blue)"
         />
       </div>
 
