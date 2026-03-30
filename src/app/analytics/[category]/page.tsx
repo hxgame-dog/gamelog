@@ -53,6 +53,7 @@ export default async function AnalyticsCategoryPage({
     aux: number[];
     auxLabels: string[];
     ranking: Array<[string, string]>;
+    detailRows: Array<{ label: string; current: string; compare?: string | null; note: string }>;
     insight: string;
     compareInsight?: string | null;
   };
@@ -174,6 +175,33 @@ export default async function AnalyticsCategoryPage({
             ) : null}
           </section>
         </div>
+
+        <section className={`panel ${styles.detailTableCard}`}>
+          <div className={styles.detailTableHeader}>
+            <h2 className="section-title" style={{ fontSize: 18 }}>
+              结构化明细
+            </h2>
+            <span className="pill">
+              {config.compareVersionLabel ? `当前版本 vs ${config.compareVersionLabel}` : "当前版本"}
+            </span>
+          </div>
+          <div className={styles.detailTable}>
+            <div className={styles.detailTableRow}>
+              <div className={styles.detailTableCellMuted}>指标 / 项</div>
+              <div className={styles.detailTableCellMuted}>{config.versionLabel}</div>
+              <div className={styles.detailTableCellMuted}>{config.compareVersionLabel ?? "未选择对比"}</div>
+              <div className={styles.detailTableCellMuted}>说明</div>
+            </div>
+            {config.detailRows.map((row) => (
+              <div key={`${row.label}-${row.current}`} className={styles.detailTableRow}>
+                <div className={styles.detailTableCellStrong}>{row.label}</div>
+                <div>{row.current}</div>
+                <div>{row.compare ?? "—"}</div>
+                <div className={styles.detailTableNote}>{row.note}</div>
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
     </AppShell>
   );

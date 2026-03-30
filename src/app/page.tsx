@@ -9,6 +9,8 @@ import { getDashboardOverview } from "@/lib/server/dashboard";
 export default async function HomePage() {
   await requireUser();
   const overview = await getDashboardOverview();
+  const recentImports = "recentImports" in overview ? overview.recentImports ?? [] : [];
+  const categorySnapshots = "categorySnapshots" in overview ? overview.categorySnapshots ?? [] : [];
 
   return (
     <AppShell currentPath="/">
@@ -101,6 +103,66 @@ export default async function HomePage() {
                 </div>
                 <p className={styles.taskDetail}>{task.detail}</p>
               </div>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <div className={styles.splitGrid}>
+        <section className={`panel ${styles.card}`}>
+          <div className={styles.sectionRow}>
+            <h2 className="section-title" style={{ fontSize: 18 }}>
+              最近导入批次
+            </h2>
+            <span className="pill">
+              {overview.currentVersion} {overview.compareVersion ? `vs ${overview.compareVersion}` : ""}
+            </span>
+          </div>
+          <div className={styles.importBatchList}>
+            {recentImports.map((item) => (
+              <div key={`${item.version}-${item.fileName}`} className={styles.importBatchItem}>
+                <div className={styles.statusRow}>
+                  <div>
+                    <strong>{item.version}</strong>
+                    <div className={styles.taskDetail}>{item.fileName}</div>
+                  </div>
+                  <span className="pill">{item.sourceLabel}</span>
+                </div>
+                <div className={styles.importBatchMeta}>
+                  <span>通过率 {item.successRate}%</span>
+                  <span>健康分 {item.healthScore}</span>
+                  <span>异常 {item.anomalyCount}</span>
+                </div>
+                <div className={styles.taskDetail}>{item.uploadedAtLabel}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className={`panel ${styles.card}`}>
+          <div className={styles.sectionRow}>
+            <h2 className="section-title" style={{ fontSize: 18 }}>
+              分类状态快照
+            </h2>
+            <span className="pill">当前 vs 对比</span>
+          </div>
+          <div className={styles.snapshotList}>
+            {categorySnapshots.map((item) => (
+              <Link
+                key={item.key}
+                href={`/analytics/${item.key}`}
+                className={`surface ${styles.snapshotItem}`}
+              >
+                <div className={styles.categoryHeader}>
+                  <CategoryPill label={item.label} color={item.color} />
+                  <span className="pill">{item.currentValue}</span>
+                </div>
+                <div className={styles.snapshotCompare}>
+                  <span>对比版本</span>
+                  <strong>{item.compareValue ?? "等待对比版本"}</strong>
+                </div>
+                <p className={styles.categoryMeta}>{item.insight}</p>
+              </Link>
             ))}
           </div>
         </section>

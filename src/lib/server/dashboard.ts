@@ -12,6 +12,15 @@ type ImportSummary = {
   categories?: Record<string, { insight?: string; metrics?: Record<string, number> }>;
 };
 
+type ImportLike = {
+  fileName: string;
+  version: string;
+  source?: string | null;
+  successRate?: number | null;
+  uploadedAt?: Date | number | null;
+  summaryJson?: unknown;
+};
+
 function formatCategoryMetric(key: string, metricsMap?: Record<string, number>) {
   if (!metricsMap) {
     return "等待首批导入";
@@ -104,6 +113,63 @@ export async function getDashboardOverview() {
   const sourceLabel = latestImport?.source === "SYNTHETIC" ? "模拟导入" : latestImport ? "真实导入" : "暂无导入";
   const activeUsers = summary.overview?.activeUsers ?? 0;
   const compareActiveUsers = compareSummary.overview?.activeUsers ?? null;
+  const recentImports = allImports.slice(0, 3).map((item: ImportLike) => {
+    const batchSummary = (item.summaryJson ?? {}) as ImportSummary;
+    const uploadedAt = item.uploadedAt instanceof Date ? item.uploadedAt : item.uploadedAt ? new Date(item.uploadedAt) : null;
+    return {
+      fileName: item.fileName,
+      version: item.version,
+      sourceLabel: item.source === "SYNTHETIC" ? "模拟导入" : "真实导入",
+      successRate: ((item.successRate ?? 0) * 100).toFixed(1),
+      healthScore: (batchSummary.overview?.healthScore ?? 0).toFixed(1),
+      anomalyCount: batchSummary.overview?.keyAnomalyCount ?? 0,
+      uploadedAtLabel: uploadedAt ? uploadedAt.toLocaleString("zh-CN", { hour12: false }) : "未知时间"
+    };
+  });
+
+  const categorySnapshots = categories.map((category) => {
+    const currentMetrics = summary.categories?.[category.key]?.metrics;
+    const compareMetrics = compareSummary.categories?.[category.key]?.metrics;
+    let currentValue = "等待首批导入";
+    let compareValue: string | null = null;
+
+    switch (category.key) {
+      case "system":
+        currentValue = `${(currentMetrics?.validRate ?? 0).toFixed(1)}% 有效率`;
+        compareValue = compareMetrics ? `${(compareMetrics.validRate ?? 0).toFixed(1)}%` : null;
+        break;
+      case "onboarding":
+        currentValue = `${(currentMetrics?.completionRate ?? 0).toFixed(1)}% 完成率`;
+        compareValue = compareMetrics ? `${(compareMetrics.completionRate ?? 0).toFixed(1)}%` : null;
+        break;
+      case "level":
+        currentValue = `${(currentMetrics?.failRate ?? 0).toFixed(1)}% 失败率`;
+        compareValue = compareMetrics ? `${(compareMetrics.failRate ?? 0).toFixed(1)}%` : null;
+        break;
+      case "monetization":
+        currentValue = `${(currentMetrics?.conversionRate ?? 0).toFixed(1)}% 转化率`;
+        compareValue = compareMetrics ? `${(compareMetrics.conversionRate ?? 0).toFixed(1)}%` : null;
+        break;
+      case "ads":
+        currentValue = `${(currentMetrics?.completionRate ?? 0).toFixed(1)}% 完成率`;
+        compareValue = compareMetrics ? `${(compareMetrics.completionRate ?? 0).toFixed(1)}%` : null;
+        break;
+      default:
+        currentValue = `${(currentMetrics?.coverageRate ?? 0).toFixed(1)}% 覆盖率`;
+        compareValue = compareMetrics ? `${(compareMetrics.coverageRate ?? 0).toFixed(1)}%` : null;
+    }
+
+    return {
+      key: category.key,
+      label: category.label,
+      color: category.color,
+      currentValue,
+      compareValue,
+      insight:
+        summary.categories?.[category.key]?.insight ??
+        "等待首批导入后生成分类洞察。"
+    };
+  });
 
   function deltaLabel(current: number, compare: number | null, suffix = "") {
     if (compare === null || compare === undefined) {
@@ -201,5 +267,8 @@ export async function getDashboardOverview() {
     ],
     overviewInsights: dynamicInsights.length ? dynamicInsights : overviewInsights,
     recentTasks: dynamicTasks
+    ,
+    recentImports,
+    categorySnapshots
   };
 }

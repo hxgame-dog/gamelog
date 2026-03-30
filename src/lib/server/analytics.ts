@@ -264,6 +264,118 @@ function emptyCompareSeries(values: number[]) {
   return values.map(() => 0);
 }
 
+function buildDetailRows(
+  category: CategoryKey,
+  current: ImportCategorySummary,
+  compare: ImportCategorySummary | undefined,
+  compareVersionLabel?: string | null
+) {
+  const rows: Array<{ label: string; current: string; compare?: string | null; note: string }> = [];
+
+  if (category === "system") {
+    rows.push(
+      {
+        label: "公共事件健康度",
+        current: `${(current.metrics.validRate ?? 0).toFixed(1)}%`,
+        compare: compareVersionLabel ? `${(compare?.metrics.validRate ?? 0).toFixed(1)}%` : null,
+        note: "用于判断 session、login、error 等系统层事件是否稳定。"
+      },
+      {
+        label: "异常占比",
+        current: `${(current.metrics.errorRate ?? 0).toFixed(1)}%`,
+        compare: compareVersionLabel ? `${(compare?.metrics.errorRate ?? 0).toFixed(1)}%` : null,
+        note: "异常升高时优先检查底层公共事件口径。"
+      }
+    );
+  } else if (category === "onboarding") {
+    rows.push(
+      {
+        label: "引导完成率",
+        current: `${(current.metrics.completionRate ?? 0).toFixed(1)}%`,
+        compare: compareVersionLabel ? `${(compare?.metrics.completionRate ?? 0).toFixed(1)}%` : null,
+        note: "新手链路的核心漏斗指标。"
+      },
+      {
+        label: "平均耗时",
+        current: `${(current.metrics.avgDuration ?? 0).toFixed(1)} 秒`,
+        compare: compareVersionLabel ? `${(compare?.metrics.avgDuration ?? 0).toFixed(1)} 秒` : null,
+        note: "耗时与流失同时升高时，优先看步骤理解成本。"
+      }
+    );
+  } else if (category === "level") {
+    rows.push(
+      {
+        label: "通关率",
+        current: `${(current.metrics.completionRate ?? 0).toFixed(1)}%`,
+        compare: compareVersionLabel ? `${(compare?.metrics.completionRate ?? 0).toFixed(1)}%` : null,
+        note: "关卡主漏斗的最终结果指标。"
+      },
+      {
+        label: "失败率",
+        current: `${(current.metrics.failRate ?? 0).toFixed(1)}%`,
+        compare: compareVersionLabel ? `${(compare?.metrics.failRate ?? 0).toFixed(1)}%` : null,
+        note: "失败率高于通关率时，建议优先看失败原因与高失败关卡。"
+      }
+    );
+  } else if (category === "monetization") {
+    rows.push(
+      {
+        label: "商业化转化率",
+        current: `${(current.metrics.conversionRate ?? 0).toFixed(1)}%`,
+        compare: compareVersionLabel ? `${(compare?.metrics.conversionRate ?? 0).toFixed(1)}%` : null,
+        note: "用于判断付费入口到价值事件的转化表现。"
+      },
+      {
+        label: "价值事件金额",
+        current: `${(current.metrics.value ?? 0).toFixed(2)}`,
+        compare: compareVersionLabel ? `${(compare?.metrics.value ?? 0).toFixed(2)}` : null,
+        note: "首版使用导入批次估算值，用于版本间横向观察。"
+      }
+    );
+  } else if (category === "ads") {
+    rows.push(
+      {
+        label: "广告完成率",
+        current: `${(current.metrics.completionRate ?? 0).toFixed(1)}%`,
+        compare: compareVersionLabel ? `${(compare?.metrics.completionRate ?? 0).toFixed(1)}%` : null,
+        note: "衡量广告承接是否顺滑的第一指标。"
+      },
+      {
+        label: "奖励领取率",
+        current: `${(current.metrics.rewardRate ?? 0).toFixed(1)}%`,
+        compare: compareVersionLabel ? `${(compare?.metrics.rewardRate ?? 0).toFixed(1)}%` : null,
+        note: "完成率高但领奖率低时，通常是奖励领取事件或交互承接有问题。"
+      }
+    );
+  } else {
+    rows.push(
+      {
+        label: "字段覆盖率",
+        current: `${(current.metrics.coverageRate ?? 0).toFixed(1)}%`,
+        compare: compareVersionLabel ? `${(compare?.metrics.coverageRate ?? 0).toFixed(1)}%` : null,
+        note: "用于判断自定义分类是否已经具备专项分析条件。"
+      },
+      {
+        label: "分析可用率",
+        current: `${(current.metrics.usableRate ?? 0).toFixed(1)}%`,
+        compare: compareVersionLabel ? `${(compare?.metrics.usableRate ?? 0).toFixed(1)}%` : null,
+        note: "结合异常标签与字段说明，判断是否还能继续补结构。"
+      }
+    );
+  }
+
+  current.ranking.slice(0, 3).forEach((item, index) => {
+    rows.push({
+      label: `重点项 ${index + 1}`,
+      current: item.name,
+      compare: compareVersionLabel ? compare?.ranking?.[index]?.name ?? "—" : null,
+      note: item.meta ?? `${item.count} 次`
+    });
+  });
+
+  return rows;
+}
+
 export async function getAnalyticsCategoryData(
   category: CategoryKey,
   projectId?: string | null,
@@ -360,6 +472,7 @@ export async function getAnalyticsCategoryData(
       aux: normalizeDistribution(categorySummary.aux),
       auxLabels: categorySummary.auxLabels.length ? categorySummary.auxLabels : fallback.auxLabels,
       ranking: buildRanking(categorySummary.ranking, "公共事件", " 次"),
+      detailRows: buildDetailRows(category, categorySummary, compareCategorySummary, compareImport?.version),
       insight:
         compareImport && compareValidRate !== null
           ? `${categorySummary.insight} 与 ${compareImport.version} 相比，有效会话率 ${versionDelta(validRate, compareValidRate)}，异常占比 ${versionDelta(errorRate, compareErrorRate)}。`
@@ -395,6 +508,7 @@ export async function getAnalyticsCategoryData(
       aux: normalizeSeries(categorySummary.aux, 6),
       auxLabels: categorySummary.auxLabels.length ? categorySummary.auxLabels : fallback.auxLabels,
       ranking: buildRanking(categorySummary.ranking, "引导步骤", " 次"),
+      detailRows: buildDetailRows(category, categorySummary, compareCategorySummary, compareImport?.version),
       insight:
         compareImport && compareCompletion !== null
           ? `${categorySummary.insight} 与 ${compareImport.version} 相比，引导完成率 ${versionDelta(completion, compareCompletion)}，流失率 ${versionDelta(drop, compareDrop)}。`
@@ -430,6 +544,7 @@ export async function getAnalyticsCategoryData(
       aux: categorySummary.aux,
       auxLabels: categorySummary.auxLabels.length ? categorySummary.auxLabels : fallback.auxLabels,
       ranking: buildRanking(categorySummary.ranking, "关卡", " 次"),
+      detailRows: buildDetailRows(category, categorySummary, compareCategorySummary, compareImport?.version),
       insight:
         compareImport && compareCompletion !== null
           ? `${categorySummary.insight} 与 ${compareImport.version} 相比，通关率 ${versionDelta(completion, compareCompletion)}，失败率 ${versionDelta(fail, compareFail)}。`
@@ -465,6 +580,7 @@ export async function getAnalyticsCategoryData(
       aux: categorySummary.aux,
       auxLabels: categorySummary.auxLabels.length ? categorySummary.auxLabels : fallback.auxLabels,
       ranking: buildRanking(categorySummary.ranking, "商业化事件", " 次"),
+      detailRows: buildDetailRows(category, categorySummary, compareCategorySummary, compareImport?.version),
       insight:
         compareImport && compareConversion !== null
           ? `${categorySummary.insight} 与 ${compareImport.version} 相比，商业化转化率 ${versionDelta(conversion, compareConversion)}，价值事件金额 ${versionDelta(value, compareValue, "")}。`
@@ -500,6 +616,7 @@ export async function getAnalyticsCategoryData(
       aux: categorySummary.aux,
       auxLabels: categorySummary.auxLabels.length ? categorySummary.auxLabels : fallback.auxLabels,
       ranking: buildRanking(categorySummary.ranking, "广告位", " 次"),
+      detailRows: buildDetailRows(category, categorySummary, compareCategorySummary, compareImport?.version),
       insight:
         compareImport && compareCompletion !== null
           ? `${categorySummary.insight} 与 ${compareImport.version} 相比，广告完成率 ${versionDelta(completion, compareCompletion)}，关闭率 ${versionDelta(closeRate, compareCloseRate)}。`
@@ -542,6 +659,7 @@ export async function getAnalyticsCategoryData(
     aux: categorySummary.aux.length ? categorySummary.aux : fallback.aux,
     auxLabels: categorySummary.auxLabels.length ? categorySummary.auxLabels : fallback.auxLabels,
     ranking: buildRanking(categorySummary.ranking, "自定义事件", " 次"),
+    detailRows: buildDetailRows(category, categorySummary, compareCategorySummary, compareImport?.version),
     insight:
       compareImport
         ? `${categorySummary.insight} 与 ${compareImport.version} 相比，字段覆盖率 ${versionDelta(coverageRate, compareCoverageRate)}。`
