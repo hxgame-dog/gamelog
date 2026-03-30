@@ -74,7 +74,7 @@ function buildFallbackReport(input: {
   };
 }
 
-async function buildReportDraft(projectId: string) {
+async function buildReportDraft(projectId: string, requestedCompareVersion?: string | null) {
   const prisma = getPrismaClient();
   let projectName = "当前项目";
 
@@ -97,7 +97,9 @@ async function buildReportDraft(projectId: string) {
     getImportsForProject(projectId)
   ]);
   const compareVersion = latestImport
-    ? imports.find((item) => item.version !== latestImport.version)?.version ?? null
+    ? requestedCompareVersion && requestedCompareVersion !== latestImport.version
+      ? imports.find((item) => item.version === requestedCompareVersion)?.version ?? null
+      : imports.find((item) => item.version !== latestImport.version)?.version ?? null
     : null;
   const [system, onboarding, level, monetization, ads] = await Promise.all([
     getAnalyticsCategoryData("system", projectId, compareVersion),
@@ -185,8 +187,8 @@ function decodeReportSummary(summary: string) {
   }
 }
 
-export async function generateAiReport(projectId: string) {
-  const draft = await buildReportDraft(projectId);
+export async function generateAiReport(projectId: string, compareVersion?: string | null) {
+  const draft = await buildReportDraft(projectId, compareVersion);
   const report = await maybeGenerateWithGemini(draft);
   const prisma = getPrismaClient();
   const now = new Date();
@@ -264,9 +266,9 @@ export async function getLatestAiReport(projectId: string) {
   };
 }
 
-export async function getAiReportView(projectId: string) {
+export async function getAiReportView(projectId: string, compareVersion?: string | null) {
   const latest = await getLatestAiReport(projectId);
-  const draft = await buildReportDraft(projectId);
+  const draft = await buildReportDraft(projectId, compareVersion);
 
   if (latest?.content) {
     return {

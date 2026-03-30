@@ -16,13 +16,13 @@ import { getAiReportView } from "@/lib/server/reports";
 export default async function ReportsPage({
   searchParams
 }: {
-  searchParams: Promise<{ projectId?: string }>;
+  searchParams: Promise<{ projectId?: string; compareVersion?: string }>;
 }) {
   const user = await requireUser();
   const projects = await getProjectsForUser(user.id);
-  const { projectId } = await searchParams;
+  const { projectId, compareVersion } = await searchParams;
   const activeProjectId = projectId ?? projects[0]?.id ?? null;
-  const reportView = activeProjectId ? await getAiReportView(activeProjectId) : null;
+  const reportView = activeProjectId ? await getAiReportView(activeProjectId, compareVersion) : null;
 
   const report = reportView?.report;
 
@@ -37,8 +37,11 @@ export default async function ReportsPage({
               currentVersion={reportView?.versionLabel ?? "未导入"}
               compareVersion={reportView?.compareVersionLabel}
               versionOptions={reportView?.versionOptions}
+              buildHref={(version) =>
+                `/reports${activeProjectId ? `?projectId=${activeProjectId}&compareVersion=${encodeURIComponent(version)}` : `?compareVersion=${encodeURIComponent(version)}`}`
+              }
             />
-            <ReportsActions projectId={activeProjectId} />
+            <ReportsActions projectId={activeProjectId} compareVersion={reportView?.compareVersionLabel} />
           </div>
         }
       />

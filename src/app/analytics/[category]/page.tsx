@@ -54,6 +54,7 @@ export default async function AnalyticsCategoryPage({
     auxLabels: string[];
     ranking: Array<[string, string]>;
     insight: string;
+    compareInsight?: string | null;
   };
 
   return (
@@ -166,6 +167,11 @@ export default async function AnalyticsCategoryPage({
 
           <section className={styles.insightCard}>
             <InsightCard title="AI 分类洞察" copy={config.insight} tone={config.color} />
+            {config.compareInsight ? (
+              <div style={{ marginTop: 12 }}>
+                <InsightCard title="版本差异摘要" copy={config.compareInsight} tone="var(--blue)" />
+              </div>
+            ) : null}
           </section>
         </div>
       </div>

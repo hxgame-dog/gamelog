@@ -4,9 +4,11 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 export function ReportsActions({
-  projectId
+  projectId,
+  compareVersion
 }: {
   projectId: string | null;
+  compareVersion?: string | null;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +33,7 @@ export function ReportsActions({
               const response = await fetch("/api/reports/generate", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ projectId })
+                body: JSON.stringify({ projectId, compareVersion })
               });
               const data = await response.json();
               if (!response.ok) {

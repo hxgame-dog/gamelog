@@ -19,6 +19,13 @@
   padding: 18px;
 }
 
+.modeSwitch {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
 .importControls {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -62,6 +69,39 @@
   line-height: 1.7;
   font-size: 13px;
   cursor: pointer;
+}
+
+.syntheticPanel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: #fcfcfb;
+}
+
+.syntheticCopy {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.syntheticGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.syntheticValue {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #fafaf8;
+  color: var(--text);
+  font-size: 14px;
 }
 
 .message {
@@ -193,7 +233,8 @@
 
 @media (max-width: 1100px) {
   .layout,
-  .importControls {
+  .importControls,
+  .syntheticGrid {
     grid-template-columns: 1fr;
   }
 

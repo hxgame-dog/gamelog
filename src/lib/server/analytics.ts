@@ -331,6 +331,10 @@ export async function getAnalyticsCategoryData(
     versionOptions
   };
 
+  const compareSummaryText = compareImport
+    ? `当前版本 ${latestImport.version} 正在对比 ${compareImport.version}。`
+    : "当前还没有可用的对比版本，建议再导入一批其他版本数据后查看差异。";
+
   if (category === "system") {
     const validRate = getMetric("system_valid_rate", getMetric("import_success_rate"));
     const compareValidRate = compareImport
@@ -359,7 +363,8 @@ export async function getAnalyticsCategoryData(
       insight:
         compareImport && compareValidRate !== null
           ? `${categorySummary.insight} 与 ${compareImport.version} 相比，有效会话率 ${versionDelta(validRate, compareValidRate)}，异常占比 ${versionDelta(errorRate, compareErrorRate)}。`
-          : categorySummary.insight
+          : categorySummary.insight,
+      compareInsight: compareSummaryText
     };
   }
 
@@ -393,7 +398,8 @@ export async function getAnalyticsCategoryData(
       insight:
         compareImport && compareCompletion !== null
           ? `${categorySummary.insight} 与 ${compareImport.version} 相比，引导完成率 ${versionDelta(completion, compareCompletion)}，流失率 ${versionDelta(drop, compareDrop)}。`
-          : categorySummary.insight
+          : categorySummary.insight,
+      compareInsight: compareSummaryText
     };
   }
 
@@ -427,7 +433,8 @@ export async function getAnalyticsCategoryData(
       insight:
         compareImport && compareCompletion !== null
           ? `${categorySummary.insight} 与 ${compareImport.version} 相比，通关率 ${versionDelta(completion, compareCompletion)}，失败率 ${versionDelta(fail, compareFail)}。`
-          : categorySummary.insight
+          : categorySummary.insight,
+      compareInsight: compareSummaryText
     };
   }
 
@@ -461,7 +468,8 @@ export async function getAnalyticsCategoryData(
       insight:
         compareImport && compareConversion !== null
           ? `${categorySummary.insight} 与 ${compareImport.version} 相比，商业化转化率 ${versionDelta(conversion, compareConversion)}，价值事件金额 ${versionDelta(value, compareValue, "")}。`
-          : categorySummary.insight
+          : categorySummary.insight,
+      compareInsight: compareSummaryText
     };
   }
 
@@ -495,7 +503,8 @@ export async function getAnalyticsCategoryData(
       insight:
         compareImport && compareCompletion !== null
           ? `${categorySummary.insight} 与 ${compareImport.version} 相比，广告完成率 ${versionDelta(completion, compareCompletion)}，关闭率 ${versionDelta(closeRate, compareCloseRate)}。`
-          : categorySummary.insight
+          : categorySummary.insight,
+      compareInsight: compareSummaryText
     };
   }
 
@@ -536,6 +545,7 @@ export async function getAnalyticsCategoryData(
     insight:
       compareImport
         ? `${categorySummary.insight} 与 ${compareImport.version} 相比，字段覆盖率 ${versionDelta(coverageRate, compareCoverageRate)}。`
-        : categorySummary.insight
+        : categorySummary.insight,
+    compareInsight: compareSummaryText
   };
 }

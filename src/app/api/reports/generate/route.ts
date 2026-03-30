@@ -9,12 +9,13 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const projectId = typeof body?.projectId === "string" ? body.projectId : "";
+    const compareVersion = typeof body?.compareVersion === "string" ? body.compareVersion : null;
 
     if (!projectId) {
       return NextResponse.json({ error: "缺少 projectId。" }, { status: 400 });
     }
 
-    const result = await generateAiReport(projectId);
+    const result = await generateAiReport(projectId, compareVersion);
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(
