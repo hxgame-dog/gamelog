@@ -338,8 +338,15 @@ function parseTemplateInputSource(content?: string | null) {
 function hasEffectiveMappings(sheet: SpreadsheetSheet) {
   return sheet.mappings.some((item) => {
     const target = item.target?.trim();
-    return Boolean(target && target !== "ignore");
+    return Boolean(target && target.length > 0 && target !== "ignore");
   });
+}
+
+function countEffectiveMappings(sheet: SpreadsheetSheet) {
+  return sheet.mappings.filter((item) => {
+    const target = item.target?.trim();
+    return Boolean(target && target.length > 0 && target !== "ignore");
+  }).length;
 }
 
 function countConfirmableSheets(sheets: SpreadsheetSheet[]) {
@@ -1091,7 +1098,7 @@ function getInsightCopy({
   activeEvent: Plan["events"][number] | null;
   isGenerating: boolean;
   latestSource?: PlanInputSource;
-  resultView?: "global" | "events" | "dictionaries";
+  resultView?: "global" | "events" | "candidates" | "dictionaries";
 }) {
   if (!activePlan) {
     return "先创建一份方案，再选择自由描述、模板或表格上传作为第一批输入。";
@@ -1103,6 +1110,11 @@ function getInsightCopy({
 
   if (!activePlan.events.length) {
     return "当前方案还没有事件。最适合先用通用模板或玩法描述生成第一版，再人工修订。";
+  }
+
+  const pendingCandidates = (activePlan.dictionaries ?? []).filter((dictionary) => dictionary.sourceType === "CANDIDATE").length;
+  if (pendingCandidates > 0 && resultView !== "global" && resultView !== "events" && resultView !== "candidates") {
+    return `当前还有 ${pendingCandidates} 个字典候选待确认。建议先完成候选确认，再执行 AI 诊断与方案确认。`;
   }
 
   if (!activeEvent) {
@@ -1117,8 +1129,14 @@ function getInsightCopy({
     return "你当前看到的是事件表结果，建议先核对每个模块下的事件是否够全，再看每条事件的触发说明、事件字段和共享公共属性是否合理。";
   }
 
+  if (resultView === "candidates") {
+    return `你当前看到的是基于整份事件表统一扫描出的字典候选。当前还有 ${pendingCandidates} 个候选待确认，建议先确认哪些字段必须查表，再生成正式字典表和映射关系。`;
+  }
+
   if (resultView === "dictionaries") {
-    return "你当前看到的是字典表和映射关系，建议重点确认 product_id、ad_placement、level_id、step_id 这类配置型字段是否都正确查表。";
+    return pendingCandidates > 0
+      ? `你当前看到的是已确认字典和正式映射关系，但仍有 ${pendingCandidates} 个候选未处理。建议先回到“字典候选”补完，再执行 AI 诊断。`
+      : "你当前看到的是已确认字典和正式映射关系，建议重点核对 product_id、ad_placement、level_id、step_id 这类配置型字段是否都查到了正确字典。";
   }
 
   if (latestSource?.type === "FILE") {
@@ -1255,7 +1273,7 @@ export function PlansClient({
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [activeHelp, setActiveHelp] = useState<HelpKey>("overview");
-  const [currentResultView, setCurrentResultView] = useState<"global" | "events" | "dictionaries">("events");
+  const [currentResultView, setCurrentResultView] = useState<"global" | "events" | "candidates" | "dictionaries">("events");
   const [progressStages, setProgressStages] = useState<StageState[]>(createInitialStages());
   const [progressMessage, setProgressMessage] = useState<string>("等待新的 AI 生成任务。");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -1362,6 +1380,10 @@ export function PlansClient({
     }, 900);
   }
 
+  const pendingCandidateCount = (activePlan?.dictionaries ?? []).filter(
+    (dictionary) => dictionary.sourceType === "CANDIDATE"
+  ).length;
+
   const stepItems: Array<{
     key: PlanStep;
     index: string;
@@ -1380,7 +1402,7 @@ export function PlansClient({
       key: "generate",
       index: "02",
       title: "输入与生成",
-      hint: "输入需求、确认映射并生成方案包",
+      hint: "输入需求、确认映射并生成事件方案",
       status:
         currentStep === "generate"
           ? "current"
@@ -1396,7 +1418,8 @@ export function PlansClient({
       status:
         currentStep === "results"
           ? "current"
-          : currentStep === "schema" || activePlan?.status === "CONFIRMED" || activePlan?.diagnosisStatus === "COMPLETED"
+          : (currentStep === "schema" || activePlan?.status === "CONFIRMED" || activePlan?.diagnosisStatus === "COMPLETED") &&
+              pendingCandidateCount === 0
             ? "completed"
             : "waiting"
     },
@@ -1405,15 +1428,28 @@ export function PlansClient({
       index: "04",
       title: "字段结构查看",
       hint: "从结构视角统一检查四张逻辑表",
-      status: currentStep === "schema" ? "current" : activePlan?.status === "CONFIRMED" ? "completed" : "waiting"
+      status:
+        currentStep === "schema"
+          ? "current"
+          : activePlan?.status === "CONFIRMED" && pendingCandidateCount === 0
+            ? "completed"
+            : "waiting"
     }
   ];
   const activePlanCompletionItems = activePlan
     ? [
         { label: "公共属性表", value: activePlan.globalProperties?.length ?? 0, hint: "所有事件共享的分析底座字段" },
         { label: "事件表", value: activePlan.events.length, hint: "当前方案中已生成的标准事件" },
-        { label: "字典表", value: activePlan.dictionaries?.length ?? 0, hint: "由事件字段反推生成的字典候选" },
-        { label: "映射关系", value: activePlan.dictionaryMappings?.length ?? 0, hint: "事件字段到字典表的绑定关系" },
+        {
+          label: "字典候选",
+          value: pendingCandidateCount,
+          hint: "由整份事件表统一扫描出的待确认字典"
+        },
+        {
+          label: "正式字典",
+          value: (activePlan.dictionaries ?? []).filter((dictionary) => dictionary.sourceType !== "CANDIDATE").length,
+          hint: "已确认并纳入正式方案包的字典表"
+        },
         {
           label: "完成度",
           value: `${Math.round((stepItems.filter((item) => item.status === "completed").length / stepItems.length) * 100)}%`,
@@ -1449,7 +1485,7 @@ export function PlansClient({
         >
           {isCreateOpen ? "收起新建方案" : "新建方案"}
         </button>
-        <span className="pill">常用流程：输入需求 → 生成方案包 → 编辑事件与字典 → 诊断/导出</span>
+        <span className="pill">常用流程：输入需求 → 生成事件方案 → 确认字典候选 → 诊断/导出</span>
       </div>
 
       {error ? <div className={styles.feedbackError}>{error}</div> : null}
@@ -1833,7 +1869,7 @@ function PlanEditor({
   onSelectEvent: (eventId: string | null) => void;
   onRefresh: (planId?: string | null, eventId?: string | null, focusField?: string | null, step?: PlanStep | null) => void;
   onSetHelp: (value: HelpKey) => void;
-  onResultViewChange: (value: "global" | "events" | "dictionaries") => void;
+  onResultViewChange: (value: "global" | "events" | "candidates" | "dictionaries") => void;
   onStepChange: (step: PlanStep) => void;
   initialFocusField: string | null;
   onStartGenerate: () => void;
@@ -1870,10 +1906,13 @@ function PlanEditor({
   const noticeTimerRef = useRef<number | null>(null);
   const toastTimerRef = useRef<number | null>(null);
   const spreadsheetSheetsRef = useRef<SpreadsheetSheet[]>([]);
-  const [resultView, setResultView] = useState<"global" | "events" | "dictionaries">("events");
+  const [resultView, setResultView] = useState<"global" | "events" | "candidates" | "dictionaries">("events");
   const [eventResultMode, setEventResultMode] = useState<"cards" | "table" | "summary">("cards");
   const [schemaView, setSchemaView] = useState<"global" | "event_fields" | "dictionaries" | "mappings">("global");
   const [exportVariant, setExportVariant] = useState<ExportVariant>("developer");
+  const [candidateModuleFilter, setCandidateModuleFilter] = useState<string>("all");
+  const [candidateFieldFilter, setCandidateFieldFilter] = useState<string>("all");
+  const [highlightedDictionaryName, setHighlightedDictionaryName] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [globalDraft, setGlobalDraft] = useState<EditableGlobalProperty[]>(createGlobalPropertyDraft(activePlan));
   const [dictionaryDraft, setDictionaryDraft] = useState<EditableDictionary[]>(createDictionaryDraft(activePlan));
@@ -1902,7 +1941,71 @@ function PlanEditor({
     return acc;
   }, {});
   const spreadsheetActionLabel =
-    generationMode === "spreadsheet" ? "确认映射后生成方案" : "AI 生成方案";
+    generationMode === "spreadsheet" ? "确认映射后生成事件方案" : "生成事件方案";
+
+  const candidateDictionaryDraft = dictionaryDraft.filter((dictionary) => dictionary.sourceType === "CANDIDATE");
+  const confirmedDictionaryDraft = dictionaryDraft.filter((dictionary) => dictionary.sourceType !== "CANDIDATE");
+  const candidateDictionaryNames = new Set(candidateDictionaryDraft.map((dictionary) => dictionary.name));
+  const confirmedDictionaryNames = new Set(confirmedDictionaryDraft.map((dictionary) => dictionary.name));
+  const candidateMappingDraft = mappingDraft.filter((mapping) => candidateDictionaryNames.has(mapping.dictionaryName));
+  const confirmedMappingDraft = mappingDraft.filter((mapping) => confirmedDictionaryNames.has(mapping.dictionaryName));
+  const candidateGroups = candidateDictionaryDraft.reduce<
+    Array<{
+      key: string;
+      label: string;
+      dictionaries: EditableDictionary[];
+      mappings: EditableDictionaryMapping[];
+    }>
+  >((acc, dictionary) => {
+    const triggerFields = dictionary.paramNames
+      .split(",")
+      .map((name) => name.trim())
+      .filter(Boolean);
+    const key = [...triggerFields].sort().join("|") || dictionary.relatedModule || "misc";
+    const label = triggerFields.length ? triggerFields.join(" / ") : dictionary.relatedModule || "未分类来源";
+    const group =
+      acc.find((item) => item.key === key) ??
+      (() => {
+        const created = { key, label, dictionaries: [], mappings: [] as EditableDictionaryMapping[] };
+        acc.push(created);
+        return created;
+      })();
+    group.dictionaries.push(dictionary);
+    return acc;
+  }, []);
+
+  candidateGroups.forEach((group) => {
+    const dictionaryNames = new Set(group.dictionaries.map((dictionary) => dictionary.name));
+    group.mappings = candidateMappingDraft.filter((mapping) => dictionaryNames.has(mapping.dictionaryName));
+  });
+  const candidateModuleOptions = Array.from(
+    new Set(candidateDictionaryDraft.map((dictionary) => dictionary.relatedModule).filter(Boolean))
+  );
+  const candidateFieldOptions = Array.from(
+    new Set(
+      candidateDictionaryDraft.flatMap((dictionary) =>
+        dictionary.paramNames
+          .split(",")
+          .map((name) => name.trim())
+          .filter(Boolean)
+      )
+    )
+  );
+  const filteredCandidateGroups = candidateGroups.filter((group) =>
+    candidateModuleFilter === "all"
+      ? true
+      : group.dictionaries.some((dictionary) => dictionary.relatedModule === candidateModuleFilter)
+  ).filter((group) =>
+    candidateFieldFilter === "all"
+      ? true
+      : group.dictionaries.some((dictionary) =>
+          dictionary.paramNames
+            .split(",")
+            .map((name) => name.trim())
+            .filter(Boolean)
+            .includes(candidateFieldFilter)
+        )
+  );
 
   function commitSpreadsheetSheets(nextSheets: SpreadsheetSheet[]) {
     spreadsheetSheetsRef.current = nextSheets;
@@ -2049,7 +2152,9 @@ function PlanEditor({
       return false;
     }
 
-    if (!hasEffectiveMappings(currentSheet)) {
+    const effectiveMappingCount = countEffectiveMappings(currentSheet);
+
+    if (effectiveMappingCount === 0) {
       showSheetActionNotice("error", "请至少保留一个有效字段映射，不能全部忽略。");
       return false;
     }
@@ -2061,7 +2166,7 @@ function PlanEditor({
       return { ...sheet, confirmed: true };
     });
     commitSpreadsheetSheets(nextSheets);
-    showSheetActionNotice("success", `已确认工作表：${sheetName}`);
+    showSheetActionNotice("success", `已确认工作表：${sheetName}（${effectiveMappingCount} 列有效映射）`);
     return true;
   }
 
@@ -2106,8 +2211,8 @@ function PlanEditor({
         showSheetActionNotice("error", data.error || "保存当前工作表失败。");
         return;
       }
-      onMessage(`已保存工作表：${currentSheet.name}`);
-      showSheetActionNotice("success", `已保存工作表：${currentSheet.name}`);
+      onMessage(`已暂存工作表：${currentSheet.name}`);
+      showSheetActionNotice("success", `已暂存工作表：${currentSheet.name}，下次可继续恢复。`);
       onRefresh(activePlan.id, activeEvent?.id ?? null, null, "generate");
     });
   }
@@ -2130,59 +2235,149 @@ function PlanEditor({
     );
   }
 
+  async function persistPackageSection(
+    nextDictionaries: EditableDictionary[] = dictionaryDraft,
+    nextMappings: EditableDictionaryMapping[] = mappingDraft,
+    successMessage = "公共属性、正式字典和映射关系已保存。"
+  ) {
+    onError(null);
+    onMessage(null);
+
+    const payload = {
+      globalProperties: globalDraft
+        .filter((item) => item.name.trim())
+        .map((item) => ({
+          name: item.name.trim(),
+          type: item.type.trim() || "string",
+          isRequired: item.isRequired,
+          sampleValue: item.sampleValue.trim() || null,
+          description: item.description.trim() || null,
+          category: item.category.trim() || null
+        })),
+      dictionaries: nextDictionaries
+        .filter((item) => item.name.trim() && item.configName.trim())
+        .map((item) => ({
+          name: item.name.trim(),
+          configName: item.configName.trim(),
+          relatedModule: item.relatedModule.trim() || "未分类模块",
+          paramNames: item.paramNames
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean),
+          purpose: item.purpose.trim() || "待补充用途说明",
+          handoffRule: item.handoffRule.trim() || "待补充研发约定",
+          sourceType: item.sourceType.trim() || "MANUAL"
+        })),
+      dictionaryMappings: nextMappings
+        .filter((item) => item.propertyName.trim() && item.dictionaryName.trim())
+        .map((item) => ({
+          eventName: item.eventName.trim() || null,
+          propertyName: item.propertyName.trim(),
+          dictionaryName: item.dictionaryName.trim(),
+          isRequiredMapping: item.isRequiredMapping,
+          mappingNote: item.mappingNote.trim() || null
+        }))
+    };
+
+    const response = await fetch(`/api/plans/${activePlan.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "保存方案包失败。");
+    }
+    onMessage(successMessage);
+    onRefresh(activePlan.id, activeEvent?.id ?? null, null, "results");
+  }
+
   function savePackageSection() {
     startTransition(async () => {
-      onError(null);
-      onMessage(null);
-
-      const payload = {
-        globalProperties: globalDraft
-          .filter((item) => item.name.trim())
-          .map((item) => ({
-            name: item.name.trim(),
-            type: item.type.trim() || "string",
-            isRequired: item.isRequired,
-            sampleValue: item.sampleValue.trim() || null,
-            description: item.description.trim() || null,
-            category: item.category.trim() || null
-          })),
-        dictionaries: dictionaryDraft
-          .filter((item) => item.name.trim() && item.configName.trim())
-          .map((item) => ({
-            name: item.name.trim(),
-            configName: item.configName.trim(),
-            relatedModule: item.relatedModule.trim() || "未分类模块",
-            paramNames: item.paramNames
-              .split(",")
-              .map((value) => value.trim())
-              .filter(Boolean),
-            purpose: item.purpose.trim() || "待补充用途说明",
-            handoffRule: item.handoffRule.trim() || "待补充研发约定",
-            sourceType: item.sourceType.trim() || "MANUAL"
-          })),
-        dictionaryMappings: mappingDraft
-          .filter((item) => item.propertyName.trim() && item.dictionaryName.trim())
-          .map((item) => ({
-            eventName: item.eventName.trim() || null,
-            propertyName: item.propertyName.trim(),
-            dictionaryName: item.dictionaryName.trim(),
-            isRequiredMapping: item.isRequiredMapping,
-            mappingNote: item.mappingNote.trim() || null
-          }))
-      };
-
-      const response = await fetch(`/api/plans/${activePlan.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        onError(data.error || "保存方案包失败。");
-        return;
+      try {
+        await persistPackageSection();
+      } catch (error) {
+        onError(error instanceof Error ? error.message : "保存方案包失败。");
       }
-      onMessage("公共属性、字典表和映射关系已保存。");
-      onRefresh(activePlan.id, activeEvent?.id ?? null);
+    });
+  }
+
+  function confirmDictionaryCandidate(dictionaryName: string) {
+    startTransition(async () => {
+      const nextDictionaries = dictionaryDraft.map((dictionary) =>
+        dictionary.name === dictionaryName ? { ...dictionary, sourceType: "AI_GENERATED" } : dictionary
+      );
+      setDictionaryDraft(nextDictionaries);
+      setHighlightedDictionaryName(dictionaryName);
+      setResultView("dictionaries");
+      onResultViewChange("dictionaries");
+      try {
+        await persistPackageSection(nextDictionaries, mappingDraft, `已确认字典候选：${dictionaryName}`);
+      } catch (error) {
+        onError(error instanceof Error ? error.message : "确认字典候选失败。");
+      }
+    });
+  }
+
+  function ignoreDictionaryCandidate(dictionaryName: string) {
+    startTransition(async () => {
+      const nextDictionaries = dictionaryDraft.filter((dictionary) => dictionary.name !== dictionaryName);
+      const nextMappings = mappingDraft.filter((mapping) => mapping.dictionaryName !== dictionaryName);
+      setDictionaryDraft(nextDictionaries);
+      setMappingDraft(nextMappings);
+      try {
+        await persistPackageSection(nextDictionaries, nextMappings, `已忽略字典候选：${dictionaryName}`);
+      } catch (error) {
+        onError(error instanceof Error ? error.message : "忽略字典候选失败。");
+      }
+    });
+  }
+
+  function revertDictionaryToCandidate(dictionaryName: string) {
+    startTransition(async () => {
+      const nextDictionaries = dictionaryDraft.map((dictionary) =>
+        dictionary.name === dictionaryName ? { ...dictionary, sourceType: "CANDIDATE" } : dictionary
+      );
+      setDictionaryDraft(nextDictionaries);
+      setHighlightedDictionaryName(dictionaryName);
+      setResultView("candidates");
+      onResultViewChange("candidates");
+      try {
+        await persistPackageSection(nextDictionaries, mappingDraft, `已将正式字典退回候选：${dictionaryName}`);
+      } catch (error) {
+        onError(error instanceof Error ? error.message : "退回字典候选失败。");
+      }
+    });
+  }
+
+  function confirmAllDictionaryCandidates() {
+    startTransition(async () => {
+      const nextDictionaries = dictionaryDraft.map((dictionary) =>
+        dictionary.sourceType === "CANDIDATE" ? { ...dictionary, sourceType: "AI_GENERATED" } : dictionary
+      );
+      setDictionaryDraft(nextDictionaries);
+      setHighlightedDictionaryName(nextDictionaries.find((dictionary) => dictionary.sourceType !== "CANDIDATE")?.name ?? null);
+      setResultView("dictionaries");
+      onResultViewChange("dictionaries");
+      try {
+        await persistPackageSection(nextDictionaries, mappingDraft, `已确认 ${candidateDictionaryDraft.length} 个字典候选。`);
+      } catch (error) {
+        onError(error instanceof Error ? error.message : "批量确认字典候选失败。");
+      }
+    });
+  }
+
+  function ignoreAllDictionaryCandidates() {
+    startTransition(async () => {
+      const nextDictionaries = dictionaryDraft.filter((dictionary) => dictionary.sourceType !== "CANDIDATE");
+      const nextMappings = mappingDraft.filter((mapping) => !candidateDictionaryNames.has(mapping.dictionaryName));
+      setDictionaryDraft(nextDictionaries);
+      setMappingDraft(nextMappings);
+      try {
+        await persistPackageSection(nextDictionaries, nextMappings, `已忽略 ${candidateDictionaryDraft.length} 个字典候选。`);
+      } catch (error) {
+        onError(error instanceof Error ? error.message : "批量忽略字典候选失败。");
+      }
     });
   }
 
@@ -2200,7 +2395,7 @@ function PlanEditor({
         : spreadsheetSheets.some((sheet) => sheet.rowCount > 0 && sheet.role !== "ignore") && isSpreadsheetConfirmed;
 
   const latestSource = activePlan.inputSources?.at(-1);
-  const currentEventMappings = (activePlan.dictionaryMappings ?? []).filter(
+  const currentEventMappings = confirmedMappingDraft.filter(
     (mapping) => mapping.eventName === eventDraft?.eventName
   );
   const eventGroups = activePlan.events.reduce<Record<string, Plan["events"]>>((acc, event) => {
@@ -2217,7 +2412,7 @@ function PlanEditor({
   const sharedGlobalPreview = globalDraft.slice(0, 4).map((property) => property.name).filter(Boolean);
   const deliveryRows = activePlan.events.flatMap((event) =>
     event.properties.map((property) => {
-      const mapping = (activePlan.dictionaryMappings ?? []).find(
+      const mapping = confirmedMappingDraft.find(
         (item) => item.eventName === event.eventName && item.propertyName === property.name
       );
 
@@ -2230,7 +2425,7 @@ function PlanEditor({
         sampleValue: property.sampleValue ?? "",
         isGlobal: "否",
         isDictionary: mapping ? "是" : "否",
-        dictionaryName: mapping?.dictionary?.name ?? ""
+        dictionaryName: mapping?.dictionaryName ?? ""
       };
     })
   );
@@ -2245,7 +2440,7 @@ function PlanEditor({
     isDictionary: "否",
     dictionaryName: ""
   }));
-  const mappingStructureRows = mappingDraft.map((mapping) => ({
+  const mappingStructureRows = confirmedMappingDraft.map((mapping) => ({
     module:
       activePlan.events.find((event) => event.eventName === mapping.eventName)?.category?.name ??
       "全局映射",
@@ -2257,7 +2452,7 @@ function PlanEditor({
     description: mapping.mappingNote || "",
     rowType: "dictionary_mapping" as const
   }));
-  const dictionaryStructureRows = dictionaryDraft.map((dictionary) => ({
+  const dictionaryStructureRows = confirmedDictionaryDraft.map((dictionary) => ({
     module: dictionary.relatedModule || "未分类模块",
     eventName: dictionary.configName || dictionary.name,
     propertyName: dictionary.paramNames || "-",
@@ -2283,14 +2478,14 @@ function PlanEditor({
     {
       key: "dictionaries" as const,
       label: "字典表",
-      count: dictionaryDraft.length,
-      hint: "由事件字段反推的字典候选"
+      count: confirmedDictionaryDraft.length,
+      hint: "已确认并进入正式方案包的字典表"
     },
     {
       key: "mappings" as const,
       label: "映射关系表",
-      count: mappingDraft.length,
-      hint: "字段与字典的绑定关系"
+      count: confirmedMappingDraft.length,
+      hint: "已确认字段与字典的正式绑定关系"
     }
   ];
   const moduleSummaryRows = Object.entries(eventGroups).map(([groupName, events]) => {
@@ -2298,7 +2493,7 @@ function PlanEditor({
     const totalMappings = events.reduce(
       (sum, event) =>
         sum +
-        (activePlan.dictionaryMappings ?? []).filter((mapping) => mapping.eventName === event.eventName).length,
+        confirmedMappingDraft.filter((mapping) => mapping.eventName === event.eventName).length,
       0
     );
     const expectedEvents = getExpectedEventsForGroup(groupName);
@@ -2377,6 +2572,16 @@ function PlanEditor({
   }, []);
 
   useEffect(() => {
+    if (!highlightedDictionaryName) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      setHighlightedDictionaryName(null);
+    }, 2600);
+    return () => window.clearTimeout(timeoutId);
+  }, [highlightedDictionaryName]);
+
+  useEffect(() => {
     if (!initialFocusField) {
       return;
     }
@@ -2396,7 +2601,7 @@ function PlanEditor({
     return () => window.clearTimeout(timeoutId);
   }, [activeEvent?.id, initialFocusField]);
 
-  function switchResultView(nextView: "global" | "events" | "dictionaries") {
+  function switchResultView(nextView: "global" | "events" | "candidates" | "dictionaries") {
     setResultView(nextView);
     onResultViewChange(nextView);
   }
@@ -2416,20 +2621,20 @@ function PlanEditor({
             "正在理解你的自由描述...",
             "正在提取关键玩法、目标漏斗和商业化目标...",
             "正在拆解事件表结构...",
-            "正在补公共属性、字典候选和映射关系..."
+            "正在补公共属性并统一扫描字典候选..."
           ]
         : mode === "template"
           ? [
               "正在读取所选标准模板...",
               "正在组合标准事件骨架...",
-              "正在补齐字段、公共属性和字典候选...",
-              "正在生成完整方案包..."
+              "正在补齐字段并统一扫描字典候选...",
+              "正在生成事件方案..."
             ]
           : [
               "正在读取参考表格...",
               "正在理解工作表角色和字段映射...",
               "正在按映射重建事件与字段结构...",
-              "正在生成方案包..."
+              "正在生成事件方案..."
             ];
 
     setStreamLines([sequence[0]]);
@@ -2472,16 +2677,17 @@ function PlanEditor({
 
         if (type === "GENERATE") {
           const generatedCount = Number(job.result?.generatedCount ?? 0);
+          const candidateCount = Number(job.result?.candidateCount ?? 0);
           const nextPlan = job.result?.plan as { events?: Array<{ id: string }> } | undefined;
           const nextEventId = nextPlan?.events?.[0]?.id ?? fallbackEventId ?? null;
           stopStream();
-          setStreamLines((current) => [...current, `生成完成：已产出 ${generatedCount} 个事件。`]);
-          onMessage(`Gemini 已生成 ${generatedCount} 个事件。`);
+          setStreamLines((current) => [...current, `生成完成：已产出 ${generatedCount} 个事件，并识别出 ${candidateCount} 个字典候选。`]);
+          onMessage(`Gemini 已生成 ${generatedCount} 个事件，并识别出 ${candidateCount} 个字典候选。`);
           if (nextEventId) {
             onSelectEvent(nextEventId);
           }
           onFinishGenerate({ ok: true });
-          onRefresh(activePlan.id, nextEventId, null);
+          onRefresh(activePlan.id, nextEventId, null, "results");
         } else {
           onMessage("AI 诊断已完成，请在右侧查看结果。");
           setIsDiagnosing(false);
@@ -2628,7 +2834,7 @@ function PlanEditor({
               {planDraft.name}
             </h2>
             <p className={styles.eventSource}>
-              选择最适合当前信息形态的输入方式，让 Gemini 生成完整方案包：公共属性、事件表、字典表和映射关系。
+              选择最适合当前信息形态的输入方式，让 Gemini 先生成公共属性和事件表，再基于整份事件表统一扫描字典候选。
             </p>
           </div>
           <div className={styles.sectionHeaderRight}>
@@ -2739,6 +2945,11 @@ function PlanEditor({
                   <span className="pill">已确认：{confirmedSheetCount} / {spreadsheetSheets.filter((sheet) => sheet.rowCount > 0 && sheet.role !== "ignore").length}</span>
                   <span className="pill">{isSpreadsheetConfirmed ? "全部映射已确认" : "待确认映射"}</span>
                 </div>
+                {isSpreadsheetConfirmed ? (
+                  <div className={styles.feedbackSuccess}>
+                    全部可用工作表都已确认完成。现在可以直接点击“确认映射后生成事件方案”。
+                  </div>
+                ) : null}
                 <div className={styles.sheetList}>
                   {spreadsheetSheets.map((sheet) => (
                     <button
@@ -2811,7 +3022,7 @@ function PlanEditor({
                           disabled={!activeSpreadsheetSheet.confirmed || isPending}
                           onClick={() => saveCurrentSpreadsheetSheet()}
                         >
-                          {isPending ? "保存中..." : "保存当前工作表"}
+                          {isPending ? "保存中..." : "暂存当前工作表"}
                         </button>
                       </div>
                     ) : null}
@@ -2962,18 +3173,18 @@ function PlanEditor({
                 </div>
               </div>
               <div className={styles.sideKeyList}>
-                <div className={styles.sideKeyItem}><span>生成内容</span><strong>公共属性</strong></div>
-                <div className={styles.sideKeyItem}><span>生成内容</span><strong>事件表</strong></div>
-                <div className={styles.sideKeyItem}><span>生成内容</span><strong>字典候选</strong></div>
-                <div className={styles.sideKeyItem}><span>生成内容</span><strong>映射关系</strong></div>
+                <div className={styles.sideKeyRow}><span>生成内容</span><strong>公共属性</strong></div>
+                <div className={styles.sideKeyRow}><span>生成内容</span><strong>事件表</strong></div>
+                <div className={styles.sideKeyRow}><span>生成内容</span><strong>字典候选</strong></div>
+                <div className={styles.sideKeyRow}><span>生成内容</span><strong>映射关系</strong></div>
               </div>
               <p className={styles.sideCopy}>
                 当前方案：{activePlan.name} · {activePlan.version}
               </p>
               <div className={styles.sideStatList}>
-                <div className={styles.sideStatItem}><strong>{activePlan.events.length}</strong><span>个事件</span></div>
-                <div className={styles.sideStatItem}><strong>{activePlan.globalProperties?.length ?? 0}</strong><span>个公共属性</span></div>
-                <div className={styles.sideStatItem}><strong>{activePlan.dictionaries?.length ?? 0}</strong><span>个字典候选</span></div>
+                <div className={styles.sideStatCard}><strong>{activePlan.events.length}</strong><span>个事件</span></div>
+                <div className={styles.sideStatCard}><strong>{activePlan.globalProperties?.length ?? 0}</strong><span>个公共属性</span></div>
+                <div className={styles.sideStatCard}><strong>{candidateDictionaryDraft.length}</strong><span>个字典候选</span></div>
               </div>
             </div>
             <div className={styles.stepFocusCard}>
@@ -2984,20 +3195,20 @@ function PlanEditor({
                 </div>
               </div>
               <div className={styles.sideChecklist}>
-                <div className={styles.sideChecklistItem}>
+                <div className={styles.sideChecklistRow}>
                   <span>方案基础</span>
                   <strong className={activePlan.events.length > 0 ? styles.status_completed : styles.status_waiting}>
                     {activePlan.events.length > 0 ? "已有方案基础" : "等待首轮生成"}
                   </strong>
                 </div>
-                <div className={styles.sideChecklistItem}>
+                <div className={styles.sideChecklistRow}>
                   <span>输入状态</span>
                   <strong className={canGenerate ? styles.status_completed : styles.status_waiting}>
                     {canGenerate ? "输入可生成" : "输入未完成"}
                   </strong>
                 </div>
                 {generationMode === "spreadsheet" ? (
-                  <div className={styles.sideChecklistItem}>
+                  <div className={styles.sideChecklistRow}>
                     <span>映射状态</span>
                     <strong className={isSpreadsheetConfirmed ? styles.status_completed : styles.status_waiting}>
                       {isSpreadsheetConfirmed ? "映射已确认" : "映射待确认"}
@@ -3007,15 +3218,15 @@ function PlanEditor({
               </div>
               <p className={styles.sideCopy}>
                 {generationMode === "spreadsheet"
-                  ? "上传和确认工作表只是保存参考输入；仍需点击“确认映射后生成方案”，系统才会基于参考表生成事件表、公共属性和字典候选。"
-                  : "完成生成后，下一步去第 3 步查看公共属性、事件表和字典候选，再执行 AI 诊断与确认方案。"}
+                  ? "上传和确认工作表只是保存参考输入。暂存仅用于断点续传；仍需点击“确认映射后生成事件方案”，系统才会基于参考表生成事件表、公共属性并扫描字典候选。"
+                  : "完成生成后，下一步去第 3 步查看公共属性、事件表和字典候选，再确认哪些候选需要生成正式字典表。"}
               </p>
             </div>
             <div className={styles.stepFocusCard}>
               <div className={styles.sectionHeader}>
                 <div>
                   <p className={styles.sectionLabel}>生成进度</p>
-                  <p className={styles.eventSource}>点击 `AI 生成方案` 后，会按阶段流式显示当前进展。</p>
+                  <p className={styles.eventSource}>点击 `生成事件方案` 后，会按阶段流式显示当前进展。</p>
                 </div>
               </div>
               <div className={styles.streamPanel}>
@@ -3027,7 +3238,7 @@ function PlanEditor({
                     </div>
                   ))
                 ) : (
-                  <p className={styles.sideCopy}>还没有开始生成。输入完成后点击 `AI 生成方案` 查看实时进度。</p>
+                  <p className={styles.sideCopy}>还没有开始生成。输入完成后点击 `生成事件方案` 查看实时进度。</p>
                 )}
               </div>
             </div>
@@ -3055,7 +3266,7 @@ function PlanEditor({
         <div className={styles.sectionHeader}>
           <div>
             <p className={styles.sectionLabel}>方案结果区</p>
-            <p className={styles.eventSource}>先看生成出的公共属性、事件分组和字典关系，再决定是否进入下方编辑区细改。</p>
+            <p className={styles.eventSource}>先看生成出的公共属性与事件表，再基于整份事件表统一确认字典候选，最后形成正式字典表。</p>
           </div>
           <div className={styles.modeTabs}>
             <button
@@ -3074,10 +3285,17 @@ function PlanEditor({
             </button>
             <button
               type="button"
+              className={`${styles.modeTab} ${resultView === "candidates" ? styles.modeTabActive : ""}`}
+              onClick={() => switchResultView("candidates")}
+            >
+              字典候选
+            </button>
+            <button
+              type="button"
               className={`${styles.modeTab} ${resultView === "dictionaries" ? styles.modeTabActive : ""}`}
               onClick={() => switchResultView("dictionaries")}
             >
-              字典表
+              已确认字典
             </button>
           </div>
         </div>
@@ -3087,7 +3305,9 @@ function PlanEditor({
             ? "公共属性是所有事件共享的底座字段，用于后续所有图表的切片分析。"
             : resultView === "events"
               ? "事件表按模块分组展示，每张卡片会同时告诉你共享公共属性、事件字段和字典字段。"
-              : "字典表用于管理必须查表的参数，以及事件参数到字典的映射关系。"}
+              : resultView === "candidates"
+                ? "字典候选来自对整份事件表的统一扫描。请先确认哪些字段必须查表，再生成正式字典表和映射关系。"
+                : "这里展示的是已确认字典和正式映射关系，第 4 步字段结构查看只会读取这些正式结果。"}
         </div>
 
         <div className={styles.packageSummaryGrid}>
@@ -3102,14 +3322,14 @@ function PlanEditor({
             <span className={styles.summaryCopy}>按模块分组查看</span>
           </div>
           <div className={styles.summaryStat}>
-            <span className={styles.summaryLabel}>字典表</span>
-            <strong>{dictionaryDraft.length}</strong>
-            <span className={styles.summaryCopy}>强关联参数查表</span>
+            <span className={styles.summaryLabel}>字典候选</span>
+            <strong>{candidateDictionaryDraft.length}</strong>
+            <span className={styles.summaryCopy}>等待用户确认生成</span>
           </div>
           <div className={styles.summaryStat}>
-            <span className={styles.summaryLabel}>映射关系</span>
-            <strong>{mappingDraft.length}</strong>
-            <span className={styles.summaryCopy}>事件参数到字典的绑定</span>
+            <span className={styles.summaryLabel}>正式字典</span>
+            <strong>{confirmedDictionaryDraft.length}</strong>
+            <span className={styles.summaryCopy}>已确认进入方案包</span>
           </div>
         </div>
 
@@ -3206,7 +3426,7 @@ function PlanEditor({
           <div className={styles.packagePanel}>
             <div className={styles.packageSummaryRow}>
               <span className="pill">{activePlan.events.length} 个事件</span>
-              <span className="pill">{activePlan.dictionaryMappings?.length ?? 0} 条字典映射</span>
+              <span className="pill">{confirmedMappingDraft.length} 条正式字典映射</span>
               <span className="pill">{globalDraft.length} 个共享公共属性</span>
             </div>
             <div className={styles.subViewTabs}>
@@ -3243,7 +3463,7 @@ function PlanEditor({
                   const totalMappings = events.reduce(
                     (sum, event) =>
                       sum +
-                      (activePlan.dictionaryMappings ?? []).filter((mapping) => mapping.eventName === event.eventName).length,
+                      confirmedMappingDraft.filter((mapping) => mapping.eventName === event.eventName).length,
                     0
                   );
 
@@ -3300,7 +3520,7 @@ function PlanEditor({
                 {!collapsedGroups[groupName] ? (
                   <div className={styles.resultEventList}>
                     {events.map((event) => {
-                      const mappings = (activePlan.dictionaryMappings ?? []).filter(
+                      const mappings = confirmedMappingDraft.filter(
                         (mapping) => mapping.eventName === event.eventName
                       );
                       const previewFields = getEventPreviewFields(event);
@@ -3359,12 +3579,12 @@ function PlanEditor({
                               <div className={styles.fieldPreviewList}>
                                 {mappings.map((mapping) => (
                                   <span
-                                    key={`${event.id}-${mapping.propertyName}-${mapping.dictionary?.name ?? "dict"}`}
+                                    key={`${event.id}-${mapping.propertyName}-${mapping.dictionaryName ?? "dict"}`}
                                     className={styles.mappingPreviewTag}
                                   >
                                     {mapping.propertyName}
                                     {" -> "}
-                                    {mapping.dictionary?.name ?? "未绑定"}
+                                    {mapping.dictionaryName ?? "未绑定"}
                                   </span>
                                 ))}
                               </div>
@@ -3461,54 +3681,186 @@ function PlanEditor({
           </div>
         ) : null}
 
+        {resultView === "candidates" ? (
+          <div className={styles.packagePanel}>
+            <div className={styles.packageSummaryRow}>
+              <span className="pill">{candidateDictionaryDraft.length} 个字典候选</span>
+              <span className="pill">{candidateMappingDraft.length} 条候选映射</span>
+              <span className="pill">基于整份事件表统一扫描</span>
+            </div>
+            {candidateDictionaryDraft.length ? (
+              <div className={styles.editorActions}>
+                <select
+                  className={styles.mockInput}
+                  value={candidateModuleFilter}
+                  onChange={(event) => setCandidateModuleFilter(event.target.value)}
+                >
+                  <option value="all">全部模块</option>
+                  {candidateModuleOptions.map((moduleName) => (
+                    <option key={moduleName} value={moduleName}>
+                      {moduleName}
+                    </option>
+                  ))}
+                </select>
+                <button className="button-secondary" type="button" onClick={ignoreAllDictionaryCandidates}>
+                  全部忽略候选
+                </button>
+                <button className="button-primary" type="button" onClick={confirmAllDictionaryCandidates}>
+                  全部确认生成字典
+                </button>
+              </div>
+            ) : null}
+            {candidateDictionaryDraft.length ? (
+              <div className={styles.candidateGroupList}>
+                {filteredCandidateGroups.map((group) => (
+                  <section key={group.key} className={styles.candidateGroup}>
+                    <div className={styles.mappingPanelHeader}>
+                      <div>
+                        <p className={styles.sectionLabel}>来源字段组</p>
+                        <p className={styles.mappingCopy}>{group.label}</p>
+                      </div>
+                      <div className={styles.mappingSummary}>
+                        <span className="pill">{group.dictionaries.length} 个候选</span>
+                        <span className="pill">{group.mappings.length} 条映射</span>
+                      </div>
+                    </div>
+                    <div className={styles.dictionaryCardGrid}>
+                      {group.dictionaries.map((dictionary, index) => {
+                        const mappings = group.mappings.filter((mapping) => mapping.dictionaryName === dictionary.name);
+                        const impactedModules = Array.from(
+                          new Set(
+                            mappings.map((mapping) => {
+                              const targetEvent = activePlan.events.find((event) => event.eventName === mapping.eventName);
+                              return targetEvent?.category?.name ?? dictionary.relatedModule ?? "未分类模块";
+                            })
+                          )
+                        );
+                        return (
+                          <div key={`${dictionary.name}-${index}`} className={styles.dictionaryCard}>
+                            <div className={styles.resultEventTop}>
+                              <strong>{dictionary.name}</strong>
+                              <span className="pill">待确认</span>
+                            </div>
+                            <div className={styles.mappingSummary}>
+                              <span className="pill">{dictionary.configName}</span>
+                              <span className="pill">{dictionary.relatedModule}</span>
+                            </div>
+                            <p className={styles.treeMeta}>{dictionary.purpose}</p>
+                            <div className={styles.previewBlock}>
+                              <span className={styles.previewLabel}>触发字段</span>
+                              <div className={styles.fieldPreviewList}>
+                                {dictionary.paramNames
+                                  .split(",")
+                                  .map((name) => name.trim())
+                                  .filter(Boolean)
+                                  .map((name) => (
+                                    <span key={`${dictionary.name}-${name}`} className={styles.mappingPreviewTag}>
+                                      {name}
+                                    </span>
+                                  ))}
+                              </div>
+                            </div>
+                            <div className={styles.previewBlock}>
+                              <span className={styles.previewLabel}>来源模块</span>
+                              <div className={styles.fieldPreviewList}>
+                                {impactedModules.map((moduleName) => (
+                                  <span key={`${dictionary.name}-${moduleName}`} className={styles.fieldPreviewTag}>
+                                    {moduleName}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                            <div className={styles.previewBlock}>
+                              <span className={styles.previewLabel}>影响事件参数</span>
+                              <div className={styles.fieldPreviewList}>
+                                {mappings.map((mapping) => (
+                                  <span key={`${dictionary.name}-${mapping.eventName}-${mapping.propertyName}`} className={styles.fieldPreviewTag}>
+                                    {(mapping.eventName ?? "全局") + "." + mapping.propertyName}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                            <p className={styles.treeMeta}>{dictionary.handoffRule}</p>
+                            <div className={styles.editorActions}>
+                              <button className="button-secondary" type="button" onClick={() => ignoreDictionaryCandidate(dictionary.name)}>
+                                忽略候选
+                              </button>
+                              <button className="button-primary" type="button" onClick={() => confirmDictionaryCandidate(dictionary.name)}>
+                                确认生成字典
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            ) : (
+              <div className={styles.emptyList}>
+                {candidateModuleFilter === "all"
+                  ? "当前没有待确认的字典候选。若事件表中包含配置型字段，下一轮生成会自动扫描出来。"
+                  : `当前筛选模块下没有待确认的字典候选。你可以切回“全部模块”继续查看。`}
+              </div>
+            )}
+          </div>
+        ) : null}
+
         {resultView === "dictionaries" ? (
           <div className={styles.packagePanel}>
             <div className={styles.packageSummaryRow}>
-              <span className="pill">{dictionaryDraft.length} 个字典表</span>
-              <span className="pill">按字典分组展示</span>
+              <span className="pill">{confirmedDictionaryDraft.length} 个正式字典表</span>
+              <span className="pill">{confirmedMappingDraft.length} 条正式映射</span>
+              <span className="pill">这些内容会进入第 4 步字段结构查看</span>
             </div>
-            {dictionaryDraft.length ? (
+            {confirmedDictionaryDraft.length ? (
               <div className={styles.dictionaryCardGrid}>
-                {dictionaryDraft.map((dictionary, index) => {
-                  const mappings = mappingDraft.filter(
+                {confirmedDictionaryDraft.map((dictionary) => {
+                  const draftIndex = dictionaryDraft.findIndex(
+                    (item) => item.name === dictionary.name && item.configName === dictionary.configName
+                  );
+                  const mappings = confirmedMappingDraft.filter(
                     (mapping) => mapping.dictionaryName === dictionary.name
                   );
                   return (
-                    <div key={`${dictionary.name}-${index}`} className={styles.dictionaryCard}>
+                    <div
+                      key={`${dictionary.name}-${dictionary.configName}`}
+                      className={`${styles.dictionaryCard} ${highlightedDictionaryName === dictionary.name ? styles.resultEventCardActive : ""}`}
+                    >
                       <div className={styles.resultEventTop}>
                         <input
                           className={styles.mockInput}
                           value={dictionary.name}
-                          onChange={(event) => updateDictionary(index, { name: event.target.value })}
+                          onChange={(event) => updateDictionary(draftIndex, { name: event.target.value })}
                         />
                         <input
                           className={styles.mockInput}
                           value={dictionary.configName}
-                          onChange={(event) => updateDictionary(index, { configName: event.target.value })}
+                          onChange={(event) => updateDictionary(draftIndex, { configName: event.target.value })}
                         />
                       </div>
                       <input
                         className={styles.mockInput}
                         value={dictionary.relatedModule}
-                        onChange={(event) => updateDictionary(index, { relatedModule: event.target.value })}
+                        onChange={(event) => updateDictionary(draftIndex, { relatedModule: event.target.value })}
                         placeholder="关联模块"
                       />
                       <input
                         className={styles.mockInput}
                         value={dictionary.paramNames}
-                        onChange={(event) => updateDictionary(index, { paramNames: event.target.value })}
+                        onChange={(event) => updateDictionary(draftIndex, { paramNames: event.target.value })}
                         placeholder="关联参数，逗号分隔"
                       />
                       <textarea
                         className={`${styles.mockInput} ${styles.textarea}`}
                         value={dictionary.purpose}
-                        onChange={(event) => updateDictionary(index, { purpose: event.target.value })}
+                        onChange={(event) => updateDictionary(draftIndex, { purpose: event.target.value })}
                         placeholder="用途说明"
                       />
                       <textarea
                         className={`${styles.mockInput} ${styles.textarea}`}
                         value={dictionary.handoffRule}
-                        onChange={(event) => updateDictionary(index, { handoffRule: event.target.value })}
+                        onChange={(event) => updateDictionary(draftIndex, { handoffRule: event.target.value })}
                         placeholder="规范约定"
                       />
                       <div className={styles.mappingSummary}>
@@ -3523,15 +3875,15 @@ function PlanEditor({
                 })}
               </div>
             ) : (
-              <div className={styles.emptyList}>当前方案还没有识别到字典表。若包含配置型参数，下一轮生成会自动补出。</div>
+              <div className={styles.emptyList}>当前还没有已确认的正式字典表。请先在“字典候选”里确认需要查表的候选。</div>
             )}
             <section className={styles.mappingEditor}>
               <div className={styles.sectionHeader}>
                 <div>
                   <p className={styles.sectionLabel}>映射关系</p>
-                  <p className={styles.eventSource}>明确事件参数应查哪张字典表，并标记是否强制查表。</p>
+                  <p className={styles.eventSource}>这里展示的是正式映射关系。只有已确认字典才会出现在第 4 步结构表里。</p>
                 </div>
-                <span className="pill">{mappingDraft.length} 条映射</span>
+                <span className="pill">{confirmedMappingDraft.length} 条映射</span>
               </div>
               <div className={styles.mappingTableWrap}>
                 <div className={styles.mappingTable}>
@@ -3542,29 +3894,36 @@ function PlanEditor({
                     <div>强制查表</div>
                     <div>说明</div>
                   </div>
-                  {mappingDraft.map((mapping, index) => (
-                    <div key={`${mapping.eventName}-${mapping.propertyName}-${index}`} className={styles.mappingTableRow}>
+                  {confirmedMappingDraft.map((mapping) => {
+                    const draftIndex = mappingDraft.findIndex(
+                      (item) =>
+                        item.eventName === mapping.eventName &&
+                        item.propertyName === mapping.propertyName &&
+                        item.dictionaryName === mapping.dictionaryName
+                    );
+                    return (
+                    <div key={`${mapping.eventName}-${mapping.propertyName}-${mapping.dictionaryName}`} className={styles.mappingTableRow}>
                       <input
                         className={styles.mockInput}
                         value={mapping.eventName}
-                        onChange={(event) => updateMapping(index, { eventName: event.target.value })}
+                        onChange={(event) => updateMapping(draftIndex, { eventName: event.target.value })}
                         placeholder="可留空表示全局"
                       />
                       <input
                         className={styles.mockInput}
                         value={mapping.propertyName}
-                        onChange={(event) => updateMapping(index, { propertyName: event.target.value })}
+                        onChange={(event) => updateMapping(draftIndex, { propertyName: event.target.value })}
                       />
                       <input
                         className={styles.mockInput}
                         value={mapping.dictionaryName}
-                        onChange={(event) => updateMapping(index, { dictionaryName: event.target.value })}
+                        onChange={(event) => updateMapping(draftIndex, { dictionaryName: event.target.value })}
                       />
                       <select
                         className={styles.mockInput}
                         value={mapping.isRequiredMapping ? "required" : "optional"}
                         onChange={(event) =>
-                          updateMapping(index, { isRequiredMapping: event.target.value === "required" })
+                          updateMapping(draftIndex, { isRequiredMapping: event.target.value === "required" })
                         }
                       >
                         <option value="required">是</option>
@@ -3573,10 +3932,10 @@ function PlanEditor({
                       <input
                         className={styles.mockInput}
                         value={mapping.mappingNote}
-                        onChange={(event) => updateMapping(index, { mappingNote: event.target.value })}
+                        onChange={(event) => updateMapping(draftIndex, { mappingNote: event.target.value })}
                       />
                     </div>
-                  ))}
+                  )})}
                 </div>
               </div>
             </section>
@@ -3599,7 +3958,7 @@ function PlanEditor({
                   ])
                 }
               >
-                新增字典表
+                新增正式字典
               </button>
               <button
                 className="button-secondary"
@@ -3620,7 +3979,7 @@ function PlanEditor({
                 新增映射
               </button>
               <button className="button-primary" type="button" onClick={savePackageSection}>
-                保存字典与映射
+                保存正式字典与映射
               </button>
             </div>
           </div>
@@ -3629,7 +3988,7 @@ function PlanEditor({
           <button
             className="button-secondary"
             type="button"
-            disabled={isDiagnosing || isGenerating || !activePlan.events.length}
+            disabled={isDiagnosing || isGenerating || !activePlan.events.length || candidateDictionaryDraft.length > 0}
             onClick={() =>
               startTransition(async () => {
                 setIsDiagnosing(true);
@@ -3669,7 +4028,13 @@ function PlanEditor({
           <button
             className="button-primary"
             type="button"
-            disabled={isPending || isGenerating || activePlan.diagnosisStatus !== "COMPLETED" || activePlan.status === "CONFIRMED"}
+            disabled={
+              isPending ||
+              isGenerating ||
+              activePlan.diagnosisStatus !== "COMPLETED" ||
+              activePlan.status === "CONFIRMED" ||
+              candidateDictionaryDraft.length > 0
+            }
             onClick={() =>
               startTransition(async () => {
                 onError(null);
@@ -3690,6 +4055,9 @@ function PlanEditor({
             {activePlan.status === "CONFIRMED" ? "已确认" : "确认方案"}
           </button>
         </div>
+        {candidateDictionaryDraft.length ? (
+          <p className={styles.mutedNote}>当前还有 {candidateDictionaryDraft.length} 个字典候选待确认。请先确认或忽略候选，再执行 AI 诊断与方案确认。</p>
+        ) : null}
       </section>
       ) : null}
 

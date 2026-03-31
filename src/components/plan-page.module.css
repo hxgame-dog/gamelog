@@ -456,15 +456,13 @@
 }
 
 .sideKeyList,
-.sideStatList,
 .sideChecklist {
   display: grid;
   gap: 8px;
 }
 
-.sideKeyItem,
-.sideStatItem,
-.sideChecklistItem {
+.sideKeyRow,
+.sideChecklistRow {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
@@ -476,27 +474,41 @@
   font-size: 13px;
 }
 
-.sideKeyItem span,
-.sideChecklistItem span {
+.sideKeyRow span,
+.sideChecklistRow span {
   color: var(--muted);
   line-height: 1.5;
 }
 
-.sideKeyItem strong,
-.sideChecklistItem strong {
+.sideKeyRow strong,
+.sideChecklistRow strong {
   color: var(--title);
   text-align: right;
   line-height: 1.5;
 }
 
-.sideStatItem strong {
+.sideStatList {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sideStatCard {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+}
+
+.sideStatCard strong {
   font-size: 18px;
   line-height: 1;
   color: var(--title);
-  justify-self: end;
 }
 
-.sideStatItem span {
+.sideStatCard span {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
@@ -632,6 +644,20 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.candidateGroupList {
+  display: grid;
+  gap: 16px;
+}
+
+.candidateGroup {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: #fdfdfc;
 }
 
 .summaryGrid {
