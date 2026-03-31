@@ -154,6 +154,9 @@ export async function diagnoseTrackingPlan(planId: string) {
   if (!plan.events.length) {
     throw new Error("当前方案还没有事件，无法执行诊断。");
   }
+  if ((plan.dictionaries ?? []).some((dictionary) => dictionary.sourceType === "CANDIDATE")) {
+    throw new Error("当前还有待确认的字典候选，请先确认或忽略后再执行诊断。");
+  }
 
   await updatePlanDiagnosisStatus(planId, JobStatus.PROCESSING);
   const ruleDiagnosis = buildRuleBasedDiagnosis(plan);

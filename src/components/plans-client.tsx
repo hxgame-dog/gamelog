@@ -1905,6 +1905,7 @@ function PlanEditor({
   const streamTimerRef = useRef<number | null>(null);
   const noticeTimerRef = useRef<number | null>(null);
   const toastTimerRef = useRef<number | null>(null);
+  const resultHintTimerRef = useRef<number | null>(null);
   const spreadsheetSheetsRef = useRef<SpreadsheetSheet[]>([]);
   const [resultView, setResultView] = useState<"global" | "events" | "candidates" | "dictionaries">("events");
   const [eventResultMode, setEventResultMode] = useState<"cards" | "table" | "summary">("cards");
@@ -1913,6 +1914,7 @@ function PlanEditor({
   const [candidateModuleFilter, setCandidateModuleFilter] = useState<string>("all");
   const [candidateFieldFilter, setCandidateFieldFilter] = useState<string>("all");
   const [highlightedDictionaryName, setHighlightedDictionaryName] = useState<string | null>(null);
+  const [resultNavigationHint, setResultNavigationHint] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [globalDraft, setGlobalDraft] = useState<EditableGlobalProperty[]>(createGlobalPropertyDraft(activePlan));
   const [dictionaryDraft, setDictionaryDraft] = useState<EditableDictionary[]>(createDictionaryDraft(activePlan));
@@ -2028,6 +2030,16 @@ function PlanEditor({
     toastTimerRef.current = window.setTimeout(() => {
       setSheetActionToast(null);
     }, 2600);
+  }
+
+  function showResultNavigationHint(text: string) {
+    setResultNavigationHint(text);
+    if (resultHintTimerRef.current) {
+      window.clearTimeout(resultHintTimerRef.current);
+    }
+    resultHintTimerRef.current = window.setTimeout(() => {
+      setResultNavigationHint(null);
+    }, 3200);
   }
 
   function getCurrentSpreadsheetSheet(sheetName: string) {
@@ -2604,6 +2616,56 @@ function PlanEditor({
   function switchResultView(nextView: "global" | "events" | "candidates" | "dictionaries") {
     setResultView(nextView);
     onResultViewChange(nextView);
+  }
+
+  function navigateToGlobalResults() {
+    switchResultView("global");
+    onStepChange("results");
+    showResultNavigationHint("当前位置：方案结果区 / 公共属性");
+  }
+
+  function navigateToEventResult(eventName: string, propertyName?: string | null) {
+    const targetEvent = activePlan.events.find((event) => event.eventName === eventName);
+    if (!targetEvent) {
+      return;
+    }
+
+    onSelectEvent(targetEvent.id);
+    onRefresh(activePlan.id, targetEvent.id, propertyName ?? null, "results");
+    showResultNavigationHint(
+      `当前位置：方案结果区 / 事件表 / ${eventName}${propertyName ? ` / ${propertyName}` : ""}`
+    );
+  }
+
+  function navigateToDictionaryResult(dictionaryName: string) {
+    setHighlightedDictionaryName(dictionaryName);
+    switchResultView("dictionaries");
+    onStepChange("results");
+    showResultNavigationHint(`当前位置：方案结果区 / 已确认字典 / ${dictionaryName}`);
+  }
+
+  function navigateToMappingResult(mapping: { eventName?: string | null; propertyName: string; dictionaryName?: string | null }) {
+    if (mapping.dictionaryName) {
+      setHighlightedDictionaryName(mapping.dictionaryName);
+    }
+
+    if (mapping.eventName && mapping.eventName !== "*") {
+      const targetEvent = activePlan.events.find((event) => event.eventName === mapping.eventName);
+      if (targetEvent) {
+        onSelectEvent(targetEvent.id);
+        onRefresh(activePlan.id, targetEvent.id, mapping.propertyName, "results");
+        showResultNavigationHint(
+          `当前位置：方案结果区 / 事件表 / ${mapping.eventName} / ${mapping.propertyName}`
+        );
+        return;
+      }
+    }
+
+    switchResultView("dictionaries");
+    onStepChange("results");
+    showResultNavigationHint(
+      `当前位置：方案结果区 / 已确认字典${mapping.dictionaryName ? ` / ${mapping.dictionaryName}` : ""}`
+    );
   }
 
   function stopStream() {
@@ -3309,6 +3371,7 @@ function PlanEditor({
                 ? "字典候选来自对整份事件表的统一扫描。请先确认哪些字段必须查表，再生成正式字典表和映射关系。"
                 : "这里展示的是已确认字典和正式映射关系，第 4 步字段结构查看只会读取这些正式结果。"}
         </div>
+        {resultNavigationHint ? <div className={styles.feedbackInfo}>{resultNavigationHint}</div> : null}
 
         <div className={styles.packageSummaryGrid}>
           <div className={styles.summaryStat}>
@@ -3702,6 +3765,18 @@ function PlanEditor({
                     </option>
                   ))}
                 </select>
+                <select
+                  className={styles.mockInput}
+                  value={candidateFieldFilter}
+                  onChange={(event) => setCandidateFieldFilter(event.target.value)}
+                >
+                  <option value="all">全部字段</option>
+                  {candidateFieldOptions.map((fieldName) => (
+                    <option key={fieldName} value={fieldName}>
+                      {fieldName}
+                    </option>
+                  ))}
+                </select>
                 <button className="button-secondary" type="button" onClick={ignoreAllDictionaryCandidates}>
                   全部忽略候选
                 </button>
@@ -3798,9 +3873,9 @@ function PlanEditor({
               </div>
             ) : (
               <div className={styles.emptyList}>
-                {candidateModuleFilter === "all"
+                {candidateModuleFilter === "all" && candidateFieldFilter === "all"
                   ? "当前没有待确认的字典候选。若事件表中包含配置型字段，下一轮生成会自动扫描出来。"
-                  : `当前筛选模块下没有待确认的字典候选。你可以切回“全部模块”继续查看。`}
+                  : "当前筛选条件下没有待确认的字典候选。你可以切回“全部模块 / 全部字段”继续查看。"}
               </div>
             )}
           </div>
@@ -3863,6 +3938,15 @@ function PlanEditor({
                         onChange={(event) => updateDictionary(draftIndex, { handoffRule: event.target.value })}
                         placeholder="规范约定"
                       />
+                      <div className={styles.editorActions}>
+                        <button
+                          className="button-secondary"
+                          type="button"
+                          onClick={() => revertDictionaryToCandidate(dictionary.name)}
+                        >
+                          退回候选
+                        </button>
+                      </div>
                       <div className={styles.mappingSummary}>
                         {mappings.map((mapping) => (
                           <span key={`${dictionary.name}-${mapping.propertyName}-${mapping.eventName}`} className="pill">
@@ -4101,7 +4185,7 @@ function PlanEditor({
                     <div>模块</div><div>事件名</div><div>字段名</div><div>类型</div><div>必填</div><div>示例值</div><div>公共属性</div><div>字典字段</div><div>字典表</div>
                   </div>
                   {globalDeliveryRows.map((row, index) => (
-                    <button type="button" key={`${row.propertyName}-${index}`} className={styles.deliveryTableRow} onClick={() => switchResultView("global")}>
+                    <button type="button" key={`${row.propertyName}-${index}`} className={styles.deliveryTableRow} onClick={() => navigateToGlobalResults()}>
                       <div>{row.module}</div><div>{row.eventName}</div><div>{row.propertyName}</div><div>{row.type}</div><div>{row.required}</div><div>{row.sampleValue || "-"}</div><div>{row.isGlobal}</div><div>{row.isDictionary}</div><div>{row.dictionaryName || "-"}</div>
                     </button>
                   ))}
@@ -4123,12 +4207,7 @@ function PlanEditor({
                       type="button"
                       key={`${row.eventName}-${row.propertyName}-${index}`}
                       className={styles.deliveryTableRow}
-                      onClick={() => {
-                        const targetEvent = activePlan.events.find((event) => event.eventName === row.eventName);
-                        if (!targetEvent) return;
-                        onSelectEvent(targetEvent.id);
-                        onRefresh(activePlan.id, targetEvent.id, row.propertyName, "results");
-                      }}
+                      onClick={() => navigateToEventResult(row.eventName, row.propertyName)}
                     >
                       <div>{row.module}</div><div>{row.eventName}</div><div>{row.propertyName}</div><div>{row.type}</div><div>{row.required}</div><div>{row.sampleValue || "-"}</div><div>{row.isGlobal}</div><div>{row.isDictionary}</div><div>{row.dictionaryName || "-"}</div>
                     </button>
@@ -4150,8 +4229,8 @@ function PlanEditor({
                     <button
                       type="button"
                       key={`${row.eventName}-${row.propertyName}-${index}`}
-                      className={styles.deliveryTableRow}
-                      onClick={() => switchResultView("dictionaries")}
+                      className={`${styles.deliveryTableRow} ${styles.schemaConfirmedRow}`}
+                      onClick={() => navigateToDictionaryResult(row.sampleValue || row.eventName)}
                     >
                       <div>{row.module}</div><div>{row.eventName}</div><div>{row.propertyName}</div><div>{row.type}</div><div>{row.required}</div><div>{row.sampleValue || "-"}</div><div>{row.description || "-"}</div><div>否</div><div>是</div>
                     </button>
@@ -4173,8 +4252,14 @@ function PlanEditor({
                     <button
                       type="button"
                       key={`${row.eventName}-${row.propertyName}-${index}`}
-                      className={styles.deliveryTableRow}
-                      onClick={() => onStepChange("results")}
+                      className={`${styles.deliveryTableRow} ${styles.schemaConfirmedRow}`}
+                      onClick={() =>
+                        navigateToMappingResult({
+                          eventName: row.eventName,
+                          propertyName: row.propertyName,
+                          dictionaryName: row.sampleValue
+                        })
+                      }
                     >
                       <div>{row.module}</div><div>{row.eventName}</div><div>{row.propertyName}</div><div>{row.type}</div><div>{row.required}</div><div>{row.sampleValue || "-"}</div><div>{row.description || "-"}</div><div>否</div><div>是</div>
                     </button>

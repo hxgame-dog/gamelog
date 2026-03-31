@@ -863,6 +863,9 @@ export async function confirmPlan(planId: string) {
   if (!plan.events.length) {
     throw new Error("当前方案还没有事件，无法确认。");
   }
+  if ((plan.dictionaries ?? []).some((dictionary) => dictionary.sourceType === "CANDIDATE")) {
+    throw new Error("当前还有待确认的字典候选，请先确认或忽略后再确认方案。");
+  }
   if (plan.diagnosisStatus !== "COMPLETED") {
     throw new Error("请先完成诊断，再确认方案。");
   }

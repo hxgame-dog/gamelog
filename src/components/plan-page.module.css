@@ -948,6 +948,11 @@
   background: #ffffff;
 }
 
+.schemaConfirmedRow {
+  border-color: rgba(31, 154, 133, 0.18);
+  background: rgba(31, 154, 133, 0.05);
+}
+
 .dictionaryTable {
   min-width: 980px;
 }

@@ -631,13 +631,17 @@ export async function generateTrackingPlanFromPrompt(planId: string, input: unkn
     inputSourceType: inputContext.inputSourceType,
     events,
     globalProperties: generated.globalProperties,
-    dictionaries: generated.dictionaries,
+    dictionaries: generated.dictionaries.map((dictionary) => ({
+      ...dictionary,
+      sourceType: "CANDIDATE"
+    })),
     dictionaryMappings: generated.dictionaryMappings
   });
 
   return {
     plan: updatedPlan,
     generatedCount: events.length,
+    candidateCount: generated.dictionaries.length,
     model,
     mode: payload.mode
   };
