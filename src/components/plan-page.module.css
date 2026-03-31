@@ -438,6 +438,7 @@
   min-width: 0;
   display: grid;
   gap: 14px;
+  align-content: start;
 }
 
 .stepFocusCard {
@@ -464,9 +465,9 @@
 .sideKeyItem,
 .sideStatItem,
 .sideChecklistItem {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: 10px;
   padding: 10px 12px;
   border-radius: 12px;
@@ -478,23 +479,27 @@
 .sideKeyItem span,
 .sideChecklistItem span {
   color: var(--muted);
+  line-height: 1.5;
 }
 
 .sideKeyItem strong,
 .sideChecklistItem strong {
   color: var(--title);
   text-align: right;
+  line-height: 1.5;
 }
 
 .sideStatItem strong {
   font-size: 18px;
   line-height: 1;
   color: var(--title);
+  justify-self: end;
 }
 
 .sideStatItem span {
   color: var(--muted);
   font-size: 12px;
+  line-height: 1.5;
 }
 
 .streamLine {

@@ -342,6 +342,15 @@ function hasEffectiveMappings(sheet: SpreadsheetSheet) {
   });
 }
 
+function countConfirmableSheets(sheets: SpreadsheetSheet[]) {
+  return sheets.filter((sheet) => sheet.rowCount > 0 && sheet.role !== "ignore").length;
+}
+
+function isSpreadsheetFullyConfirmed(sheets: SpreadsheetSheet[]) {
+  const confirmableSheets = sheets.filter((sheet) => sheet.rowCount > 0 && sheet.role !== "ignore");
+  return confirmableSheets.length > 0 && confirmableSheets.every((sheet) => sheet.confirmed && hasEffectiveMappings(sheet));
+}
+
 function buildPlansUrl(
   projectId: string | null,
   planId?: string | null,
@@ -1884,11 +1893,7 @@ function PlanEditor({
   const spreadsheetHeaders = activeSpreadsheetSheet?.headers ?? [];
   const spreadsheetMappings = activeSpreadsheetSheet?.mappings ?? [];
   const activeSheetRole = activeSpreadsheetSheet?.role ?? "event_table";
-  const isSpreadsheetConfirmed =
-    spreadsheetSheets.length > 0 &&
-    spreadsheetSheets
-      .filter((sheet) => sheet.role !== "ignore" && sheet.rowCount > 0)
-      .every((sheet) => sheet.confirmed && hasEffectiveMappings(sheet));
+  const isSpreadsheetConfirmed = isSpreadsheetFullyConfirmed(spreadsheetSheets);
   const confirmedSheetCount = spreadsheetSheets.filter((sheet) => sheet.confirmed).length;
   const mappingTargetCounts = spreadsheetMappings.reduce<Record<string, number>>((acc, item) => {
     if (item.target !== "ignore") {
@@ -1898,6 +1903,11 @@ function PlanEditor({
   }, {});
   const spreadsheetActionLabel =
     generationMode === "spreadsheet" ? "确认映射后生成方案" : "AI 生成方案";
+
+  function commitSpreadsheetSheets(nextSheets: SpreadsheetSheet[]) {
+    spreadsheetSheetsRef.current = nextSheets;
+    setSpreadsheetSheets(nextSheets);
+  }
 
   function showSheetActionNotice(type: "success" | "error" | "info", text: string) {
     setSheetActionNotice({ type, text });
@@ -1978,7 +1988,7 @@ function PlanEditor({
       });
       const primarySheet = parsedSheets.find((sheet) => sheet.rows.length > 0) ?? parsedSheets[0];
       setActiveSheetName(primarySheet?.name ?? null);
-      setSpreadsheetSheets(parsedSheets);
+      commitSpreadsheetSheets(parsedSheets);
       setSpreadsheetFileName(file.name);
       setSpreadsheetNotice(
         primarySheet?.rows.length
@@ -1997,40 +2007,38 @@ function PlanEditor({
   }
 
   function updateSpreadsheetSheetRole(sheetName: string, role: SpreadsheetSheetRole) {
-    setSpreadsheetSheets((current) =>
-      current.map((sheet) =>
-        sheet.name === sheetName
-          ? {
-              ...sheet,
-              role,
-              confirmed: false,
-              mappings: sheet.headers.map((header) => ({
-                source: header,
-                ...suggestMapping(header, role)
-              }))
-            }
-          : sheet
-      )
+    const nextSheets = spreadsheetSheetsRef.current.map((sheet) =>
+      sheet.name === sheetName
+        ? {
+            ...sheet,
+            role,
+            confirmed: false,
+            mappings: sheet.headers.map((header) => ({
+              source: header,
+              ...suggestMapping(header, role)
+            }))
+          }
+        : sheet
     );
+    commitSpreadsheetSheets(nextSheets);
     showSheetActionNotice("info", "工作表角色已变更，请重新确认当前工作表后再保存。");
   }
 
   function updateSpreadsheetMapping(sheetName: string, index: number, target: string) {
-    setSpreadsheetSheets((current) =>
-      current.map((sheet) =>
-        sheet.name === sheetName
-          ? {
-              ...sheet,
-              confirmed: false,
-              mappings: sheet.mappings.map((item, itemIndex) =>
-                itemIndex === index
-                  ? { ...item, target, confidence: "low", reason: "已由人工调整映射。" }
-                  : item
-              )
-            }
-          : sheet
-      )
+    const nextSheets = spreadsheetSheetsRef.current.map((sheet) =>
+      sheet.name === sheetName
+        ? {
+            ...sheet,
+            confirmed: false,
+            mappings: sheet.mappings.map((item, itemIndex) =>
+              itemIndex === index
+                ? { ...item, target, confidence: "low" as const, reason: "已由人工调整映射。" }
+                : item
+            )
+          }
+        : sheet
     );
+    commitSpreadsheetSheets(nextSheets);
     showSheetActionNotice("info", "字段映射已修改，请重新确认当前工作表。");
   }
 
@@ -2046,25 +2054,26 @@ function PlanEditor({
       return false;
     }
 
-    setSpreadsheetSheets((current) =>
-      current.map((sheet) => {
-        if (sheet.name !== sheetName) {
-          return sheet;
-        }
-        return { ...sheet, confirmed: true };
-      })
-    );
+    const nextSheets = spreadsheetSheetsRef.current.map((sheet) => {
+      if (sheet.name !== sheetName) {
+        return sheet;
+      }
+      return { ...sheet, confirmed: true };
+    });
+    commitSpreadsheetSheets(nextSheets);
     showSheetActionNotice("success", `已确认工作表：${sheetName}`);
     return true;
   }
 
   function saveCurrentSpreadsheetSheet() {
-    if (!activeSpreadsheetSheet) {
+    const currentSheet = activeSheetName ? getCurrentSpreadsheetSheet(activeSheetName) : null;
+
+    if (!currentSheet) {
       onError("请先选择一个工作表。");
       showSheetActionNotice("error", "请先选择一个工作表。");
       return;
     }
-    if (!activeSpreadsheetSheet.confirmed) {
+    if (!currentSheet.confirmed) {
       onError("请先确认当前工作表映射，再执行保存。");
       showSheetActionNotice("error", "请先确认当前工作表映射，再执行保存。");
       return;
@@ -2073,17 +2082,18 @@ function PlanEditor({
     startTransition(async () => {
       onError(null);
       onMessage(null);
+      const snapshotSheets = spreadsheetSheetsRef.current;
       const response = await fetch(`/api/plans/${activePlan.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           appendInputSource: {
             type: "FILE",
-            label: `参考工作表：${activeSpreadsheetSheet.name}`,
+            label: `参考工作表：${currentSheet.name}`,
             content: serializeSpreadsheetInputSource(
-              spreadsheetSheets,
+              snapshotSheets,
               spreadsheetFileName || "spreadsheet.xlsx",
-              activeSpreadsheetSheet.name
+              currentSheet.name
             ),
             fileName: spreadsheetFileName || null,
             mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -2096,8 +2106,8 @@ function PlanEditor({
         showSheetActionNotice("error", data.error || "保存当前工作表失败。");
         return;
       }
-      onMessage(`已保存工作表：${activeSpreadsheetSheet.name}`);
-      showSheetActionNotice("success", `已保存工作表：${activeSpreadsheetSheet.name}`);
+      onMessage(`已保存工作表：${currentSheet.name}`);
+      showSheetActionNotice("success", `已保存工作表：${currentSheet.name}`);
       onRefresh(activePlan.id, activeEvent?.id ?? null, null, "generate");
     });
   }
@@ -2316,16 +2326,16 @@ function PlanEditor({
       setGenerationPrompt(activePlan.summary ?? "");
       const restored = parseSpreadsheetInputSource(latestInput.content);
       if (restored) {
-        setSpreadsheetSheets(restored.sheets);
+        commitSpreadsheetSheets(restored.sheets);
         setSpreadsheetFileName(latestInput.fileName ?? restored.fileName ?? "");
         setActiveSheetName(restored.activeSheetName);
         setSpreadsheetNotice(
           restored.sheets[0]?.headers.length
-            ? `已恢复最近保存的参考表格输入：${restored.activeSheetName ?? restored.sheets[0]?.name ?? "工作表"}。`
+            ? `已恢复最近保存的参考表格输入：共 ${restored.sheets.length} 张工作表，当前定位到 ${restored.activeSheetName ?? restored.sheets[0]?.name ?? "工作表"}。`
             : "已恢复最近保存的参考工作表记录；由于这是旧版保存内容，若要继续调整映射，请重新上传原文件。"
         );
       } else {
-        setSpreadsheetSheets([]);
+        commitSpreadsheetSheets([]);
         setSpreadsheetFileName(latestInput.fileName ?? "");
         setActiveSheetName(null);
         setSpreadsheetNotice("最近一次输入来自参考表格，但没有可恢复的工作表结构，请重新上传文件。");
@@ -2333,7 +2343,7 @@ function PlanEditor({
       return;
     }
 
-    setSpreadsheetSheets([]);
+    commitSpreadsheetSheets([]);
     setSpreadsheetFileName("");
     setActiveSheetName(null);
     setSpreadsheetNotice("尚未上传表格。");
@@ -2821,7 +2831,7 @@ function PlanEditor({
                   ) : null}
                   {activeSpreadsheetSheet ? (
                     <div className={styles.modeHint}>
-                      当前角色：{getTargetPresentation(activeSpreadsheetSheet.role, activeSpreadsheetSheet.role).label}
+                      当前角色：{getSheetRoleLabel(activeSpreadsheetSheet.role)}
                       {" · "}
                       只显示适合该工作表的字段候选，避免把公共属性列误映射到广告位、SKU 这类无关目标。
                     </div>

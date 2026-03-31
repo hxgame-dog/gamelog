@@ -1320,32 +1320,49 @@ export async function replacePlanEvents(
       where: { trackingPlanId: planId }
     });
 
-    const eventNameToId = new Map<string, string>();
-    for (const [index, event] of payload.events.entries()) {
-      const created = await tx.trackingEvent.create({
-        data: {
-          trackingPlanId: planId,
-          categoryId: event.categoryId,
-          eventName: event.eventName,
-          displayName: event.displayName ?? null,
-          triggerDescription: event.triggerDescription ?? null,
-          businessGoal: event.businessGoal ?? null,
-          notes: event.notes ?? null,
-          sourceLabel: event.sourceLabel ?? "AI_GENERATED",
-          createdAt: new Date(Date.now() + index),
-          properties: {
-            create: event.properties.map((property, propertyIndex) => ({
-              name: property.name,
-              type: property.type,
-              isRequired: property.isRequired,
-              sampleValue: property.sampleValue ?? null,
-              description: property.description ?? null,
-              sortOrder: propertyIndex + 1
-            }))
-          }
-        }
+    const timestampSeed = Date.now();
+    const eventRows = payload.events.map((event, index) => ({
+      id: crypto.randomUUID(),
+      trackingPlanId: planId,
+      categoryId: event.categoryId,
+      eventName: event.eventName,
+      displayName: event.displayName ?? null,
+      triggerDescription: event.triggerDescription ?? null,
+      businessGoal: event.businessGoal ?? null,
+      notes: event.notes ?? null,
+      sourceLabel: event.sourceLabel ?? "AI_GENERATED",
+      createdAt: new Date(timestampSeed + index),
+      updatedAt: new Date(timestampSeed + index)
+    }));
+    const eventNameToId = new Map(eventRows.map((event) => [event.eventName, event.id]));
+
+    if (eventRows.length) {
+      await tx.trackingEvent.createMany({
+        data: eventRows
       });
-      eventNameToId.set(created.eventName, created.id);
+    }
+
+    const propertyRows = payload.events.flatMap((event) => {
+      const trackingEventId = eventNameToId.get(event.eventName);
+      if (!trackingEventId) {
+        return [];
+      }
+      return event.properties.map((property, propertyIndex) => ({
+        id: crypto.randomUUID(),
+        trackingEventId,
+        name: property.name,
+        type: property.type,
+        isRequired: property.isRequired,
+        sampleValue: property.sampleValue ?? null,
+        description: property.description ?? null,
+        sortOrder: propertyIndex + 1
+      }));
+    });
+
+    if (propertyRows.length) {
+      await tx.trackingProperty.createMany({
+        data: propertyRows
+      });
     }
 
     if (payload.globalProperties.length) {
@@ -1363,31 +1380,34 @@ export async function replacePlanEvents(
       });
     }
 
-    const dictionaryNameToId = new Map<string, string>();
-    for (const [index, dictionary] of payload.dictionaries.entries()) {
-      const created = await tx.trackingDictionary.create({
-        data: {
-          trackingPlanId: planId,
-          name: dictionary.name,
-          configName: dictionary.configName,
-          relatedModule: dictionary.relatedModule,
-          paramNames: dictionary.paramNames,
-          purpose: dictionary.purpose,
-          handoffRule: dictionary.handoffRule,
-          sourceType: dictionary.sourceType,
-          sortOrder: index + 1
-        }
+    const dictionaryRows = payload.dictionaries.map((dictionary, index) => ({
+      id: crypto.randomUUID(),
+      trackingPlanId: planId,
+      name: dictionary.name,
+      configName: dictionary.configName,
+      relatedModule: dictionary.relatedModule,
+      paramNames: dictionary.paramNames,
+      purpose: dictionary.purpose,
+      handoffRule: dictionary.handoffRule,
+      sourceType: dictionary.sourceType,
+      sortOrder: index + 1
+    }));
+    const dictionaryNameToId = new Map(dictionaryRows.map((dictionary) => [dictionary.name, dictionary.id]));
+
+    if (dictionaryRows.length) {
+      await tx.trackingDictionary.createMany({
+        data: dictionaryRows
       });
-      dictionaryNameToId.set(created.name, created.id);
     }
 
-    for (const mapping of payload.dictionaryMappings) {
+    const dictionaryMappingRows = payload.dictionaryMappings.flatMap((mapping) => {
       const dictionaryId = dictionaryNameToId.get(mapping.dictionaryName);
       if (!dictionaryId) {
-        continue;
+        return [];
       }
-      await tx.trackingDictionaryMapping.create({
-        data: {
+      return [
+        {
+          id: crypto.randomUUID(),
           trackingPlanId: planId,
           trackingEventId: mapping.eventName ? (eventNameToId.get(mapping.eventName) ?? null) : null,
           propertyName: mapping.propertyName,
@@ -1395,6 +1415,12 @@ export async function replacePlanEvents(
           isRequiredMapping: mapping.isRequiredMapping,
           mappingNote: mapping.mappingNote ?? null
         }
+      ];
+    });
+
+    if (dictionaryMappingRows.length) {
+      await tx.trackingDictionaryMapping.createMany({
+        data: dictionaryMappingRows
       });
     }
 
@@ -1438,6 +1464,9 @@ export async function replacePlanEvents(
     });
 
     return updated ? mapDbPlan(updated) : null;
+  }, {
+    maxWait: 10000,
+    timeout: 30000
   });
 }
 
