@@ -28,7 +28,7 @@ export default async function HomePage() {
 
       <section className={`panel ${styles.hero}`}>
         <div className={styles.heroTop}>
-          <div>
+          <div className={styles.heroCopy}>
             <div className={styles.heroBadgeRow}>
               <span className="pill">Vercel 部署</span>
               <span className="pill">Neon 数据库</span>
@@ -47,6 +47,19 @@ export default async function HomePage() {
           <Link href="/reports" className="button-primary">
             查看 AI 报告
           </Link>
+        </div>
+        <div className={styles.compareSummary}>
+          <div>
+            <div className={styles.compareSummaryLabel}>版本差异总览</div>
+            <div className={styles.compareSummaryTitle}>
+              {overview.currentVersion}
+              {overview.compareVersion ? ` vs ${overview.compareVersion}` : ""}
+            </div>
+          </div>
+          <p className={styles.compareSummaryCopy}>
+            首页现在会优先汇总最新导入批次和最近一个可对比版本的健康分、异常数与分类快照。
+            如果某个分类出现显著波动，可以直接进入分类分析页继续看主图、趋势和结构化明细。
+          </p>
         </div>
         <div className={styles.metricGrid}>
           {overview.metrics.map((metric) => (
@@ -73,9 +86,12 @@ export default async function HomePage() {
                   <span className="pill">进入</span>
                 </div>
                 <h3 className={styles.categoryTitle}>{category.label} 看板</h3>
-                <p className={styles.categoryMeta}>
-                  {"keyMetric" in category ? category.keyMetric : "等待首批导入"}
-                </p>
+                <div className={styles.categoryMetricRow}>
+                  <span className={styles.categoryMeta}>关键指标</span>
+                  <strong className={styles.categoryMetricValue}>
+                    {"keyMetric" in category ? category.keyMetric : "等待首批导入"}
+                  </strong>
+                </div>
                 <p className={styles.categoryMeta}>
                   {"insight" in category ? category.insight : "查看版本对比、核心漏斗、趋势图与 AI 洞察，保持统一视觉和统一认知路径。"}
                 </p>
@@ -133,6 +149,20 @@ export default async function HomePage() {
                   <span>健康分 {item.healthScore}</span>
                   <span>异常 {item.anomalyCount}</span>
                 </div>
+                <div className={styles.importBatchScoreRow}>
+                  <div className={styles.scoreCard}>
+                    <div className={styles.scoreLabel}>通过率</div>
+                    <div className={styles.scoreValue}>{item.successRate}%</div>
+                  </div>
+                  <div className={styles.scoreCard}>
+                    <div className={styles.scoreLabel}>健康分</div>
+                    <div className={styles.scoreValue}>{item.healthScore}</div>
+                  </div>
+                  <div className={styles.scoreCard}>
+                    <div className={styles.scoreLabel}>异常数</div>
+                    <div className={styles.scoreValue}>{item.anomalyCount}</div>
+                  </div>
+                </div>
                 <div className={styles.taskDetail}>{item.uploadedAtLabel}</div>
               </div>
             ))}
@@ -150,7 +180,7 @@ export default async function HomePage() {
             {categorySnapshots.map((item) => (
               <Link
                 key={item.key}
-                href={`/analytics/${item.key}`}
+                href={`/analytics/${item.key}${overview.compareVersion ? `?compareVersion=${encodeURIComponent(overview.compareVersion)}` : ""}`}
                 className={`surface ${styles.snapshotItem}`}
               >
                 <div className={styles.categoryHeader}>
@@ -160,6 +190,10 @@ export default async function HomePage() {
                 <div className={styles.snapshotCompare}>
                   <span>对比版本</span>
                   <strong>{item.compareValue ?? "等待对比版本"}</strong>
+                </div>
+                <div className={styles.snapshotMetricRow}>
+                  <span className={styles.categoryMeta}>当前版本</span>
+                  <strong className={styles.categoryMetricValue}>{item.currentValue}</strong>
                 </div>
                 <p className={styles.categoryMeta}>{item.insight}</p>
               </Link>

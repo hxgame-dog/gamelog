@@ -29,6 +29,60 @@
   padding: 20px;
 }
 
+.heroTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.heroLeft {
+  display: grid;
+  gap: 12px;
+}
+
+.heroRight {
+  display: flex;
+  justify-content: flex-end;
+  width: min(460px, 100%);
+}
+
+.heroMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.compareSummary {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, #ffffff 0%, #fcfcfb 100%);
+}
+
+.compareSummaryLabel {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compareSummaryTitle {
+  margin-top: 6px;
+  font-family: var(--font-number);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.compareSummaryCopy {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
 .metricGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -61,8 +115,22 @@
 
 .chartGrid {
   display: grid;
-  grid-template-columns: 1.2fr 0.8fr 0.8fr;
+  grid-template-columns: minmax(0, 1.28fr) minmax(320px, 0.92fr);
   gap: 12px;
+}
+
+.chartSection {
+  padding: 18px;
+}
+
+.primaryChart {
+  min-width: 0;
+}
+
+.secondaryCharts {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
 }
 
 .detailGrid {
@@ -80,12 +148,58 @@
   padding: 18px;
 }
 
+.sectionTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.sectionCopy {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
 .detailTableHeader {
   display: flex;
   justify-content: space-between;
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.detailToolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.detailFilterRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.detailFilterButton {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #f6f6f4;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.detailFilterButtonActive {
+  border-color: rgba(31, 154, 133, 0.24);
+  background: rgba(31, 154, 133, 0.08);
+  color: var(--text);
 }
 
 .rankList {
@@ -105,6 +219,17 @@
   border: 1px solid var(--border);
 }
 
+.rankItemButton {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rankItemActive {
+  border-color: rgba(31, 154, 133, 0.26);
+  background: rgba(31, 154, 133, 0.06);
+}
+
 .rankIndex {
   width: 40px;
   height: 40px;
@@ -120,15 +245,31 @@
   font-size: 12px;
 }
 
+.rankHint {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .detailTable {
   display: grid;
   gap: 8px;
   margin-top: 14px;
 }
 
+.emptyDetailState {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px dashed var(--border);
+  background: #fcfcfb;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .detailTableRow {
   display: grid;
-  grid-template-columns: 180px 1fr 1fr 1.4fr;
+  grid-template-columns: 180px 1fr 1fr 0.8fr 1.3fr;
   gap: 12px;
   align-items: start;
   padding: 12px;
@@ -136,6 +277,11 @@
   border: 1px solid var(--border);
   background: #fcfcfb;
   font-size: 13px;
+}
+
+.detailTableRowActive {
+  border-color: rgba(31, 154, 133, 0.24);
+  background: rgba(31, 154, 133, 0.06);
 }
 
 .detailTableCellMuted {
@@ -147,12 +293,26 @@
   font-weight: 600;
 }
 
+.detailDelta,
+.detailDeltaNegative {
+  font-weight: 600;
+}
+
+.detailDelta {
+  color: var(--teal);
+}
+
+.detailDeltaNegative {
+  color: var(--red);
+}
+
 .detailTableNote {
   color: var(--muted);
   line-height: 1.6;
 }
 
 @media (max-width: 1280px) {
+  .compareSummary,
   .chartGrid,
   .detailGrid {
     grid-template-columns: 1fr;
