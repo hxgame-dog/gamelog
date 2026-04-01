@@ -1156,6 +1156,36 @@ function getSeverityLabel(severity: "high" | "medium" | "low") {
   return "低优先级";
 }
 
+function getDiagnosisGroupMeta(type: string) {
+  if (type === "global_property_gap") {
+    return { key: "structure", label: "结构缺口", hint: "公共属性和全局基础字段相关问题。" };
+  }
+
+  if (type === "field_issue" || type === "dictionary_missing" || type === "dictionary_mapping_issue") {
+    return { key: "fields", label: "字段与映射", hint: "字段缺失、字典缺失和映射不完整问题。" };
+  }
+
+  if (type === "naming" || type === "category_issue") {
+    return { key: "semantics", label: "命名与分类", hint: "事件命名、模块归属和语义表达问题。" };
+  }
+
+  if (type === "funnel_gap") {
+    return { key: "funnel", label: "漏斗与流程", hint: "流程节点和关键漏斗结构缺口。" };
+  }
+
+  return { key: "other", label: "其他问题", hint: "其他需要人工复核的问题。" };
+}
+
+function getReviewItemStatus(completed: boolean, current = false) {
+  if (completed) {
+    return "completed";
+  }
+  if (current) {
+    return "current";
+  }
+  return "waiting";
+}
+
 function HelpButton({
   label,
   active,
@@ -1383,6 +1413,25 @@ export function PlansClient({
   const pendingCandidateCount = (activePlan?.dictionaries ?? []).filter(
     (dictionary) => dictionary.sourceType === "CANDIDATE"
   ).length;
+  const diagnosisGroups = (activePlan?.diagnosis?.findings ?? []).reduce<
+    Array<{
+      key: string;
+      label: string;
+      hint: string;
+      findings: NonNullable<Plan["diagnosis"]>["findings"];
+    }>
+  >((acc, finding) => {
+    const meta = getDiagnosisGroupMeta(finding.type);
+    const group =
+      acc.find((item) => item.key === meta.key) ??
+      (() => {
+        const created = { ...meta, findings: [] as NonNullable<Plan["diagnosis"]>["findings"] };
+        acc.push(created);
+        return created;
+      })();
+    group.findings.push(finding);
+    return acc;
+  }, []);
 
   const stepItems: Array<{
     key: PlanStep;
@@ -1457,6 +1506,60 @@ export function PlansClient({
         }
       ]
     : [];
+
+  function handleDiagnosisFindingNavigate(finding: NonNullable<Plan["diagnosis"]>["findings"][number]) {
+    if (!activePlan) {
+      return;
+    }
+
+    const combined = `${finding.title} ${finding.detail} ${finding.recommendation ?? ""}`.toLowerCase();
+    const propertyNames = Array.from(
+      new Set(
+        [
+          ...(activePlan.globalProperties ?? []).map((property) => property.name),
+          ...activePlan.events.flatMap((event) => event.properties.map((property) => property.name)),
+          ...(activePlan.dictionaries ?? []).flatMap((dictionary) => dictionary.paramNames)
+        ].filter(Boolean)
+      )
+    ).sort((left, right) => right.length - left.length);
+    const matchedProperty =
+      propertyNames.find((propertyName) => combined.includes(propertyName.toLowerCase())) ?? null;
+    const matchedDictionary =
+      (activePlan.dictionaries ?? []).find(
+        (dictionary) =>
+          combined.includes(dictionary.name.toLowerCase()) ||
+          combined.includes(dictionary.configName.toLowerCase())
+      ) ?? null;
+
+    if (finding.type === "global_property_gap") {
+      setCurrentStep("results");
+      setCurrentResultView("global");
+      navigate(activeProjectId, activePlan.id, activeEvent?.id ?? null, null, "results");
+      return;
+    }
+
+    if (finding.eventName) {
+      const targetEvent = activePlan.events.find((event) => event.eventName === finding.eventName);
+      if (targetEvent) {
+        setSelectedEventId(targetEvent.id);
+        setCurrentStep("results");
+        setCurrentResultView("events");
+        navigate(activeProjectId, activePlan.id, targetEvent.id, matchedProperty, "results");
+        return;
+      }
+    }
+
+    if (matchedDictionary) {
+      setCurrentStep("results");
+      setCurrentResultView(matchedDictionary.sourceType === "CANDIDATE" ? "candidates" : "dictionaries");
+      navigate(activeProjectId, activePlan.id, activeEvent?.id ?? null, null, "results");
+      return;
+    }
+
+    setCurrentStep("results");
+    setCurrentResultView("events");
+    navigate(activeProjectId, activePlan.id, activeEvent?.id ?? null, matchedProperty, "results");
+  }
 
   return (
     <>
@@ -1755,23 +1858,42 @@ export function PlansClient({
             {activePlan?.diagnosis ? (
               <>
                 <p className={styles.sideCopy}>{activePlan.diagnosis.summary}</p>
-                <div className={styles.diagnosisList}>
-                  {activePlan.diagnosis.findings.map((finding, index) => (
-                    <div key={`${finding.title}-${index}`} className={styles.diagnosisCard}>
-                      <div className={styles.diagnosisTop}>
-                        <strong>{finding.title}</strong>
-                        <span className={`pill ${styles[`severity_${finding.severity}`] || ""}`}>
-                          {getSeverityLabel(finding.severity)}
-                        </span>
+                <div className={styles.diagnosisGroupList}>
+                  {diagnosisGroups.map((group) => (
+                    <section key={group.key} className={styles.diagnosisGroup}>
+                      <div className={styles.diagnosisGroupHeader}>
+                        <div>
+                          <strong>{group.label}</strong>
+                          <p className={styles.diagnosisGroupHint}>{group.hint}</p>
+                        </div>
+                        <span className="pill">{group.findings.length} 项</span>
                       </div>
-                      {finding.eventName ? (
-                        <div className={styles.diagnosisEvent}>关联事件：{finding.eventName}</div>
-                      ) : null}
-                      <p className={styles.diagnosisCopy}>{finding.detail}</p>
-                      {finding.recommendation ? (
-                        <p className={styles.diagnosisRecommendation}>建议：{finding.recommendation}</p>
-                      ) : null}
-                    </div>
+                      <div className={styles.diagnosisList}>
+                        {group.findings.map((finding, index) => (
+                          <button
+                            type="button"
+                            key={`${group.key}-${finding.title}-${index}`}
+                            className={styles.diagnosisCard}
+                            onClick={() => handleDiagnosisFindingNavigate(finding)}
+                          >
+                            <div className={styles.diagnosisTop}>
+                              <strong>{finding.title}</strong>
+                              <span className={`pill ${styles[`severity_${finding.severity}`] || ""}`}>
+                                {getSeverityLabel(finding.severity)}
+                              </span>
+                            </div>
+                            {finding.eventName ? (
+                              <div className={styles.diagnosisEvent}>关联事件：{finding.eventName}</div>
+                            ) : null}
+                            <p className={styles.diagnosisCopy}>{finding.detail}</p>
+                            {finding.recommendation ? (
+                              <p className={styles.diagnosisRecommendation}>建议：{finding.recommendation}</p>
+                            ) : null}
+                            <span className={styles.diagnosisAction}>点击定位到相关结果</span>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
                   ))}
                 </div>
               </>
@@ -2008,6 +2130,90 @@ function PlanEditor({
             .includes(candidateFieldFilter)
         )
   );
+  const knownPropertyNames = Array.from(
+    new Set(
+      [
+        ...globalDraft.map((property) => property.name),
+        ...activePlan.events.flatMap((event) => event.properties.map((property) => property.name)),
+        ...dictionaryDraft.flatMap((dictionary) =>
+          dictionary.paramNames
+            .split(",")
+            .map((name) => name.trim())
+            .filter(Boolean)
+        ),
+        "user_id",
+        "session_id",
+        "level_id",
+        "level_type",
+        "step_id",
+        "step_name",
+        "product_id",
+        "product_type",
+        "ad_placement",
+        "activity_id",
+        "activity_type",
+        "reward_id",
+        "item_name",
+        "gain_source"
+      ].filter(Boolean)
+    )
+  ).sort((left, right) => right.length - left.length);
+
+  const reviewChecklist = [
+    {
+      key: "events",
+      label: "事件方案",
+      detail: activePlan.events.length ? `已生成 ${activePlan.events.length} 个事件，可进入结果区审查。` : "先完成一轮事件方案生成。",
+      status: getReviewItemStatus(activePlan.events.length > 0, currentStep === "generate"),
+      actionLabel: "查看事件表",
+      onAction: () => {
+        onStepChange("results");
+        switchResultView("events");
+      }
+    },
+    {
+      key: "candidates",
+      label: "字典候选",
+      detail:
+        candidateDictionaryDraft.length > 0
+          ? `还有 ${candidateDictionaryDraft.length} 个候选待确认，建议先处理完再做诊断。`
+          : "候选已处理完成，可以继续执行诊断。",
+      status: getReviewItemStatus(candidateDictionaryDraft.length === 0 && activePlan.events.length > 0, candidateDictionaryDraft.length > 0),
+      actionLabel: candidateDictionaryDraft.length > 0 ? "去确认候选" : "查看正式字典",
+      onAction: () => {
+        onStepChange("results");
+        switchResultView(candidateDictionaryDraft.length > 0 ? "candidates" : "dictionaries");
+      }
+    },
+    {
+      key: "diagnosis",
+      label: "AI 诊断",
+      detail:
+        activePlan.diagnosisStatus === "COMPLETED"
+          ? "诊断已完成，可以根据结果继续修订方案。"
+          : candidateDictionaryDraft.length > 0
+            ? "待字典候选全部处理后，再执行 AI 诊断。"
+            : "建议在事件表和字典确认后执行 AI 诊断。",
+      status: getReviewItemStatus(activePlan.diagnosisStatus === "COMPLETED", currentStep === "results" && candidateDictionaryDraft.length === 0),
+      actionLabel: activePlan.diagnosisStatus === "COMPLETED" ? "查看诊断结果" : "定位到诊断区",
+      onAction: () => {
+        onStepChange("results");
+      }
+    },
+    {
+      key: "confirm",
+      label: "确认方案",
+      detail:
+        activePlan.status === "CONFIRMED"
+          ? "方案已确认，可作为正式版本继续导出。"
+          : "诊断通过后再确认，避免未定稿方案进入研发接入。",
+      status: getReviewItemStatus(activePlan.status === "CONFIRMED", currentStep === "results" && activePlan.diagnosisStatus === "COMPLETED"),
+      actionLabel: activePlan.status === "CONFIRMED" ? "已确认" : "回到确认动作",
+      onAction: () => {
+        onStepChange("results");
+      }
+    }
+  ] as const;
 
   function commitSpreadsheetSheets(nextSheets: SpreadsheetSheet[]) {
     spreadsheetSheetsRef.current = nextSheets;
@@ -2666,6 +2872,81 @@ function PlanEditor({
     showResultNavigationHint(
       `当前位置：方案结果区 / 已确认字典${mapping.dictionaryName ? ` / ${mapping.dictionaryName}` : ""}`
     );
+  }
+
+  function extractFindingPropertyName(finding: NonNullable<Plan["diagnosis"]>["findings"][number]) {
+    const combined = `${finding.title} ${finding.detail} ${finding.recommendation ?? ""}`.toLowerCase();
+    return knownPropertyNames.find((propertyName) => combined.includes(propertyName.toLowerCase())) ?? null;
+  }
+
+  function extractFindingDictionaryName(finding: NonNullable<Plan["diagnosis"]>["findings"][number]) {
+    const combined = `${finding.title} ${finding.detail} ${finding.recommendation ?? ""}`.toLowerCase();
+    return (
+      confirmedDictionaryDraft.find(
+        (dictionary) =>
+          combined.includes(dictionary.name.toLowerCase()) || combined.includes(dictionary.configName.toLowerCase())
+      )?.name ??
+      candidateDictionaryDraft.find(
+        (dictionary) =>
+          combined.includes(dictionary.name.toLowerCase()) || combined.includes(dictionary.configName.toLowerCase())
+      )?.name ??
+      null
+    );
+  }
+
+  function navigateToCandidateResult(dictionaryName?: string | null) {
+    if (dictionaryName) {
+      setHighlightedDictionaryName(dictionaryName);
+    }
+    switchResultView("candidates");
+    onStepChange("results");
+    showResultNavigationHint(
+      `当前位置：方案结果区 / 字典候选${dictionaryName ? ` / ${dictionaryName}` : ""}`
+    );
+  }
+
+  function navigateFromDiagnosisFinding(finding: NonNullable<Plan["diagnosis"]>["findings"][number]) {
+    const propertyName = extractFindingPropertyName(finding);
+    const dictionaryName = extractFindingDictionaryName(finding);
+
+    if (finding.type === "global_property_gap") {
+      navigateToGlobalResults();
+      return;
+    }
+
+    if (finding.type === "dictionary_missing") {
+      if (dictionaryName && candidateDictionaryDraft.some((dictionary) => dictionary.name === dictionaryName)) {
+        navigateToCandidateResult(dictionaryName);
+        return;
+      }
+      if (dictionaryName) {
+        navigateToDictionaryResult(dictionaryName);
+        return;
+      }
+    }
+
+    if (finding.type === "dictionary_mapping_issue") {
+      if (finding.eventName) {
+        navigateToEventResult(finding.eventName, propertyName);
+        return;
+      }
+      if (dictionaryName) {
+        navigateToDictionaryResult(dictionaryName);
+        return;
+      }
+    }
+
+    if (finding.eventName) {
+      navigateToEventResult(finding.eventName, propertyName);
+      return;
+    }
+
+    if (dictionaryName) {
+      navigateToDictionaryResult(dictionaryName);
+      return;
+    }
+
+    navigateToGlobalResults();
   }
 
   function stopStream() {
@@ -3362,6 +3643,23 @@ function PlanEditor({
           </div>
         </div>
 
+        <div className={styles.reviewRail}>
+          {reviewChecklist.map((item) => (
+            <div key={item.key} className={styles.reviewCard}>
+              <div className={styles.reviewTop}>
+                <span className={styles.reviewTitle}>{item.label}</span>
+                <span className={`pill ${styles[`review_${item.status}`] || ""}`}>
+                  {item.status === "completed" ? "已完成" : item.status === "current" ? "当前重点" : "待处理"}
+                </span>
+              </div>
+              <p className={styles.reviewCopy}>{item.detail}</p>
+              <button type="button" className="button-ghost" onClick={item.onAction}>
+                {item.actionLabel}
+              </button>
+            </div>
+          ))}
+        </div>
+
         <div className={styles.resultViewHint}>
           {resultView === "global"
             ? "公共属性是所有事件共享的底座字段，用于后续所有图表的切片分析。"
@@ -3813,9 +4111,13 @@ function PlanEditor({
                         return (
                           <div key={`${dictionary.name}-${index}`} className={styles.dictionaryCard}>
                             <div className={styles.resultEventTop}>
-                              <strong>{dictionary.name}</strong>
+                              <div className={styles.dictionaryHeader}>
+                                <strong>{dictionary.name}</strong>
+                                <span className={`${styles.dictionaryStageBadge} ${styles.dictionaryStageCandidate}`}>候选态</span>
+                              </div>
                               <span className="pill">待确认</span>
                             </div>
+                            <p className={styles.dictionaryStageCopy}>系统基于整份事件表自动扫描出的候选字典，确认后才会进入正式方案包。</p>
                             <div className={styles.mappingSummary}>
                               <span className="pill">{dictionary.configName}</span>
                               <span className="pill">{dictionary.relatedModule}</span>
@@ -3903,16 +4205,22 @@ function PlanEditor({
                       className={`${styles.dictionaryCard} ${highlightedDictionaryName === dictionary.name ? styles.resultEventCardActive : ""}`}
                     >
                       <div className={styles.resultEventTop}>
-                        <input
-                          className={styles.mockInput}
-                          value={dictionary.name}
-                          onChange={(event) => updateDictionary(draftIndex, { name: event.target.value })}
-                        />
-                        <input
-                          className={styles.mockInput}
-                          value={dictionary.configName}
-                          onChange={(event) => updateDictionary(draftIndex, { configName: event.target.value })}
-                        />
+                        <div className={styles.dictionaryHeader}>
+                          <span className={`${styles.dictionaryStageBadge} ${styles.dictionaryStageConfirmed}`}>正式态</span>
+                          <span className={styles.dictionaryStageCopy}>这张字典表已经进入正式方案包，并会出现在第 4 步结构查看中。</span>
+                        </div>
+                        <div className={styles.dictionaryInlineInputs}>
+                          <input
+                            className={styles.mockInput}
+                            value={dictionary.name}
+                            onChange={(event) => updateDictionary(draftIndex, { name: event.target.value })}
+                          />
+                          <input
+                            className={styles.mockInput}
+                            value={dictionary.configName}
+                            onChange={(event) => updateDictionary(draftIndex, { configName: event.target.value })}
+                          />
+                        </div>
                       </div>
                       <input
                         className={styles.mockInput}

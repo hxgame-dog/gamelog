@@ -613,6 +613,61 @@
   line-height: 1.7;
 }
 
+.reviewRail {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.reviewCard {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: #fcfcfb;
+}
+
+.reviewTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.reviewTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--title);
+}
+
+.reviewCopy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.review_completed {
+  background: rgba(31, 154, 133, 0.08);
+  border-color: rgba(31, 154, 133, 0.16);
+  color: var(--teal);
+}
+
+.review_current {
+  background: rgba(77, 122, 177, 0.08);
+  border-color: rgba(77, 122, 177, 0.16);
+  color: #4f6f8f;
+}
+
+.review_waiting {
+  background: rgba(201, 137, 44, 0.08);
+  border-color: rgba(201, 137, 44, 0.18);
+  color: var(--amber);
+}
+
 .summaryStat {
   display: grid;
   gap: 6px;
@@ -1444,11 +1499,45 @@
   gap: 8px;
 }
 
+.diagnosisGroupList {
+  display: grid;
+  gap: 12px;
+}
+
+.diagnosisGroup {
+  display: grid;
+  gap: 8px;
+}
+
+.diagnosisGroupHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.diagnosisGroupHint {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .diagnosisCard {
+  display: grid;
+  gap: 0;
+  width: 100%;
   padding: 12px;
   border-radius: 14px;
   border: 1px solid var(--border);
   background: #fcfcfb;
+  text-align: left;
+  cursor: pointer;
+}
+
+.diagnosisCard:hover {
+  border-color: rgba(15, 23, 32, 0.14);
+  background: #ffffff;
 }
 
 .diagnosisTop {
@@ -1473,6 +1562,56 @@
 
 .diagnosisRecommendation {
   color: var(--text);
+}
+
+.diagnosisAction {
+  margin-top: 8px;
+  color: #4f6f8f;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dictionaryHeader {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dictionaryInlineInputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: min(420px, 100%);
+}
+
+.dictionaryStageBadge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dictionaryStageCandidate {
+  color: #946200;
+  background: rgba(201, 137, 44, 0.08);
+  border-color: rgba(201, 137, 44, 0.18);
+}
+
+.dictionaryStageConfirmed {
+  color: var(--teal);
+  background: rgba(31, 154, 133, 0.08);
+  border-color: rgba(31, 154, 133, 0.16);
+}
+
+.dictionaryStageCopy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .severity_high {
@@ -1593,7 +1732,8 @@
   .packageSummaryGrid,
   .checklistGrid,
   .statusSummaryGrid,
-  .schemaOverviewGrid {
+  .schemaOverviewGrid,
+  .reviewRail {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1635,13 +1775,19 @@
     display: grid;
     grid-template-columns: 1fr;
   }
+
+  .dictionaryInlineInputs {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
 }
 
 @media (max-width: 760px) {
   .packageSummaryGrid,
   .checklistGrid,
   .statusSummaryGrid,
-  .schemaOverviewGrid {
+  .schemaOverviewGrid,
+  .reviewRail {
     grid-template-columns: 1fr;
   }
 
