@@ -93,6 +93,31 @@ function eventLooksAds(eventName: string) {
   return /(^|_)(ad|ads|reward(ed)?|interstitial|banner|placement|video)(_|$)/i.test(eventName);
 }
 
+function normalizeImportedEventName(eventName: string) {
+  const normalized = eventName.trim().toLowerCase();
+
+  switch (normalized) {
+    case "af_ad_view":
+      return "ad_impression";
+    case "af_ad_click":
+      return "ad_click";
+    case "ad_reward_claim":
+      return "ad_reward_claim";
+    case "af_purchase":
+      return "iap_success";
+    case "af_initiated_checkout":
+      return "iap_order_create";
+    case "af_level_achieved":
+      return "level_complete";
+    case "af_tutorial_completion":
+      return "tutorial_complete";
+    case "tutoriallevel_start":
+      return "tutorial_level_start";
+    default:
+      return normalized;
+  }
+}
+
 function classifyRow(input: {
   eventName: string;
   levelId: string;
@@ -101,6 +126,10 @@ function classifyRow(input: {
   price: number | null;
 }) {
   const { eventName, levelId, stepId, placement, price } = input;
+
+  if (/(tutorial|camera_rotate|screw_interact|tutorial_level_start|tutorial_complete)/i.test(eventName)) {
+    return "onboarding" as const;
+  }
 
   if (price !== null && price > 0) {
     return "monetization" as const;
@@ -197,7 +226,7 @@ function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: string;
   };
 
   rows.forEach((row) => {
-    const eventName = eventMapping ? String(row[eventMapping.source] ?? "").trim() : "";
+    const eventName = eventMapping ? normalizeImportedEventName(String(row[eventMapping.source] ?? "").trim()) : "";
     const result = resultMapping ? String(row[resultMapping.source] ?? "").trim().toLowerCase() : "";
     const levelId = levelMapping ? String(row[levelMapping.source] ?? "").trim() : "";
     const stepId = stepMapping ? String(row[stepMapping.source] ?? "").trim() : "";
@@ -207,6 +236,9 @@ function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: string;
     const userId = userMapping ? String(row[userMapping.source] ?? "").trim() : "";
     const reason = reasonMapping ? String(row[reasonMapping.source] ?? "").trim() : "";
     const rewardType = rewardMapping ? String(row[rewardMapping.source] ?? "").trim() : "";
+    const stepName = String(row.step_name ?? "").trim();
+    const levelType = String(row.level_type ?? "").trim();
+    const gainSource = String(row.gain_source ?? "").trim();
 
     if (!eventName) {
       errorCount += 1;
@@ -234,7 +266,13 @@ function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: string;
       errorCount += 1;
     }
 
-    const category = classifyRow({ eventName, levelId, stepId, placement, price });
+    const category = classifyRow({
+      eventName: stepId || stepName ? `${eventName}_${stepName || stepId}` : eventName,
+      levelId,
+      stepId,
+      placement,
+      price
+    });
     categoryEventCounts[category].set(eventName, (categoryEventCounts[category].get(eventName) ?? 0) + 1);
 
     if (category === "system") {
@@ -243,7 +281,7 @@ function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: string;
 
     if (category === "onboarding") {
       perCategory.onboarding.count += 1;
-      stepCounts.set(stepId || eventName, (stepCounts.get(stepId || eventName) ?? 0) + 1);
+      stepCounts.set(stepName || stepId || eventName, (stepCounts.get(stepName || stepId || eventName) ?? 0) + 1);
       if (result === "success" || result === "complete" || /complete|finish|done/i.test(eventName)) {
         perCategory.onboarding.success += 1;
       }
@@ -255,7 +293,7 @@ function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: string;
 
     if (category === "level") {
       perCategory.level.count += 1;
-      levelCounts.set(levelId || eventName, (levelCounts.get(levelId || eventName) ?? 0) + 1);
+      levelCounts.set(levelId ? `${levelId}${levelType ? ` (${levelType})` : ""}` : eventName, (levelCounts.get(levelId ? `${levelId}${levelType ? ` (${levelType})` : ""}` : eventName) ?? 0) + 1);
       if (result === "success" || result === "complete" || /complete|win|clear/i.test(eventName)) {
         perCategory.level.success += 1;
       }
@@ -290,6 +328,9 @@ function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: string;
 
     if (category === "custom") {
       perCategory.custom.count += 1;
+      if (gainSource) {
+        failReasonCounts.set(gainSource, (failReasonCounts.get(gainSource) ?? 0) + 1);
+      }
     }
   });
 
