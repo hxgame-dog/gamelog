@@ -65,6 +65,30 @@ type ParsedUpload = {
   notice?: string;
 };
 
+const importPayloadTargets = new Set([
+  "event_name",
+  "event_time",
+  "user_id",
+  "platform",
+  "app_version",
+  "country_code",
+  "result",
+  "fail_reason",
+  "level_id",
+  "level_type",
+  "duration_sec",
+  "step_id",
+  "step_name",
+  "placement",
+  "price",
+  "reward_type",
+  "activity_id",
+  "activity_type",
+  "gain_source",
+  "gain_amount",
+  "resource_type"
+]);
+
 const rawTelemetrySupplementalKeys = [
   "step_name",
   "level_type",
@@ -461,37 +485,75 @@ export function ImportsClient({
       const nextRow: Record<string, string | number | boolean | null> = {};
       activeMappings.forEach((mapping) => {
         if (mapping.target === "property_hint") {
-          nextRow[mapping.source] = row[mapping.source] ?? null;
+          if (importPayloadTargets.has(mapping.source)) {
+            const value = row[mapping.source] ?? null;
+            if (value !== null && value !== "") {
+              nextRow[mapping.source] = value;
+            }
+          }
           return;
         }
-        nextRow[mapping.target] = row[mapping.source] ?? null;
+        if (!importPayloadTargets.has(mapping.target)) {
+          return;
+        }
+        const value = row[mapping.source] ?? null;
+        if (value !== null && value !== "") {
+          nextRow[mapping.target] = value;
+        }
       });
       return nextRow;
-    });
+    }).filter((row) => Object.keys(row).length > 0);
+  }
+
+  async function readApiError(response: Response) {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      const data = (await response.json()) as { error?: string };
+      return data.error ?? "日志导入失败。";
+    }
+
+    const text = await response.text();
+    if (response.status === 413) {
+      return "导入请求体过大，系统已自动压缩本次上传字段。请刷新后重试；如果仍失败，请减少附加字段映射。";
+    }
+    return text.slice(0, 200) || "日志导入失败。";
   }
 
   async function runRealImport() {
-    setError(null);
-    setMessage(null);
-    const response = await fetch("/api/imports", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        projectId: selectedProjectId,
-        trackingPlanId: selectedPlanId,
-        version,
-        fileName,
-        rows: mappedRows(),
-        mappings
-      })
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      setError(data.error || "日志导入失败。");
-      return;
+    try {
+      setError(null);
+      setMessage(null);
+      const compactRows = mappedRows();
+      const activeMappings = mappings.filter(
+        (mapping) =>
+          mapping.target !== "ignore" &&
+          (importPayloadTargets.has(mapping.target) || (mapping.target === "property_hint" && importPayloadTargets.has(mapping.source)))
+      );
+
+      const response = await fetch("/api/imports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: selectedProjectId,
+          trackingPlanId: selectedPlanId,
+          version,
+          fileName,
+          rows: compactRows,
+          mappings: activeMappings
+        })
+      });
+
+      if (!response.ok) {
+        setError(await readApiError(response));
+        return;
+      }
+
+      const data = (await response.json()) as { item: { summary: ImportSummary } };
+      setSummary(data.item.summary);
+      setMessage(`日志已导入，已提交 ${compactRows.length} 行清洗结果并更新聚合指标。`);
+    } catch (runError) {
+      setError(runError instanceof Error ? runError.message : "日志导入失败。");
     }
-    setSummary(data.item.summary);
-    setMessage("日志已导入，摘要与聚合指标已更新。");
   }
 
   async function runSyntheticImport() {
