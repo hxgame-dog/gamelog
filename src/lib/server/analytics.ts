@@ -270,7 +270,7 @@ function buildDetailRows(
   compare: ImportCategorySummary | undefined,
   compareVersionLabel?: string | null
 ) {
-  const rows: Array<{ label: string; current: string; compare?: string | null; note: string }> = [];
+  const rows: Array<{ label: string; current: string; compare?: string | null; delta?: string | null; note: string }> = [];
 
   if (category === "system") {
     rows.push(
@@ -278,12 +278,14 @@ function buildDetailRows(
         label: "公共事件健康度",
         current: `${(current.metrics.validRate ?? 0).toFixed(1)}%`,
         compare: compareVersionLabel ? `${(compare?.metrics.validRate ?? 0).toFixed(1)}%` : null,
+        delta: versionDelta(current.metrics.validRate ?? 0, compare?.metrics.validRate ?? null),
         note: "用于判断 session、login、error 等系统层事件是否稳定。"
       },
       {
         label: "异常占比",
         current: `${(current.metrics.errorRate ?? 0).toFixed(1)}%`,
         compare: compareVersionLabel ? `${(compare?.metrics.errorRate ?? 0).toFixed(1)}%` : null,
+        delta: versionDelta(current.metrics.errorRate ?? 0, compare?.metrics.errorRate ?? null),
         note: "异常升高时优先检查底层公共事件口径。"
       }
     );
@@ -293,12 +295,14 @@ function buildDetailRows(
         label: "引导完成率",
         current: `${(current.metrics.completionRate ?? 0).toFixed(1)}%`,
         compare: compareVersionLabel ? `${(compare?.metrics.completionRate ?? 0).toFixed(1)}%` : null,
+        delta: versionDelta(current.metrics.completionRate ?? 0, compare?.metrics.completionRate ?? null),
         note: "新手链路的核心漏斗指标。"
       },
       {
         label: "平均耗时",
         current: `${(current.metrics.avgDuration ?? 0).toFixed(1)} 秒`,
         compare: compareVersionLabel ? `${(compare?.metrics.avgDuration ?? 0).toFixed(1)} 秒` : null,
+        delta: versionDelta(current.metrics.avgDuration ?? 0, compare?.metrics.avgDuration ?? null, " 秒"),
         note: "耗时与流失同时升高时，优先看步骤理解成本。"
       }
     );
@@ -308,12 +312,14 @@ function buildDetailRows(
         label: "通关率",
         current: `${(current.metrics.completionRate ?? 0).toFixed(1)}%`,
         compare: compareVersionLabel ? `${(compare?.metrics.completionRate ?? 0).toFixed(1)}%` : null,
+        delta: versionDelta(current.metrics.completionRate ?? 0, compare?.metrics.completionRate ?? null),
         note: "关卡主漏斗的最终结果指标。"
       },
       {
         label: "失败率",
         current: `${(current.metrics.failRate ?? 0).toFixed(1)}%`,
         compare: compareVersionLabel ? `${(compare?.metrics.failRate ?? 0).toFixed(1)}%` : null,
+        delta: versionDelta(current.metrics.failRate ?? 0, compare?.metrics.failRate ?? null),
         note: "失败率高于通关率时，建议优先看失败原因与高失败关卡。"
       }
     );
@@ -323,12 +329,14 @@ function buildDetailRows(
         label: "商业化转化率",
         current: `${(current.metrics.conversionRate ?? 0).toFixed(1)}%`,
         compare: compareVersionLabel ? `${(compare?.metrics.conversionRate ?? 0).toFixed(1)}%` : null,
+        delta: versionDelta(current.metrics.conversionRate ?? 0, compare?.metrics.conversionRate ?? null),
         note: "用于判断付费入口到价值事件的转化表现。"
       },
       {
         label: "价值事件金额",
         current: `${(current.metrics.value ?? 0).toFixed(2)}`,
         compare: compareVersionLabel ? `${(compare?.metrics.value ?? 0).toFixed(2)}` : null,
+        delta: versionDelta(current.metrics.value ?? 0, compare?.metrics.value ?? null, ""),
         note: "首版使用导入批次估算值，用于版本间横向观察。"
       }
     );
@@ -338,12 +346,14 @@ function buildDetailRows(
         label: "广告完成率",
         current: `${(current.metrics.completionRate ?? 0).toFixed(1)}%`,
         compare: compareVersionLabel ? `${(compare?.metrics.completionRate ?? 0).toFixed(1)}%` : null,
+        delta: versionDelta(current.metrics.completionRate ?? 0, compare?.metrics.completionRate ?? null),
         note: "衡量广告承接是否顺滑的第一指标。"
       },
       {
         label: "奖励领取率",
         current: `${(current.metrics.rewardRate ?? 0).toFixed(1)}%`,
         compare: compareVersionLabel ? `${(compare?.metrics.rewardRate ?? 0).toFixed(1)}%` : null,
+        delta: versionDelta(current.metrics.rewardRate ?? 0, compare?.metrics.rewardRate ?? null),
         note: "完成率高但领奖率低时，通常是奖励领取事件或交互承接有问题。"
       }
     );
@@ -353,12 +363,14 @@ function buildDetailRows(
         label: "字段覆盖率",
         current: `${(current.metrics.coverageRate ?? 0).toFixed(1)}%`,
         compare: compareVersionLabel ? `${(compare?.metrics.coverageRate ?? 0).toFixed(1)}%` : null,
+        delta: versionDelta(current.metrics.coverageRate ?? 0, compare?.metrics.coverageRate ?? null),
         note: "用于判断自定义分类是否已经具备专项分析条件。"
       },
       {
         label: "分析可用率",
         current: `${(current.metrics.usableRate ?? 0).toFixed(1)}%`,
         compare: compareVersionLabel ? `${(compare?.metrics.usableRate ?? 0).toFixed(1)}%` : null,
+        delta: versionDelta(current.metrics.usableRate ?? 0, compare?.metrics.usableRate ?? null),
         note: "结合异常标签与字段说明，判断是否还能继续补结构。"
       }
     );
@@ -369,6 +381,7 @@ function buildDetailRows(
       label: `重点项 ${index + 1}`,
       current: item.name,
       compare: compareVersionLabel ? compare?.ranking?.[index]?.name ?? "—" : null,
+      delta: null,
       note: item.meta ?? `${item.count} 次`
     });
   });

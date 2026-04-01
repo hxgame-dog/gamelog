@@ -1,12 +1,12 @@
 import { notFound } from "next/navigation";
 
 import styles from "@/components/analytics-page.module.css";
+import { AnalyticsDetailClient } from "@/components/analytics-detail-client";
 import { AnalyticsExportButton } from "@/components/analytics-export-client";
 import { AppShell } from "@/components/app-shell";
 import {
   BarChartCard,
   DonutChartCard,
-  InsightCard,
   LineChartCard,
   PageHeader,
   VersionCompareSwitch
@@ -54,7 +54,7 @@ export default async function AnalyticsCategoryPage({
     aux: number[];
     auxLabels: string[];
     ranking: Array<[string, string]>;
-    detailRows: Array<{ label: string; current: string; compare?: string | null; note: string }>;
+    detailRows: Array<{ label: string; current: string; compare?: string | null; delta?: string | null; note: string }>;
     insight: string;
     compareInsight?: string | null;
   };
@@ -92,34 +92,45 @@ export default async function AnalyticsCategoryPage({
 
       <div className={styles.layout}>
         <section className={`panel ${styles.hero}`}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 12,
-              alignItems: "flex-start",
-              flexWrap: "wrap"
-            }}
-          >
-            <div className={styles.switcher}>
-              {config.categories.map((item) => (
-                <a
-                  key={item.key}
-                  href={`/analytics/${item.key}${activeProjectId ? `?projectId=${activeProjectId}` : ""}`}
-                  className={`${styles.pillButton} ${item.key === category ? styles.active : ""}`}
-                >
-                  {item.label}
-                </a>
-              ))}
+          <div className={styles.heroTop}>
+            <div className={styles.heroLeft}>
+              <div className={styles.switcher}>
+                {config.categories.map((item) => (
+                  <a
+                    key={item.key}
+                    href={`/analytics/${item.key}${activeProjectId ? `?projectId=${activeProjectId}` : ""}`}
+                    className={`${styles.pillButton} ${item.key === category ? styles.active : ""}`}
+                  >
+                    {item.label}
+                  </a>
+                ))}
+              </div>
+              <div className={styles.heroMeta}>
+                <span className="pill">{config.sourceLabel}</span>
+                <span className="pill">当前版本 {config.versionLabel}</span>
+                {config.compareVersionLabel ? <span className="pill">对比版本 {config.compareVersionLabel}</span> : null}
+              </div>
             </div>
-            <VersionCompareSwitch
-              currentVersion={config.versionLabel}
-              compareVersion={config.compareVersionLabel}
-              versionOptions={config.versionOptions}
-              buildHref={(version) =>
-                `/analytics/${category}${activeProjectId ? `?projectId=${activeProjectId}&compareVersion=${encodeURIComponent(version)}` : `?compareVersion=${encodeURIComponent(version)}`}`
-              }
-            />
+            <div className={styles.heroRight}>
+              <VersionCompareSwitch
+                currentVersion={config.versionLabel}
+                compareVersion={config.compareVersionLabel}
+                versionOptions={config.versionOptions}
+                buildHref={(version) =>
+                  `/analytics/${category}${activeProjectId ? `?projectId=${activeProjectId}&compareVersion=${encodeURIComponent(version)}` : `?compareVersion=${encodeURIComponent(version)}`}`
+                }
+              />
+            </div>
+          </div>
+
+          <div className={styles.compareSummary}>
+            <div>
+              <div className={styles.compareSummaryLabel}>版本差异总览</div>
+              <div className={styles.compareSummaryTitle}>
+                {config.compareVersionLabel ? `${config.versionLabel} vs ${config.compareVersionLabel}` : `${config.versionLabel} 当前视角`}
+              </div>
+            </div>
+            <p className={styles.compareSummaryCopy}>{config.compareInsight ?? config.insight}</p>
           </div>
 
           <div className={styles.metricGrid}>
@@ -137,88 +148,57 @@ export default async function AnalyticsCategoryPage({
           </div>
         </section>
 
-        <div className={styles.chartGrid}>
-          <BarChartCard
-            title="核心漏斗"
-            copy={config.compareVersionLabel ? `深色柱为 ${config.versionLabel}，浅色柱为 ${config.compareVersionLabel}。` : "主图始终比辅助图更大，用来承载页面最重要的结论。"}
-            values={config.main}
-            color={config.color}
-            compareValues={config.compareMain}
-          />
-          <LineChartCard
-            title="版本趋势"
-            copy={config.compareVersionLabel ? `实线为 ${config.versionLabel}，虚线为 ${config.compareVersionLabel}。` : "观察最近导入或模拟批次的变化，判断问题是偶发波动还是持续趋势。"}
-            values={config.trend}
-            color={config.color}
-            compareValues={config.compareTrend}
-          />
-          <DonutChartCard
-            title="构成分析"
-            copy="查看当前分类中最主要的事件构成、广告位分布或失败原因。"
-            values={config.aux}
-            labels={config.auxLabels}
-            colors={[config.color, "var(--blue)", "var(--violet)", "var(--teal)", "var(--red)", "var(--gold)"].slice(
-              0,
-              config.aux.length
-            )}
-          />
-        </div>
-
-        <div className={styles.detailGrid}>
-          <section className={`panel ${styles.tableCard}`}>
-            <h2 className="section-title" style={{ fontSize: 18 }}>
-              重点事件排行
-            </h2>
-            <div className={styles.rankList}>
-              {config.ranking.map(([name, meta], index) => (
-                <div key={`${name}-${index}`} className={styles.rankItem}>
-                  <div className={styles.rankIndex}>{index + 1}</div>
-                  <div>
-                    <strong>{name}</strong>
-                    <div className={styles.rankMeta}>{meta}</div>
-                  </div>
-                  <span className="pill">查看明细</span>
-                </div>
-              ))}
+        <section className={`panel ${styles.chartSection}`}>
+          <div className={styles.sectionTop}>
+            <div>
+              <h2 className="section-title" style={{ fontSize: 18 }}>
+                关键图表
+              </h2>
+              <p className={styles.sectionCopy}>先看主图确认当前版本结论，再用趋势和构成图验证问题是否持续、是否集中。</p>
             </div>
-          </section>
-
-          <section className={styles.insightCard}>
-            <InsightCard title="AI 分类洞察" copy={config.insight} tone={config.color} />
-            {config.compareInsight ? (
-              <div style={{ marginTop: 12 }}>
-                <InsightCard title="版本差异摘要" copy={config.compareInsight} tone="var(--blue)" />
-              </div>
-            ) : null}
-          </section>
-        </div>
-
-        <section className={`panel ${styles.detailTableCard}`}>
-          <div className={styles.detailTableHeader}>
-            <h2 className="section-title" style={{ fontSize: 18 }}>
-              结构化明细
-            </h2>
-            <span className="pill">
-              {config.compareVersionLabel ? `当前版本 vs ${config.compareVersionLabel}` : "当前版本"}
-            </span>
+            <span className="pill">{config.compareVersionLabel ? "双版本分析" : "单版本分析"}</span>
           </div>
-          <div className={styles.detailTable}>
-            <div className={styles.detailTableRow}>
-              <div className={styles.detailTableCellMuted}>指标 / 项</div>
-              <div className={styles.detailTableCellMuted}>{config.versionLabel}</div>
-              <div className={styles.detailTableCellMuted}>{config.compareVersionLabel ?? "未选择对比"}</div>
-              <div className={styles.detailTableCellMuted}>说明</div>
+          <div className={styles.chartGrid}>
+            <div className={styles.primaryChart}>
+              <BarChartCard
+                title="核心漏斗"
+                copy={config.compareVersionLabel ? `深色柱为 ${config.versionLabel}，浅色柱为 ${config.compareVersionLabel}。` : "主图承载当前分类最关键的漏斗或主流程结论。"}
+                values={config.main}
+                color={config.color}
+                compareValues={config.compareMain}
+              />
             </div>
-            {config.detailRows.map((row) => (
-              <div key={`${row.label}-${row.current}`} className={styles.detailTableRow}>
-                <div className={styles.detailTableCellStrong}>{row.label}</div>
-                <div>{row.current}</div>
-                <div>{row.compare ?? "—"}</div>
-                <div className={styles.detailTableNote}>{row.note}</div>
-              </div>
-            ))}
+            <div className={styles.secondaryCharts}>
+              <LineChartCard
+                title="版本趋势"
+                copy={config.compareVersionLabel ? `实线为 ${config.versionLabel}，虚线为 ${config.compareVersionLabel}。` : "观察最近导入或模拟批次的变化，判断问题是偶发波动还是持续趋势。"}
+                values={config.trend}
+                color={config.color}
+                compareValues={config.compareTrend}
+              />
+              <DonutChartCard
+                title="构成分析"
+                copy="查看当前分类中最主要的事件构成、广告位分布或失败原因。"
+                values={config.aux}
+                labels={config.auxLabels}
+                colors={[config.color, "var(--blue)", "var(--violet)", "var(--teal)", "var(--red)", "var(--gold)"].slice(
+                  0,
+                  config.aux.length
+                )}
+              />
+            </div>
           </div>
         </section>
+
+        <AnalyticsDetailClient
+          ranking={config.ranking}
+          detailRows={config.detailRows}
+          versionLabel={config.versionLabel}
+          compareVersionLabel={config.compareVersionLabel}
+          insight={config.insight}
+          compareInsight={config.compareInsight}
+          color={config.color}
+        />
       </div>
     </AppShell>
   );

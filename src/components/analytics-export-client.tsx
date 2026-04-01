@@ -16,7 +16,7 @@ type ExportPayload = {
   aux: number[];
   auxLabels: string[];
   ranking: Array<[string, string]>;
-  detailRows: Array<{ label: string; current: string; compare?: string | null; note: string }>;
+  detailRows: Array<{ label: string; current: string; compare?: string | null; delta?: string | null; note: string }>;
 };
 
 export function AnalyticsExportButton({ payload }: { payload: ExportPayload }) {
@@ -55,6 +55,7 @@ export function AnalyticsExportButton({ payload }: { payload: ExportPayload }) {
         指标或项: row.label,
         当前版本: row.current,
         对比版本: row.compare ?? "—",
+        变化: row.delta ?? "—",
         说明: row.note
       }))
     );

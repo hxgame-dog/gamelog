@@ -11,10 +11,42 @@
   align-items: flex-start;
 }
 
+.heroCopy {
+  max-width: 760px;
+}
+
 .heroBadgeRow {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.compareSummary {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 16px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, #ffffff 0%, #fcfcfb 100%);
+}
+
+.compareSummaryLabel {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compareSummaryTitle {
+  margin-top: 6px;
+  font-family: var(--font-number);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.compareSummaryCopy {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
 }
 
 .metricGrid {
@@ -104,6 +136,20 @@
   transition: border-color 180ms ease, background 180ms ease;
 }
 
+.categoryMetricRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.categoryMetricValue {
+  font-family: var(--font-number);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
 .categoryHeader {
   display: flex;
   justify-content: space-between;
@@ -162,6 +208,33 @@
   box-shadow: var(--shadow-soft);
 }
 
+.importBatchScoreRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.scoreCard {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+}
+
+.scoreLabel {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.scoreValue {
+  margin-top: 6px;
+  font-family: var(--font-number);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
 .importBatchMeta {
   margin-top: 10px;
   display: flex;
@@ -179,6 +252,14 @@
   align-items: center;
   color: var(--muted);
   font-size: 12px;
+}
+
+.snapshotMetricRow {
+  margin-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
 }
 
 .insightTitle,
@@ -211,6 +292,10 @@
   .splitGrid {
     grid-template-columns: 1fr;
   }
+
+  .compareSummary {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 760px) {
@@ -220,6 +305,10 @@
 
   .metricGrid,
   .categoryGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .importBatchScoreRow {
     grid-template-columns: 1fr;
   }
 }

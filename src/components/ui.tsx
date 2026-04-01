@@ -300,6 +300,19 @@ export function BarChartCard({
   compareValues?: number[];
   compareColor?: string;
 }) {
+  const currentAvg = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+  const compareAvg = compareValues?.length ? compareValues.reduce((sum, value) => sum + value, 0) / compareValues.length : null;
+  const avgDelta = compareAvg === null ? null : currentAvg - compareAvg;
+
+  function buildBarTooltip(value: number, compareValue?: number) {
+    if (compareValue === undefined) {
+      return `当前版本 ${value.toFixed(1)}%`;
+    }
+
+    const delta = value - compareValue;
+    return `当前版本 ${value.toFixed(1)}%\n对比版本 ${compareValue.toFixed(1)}%\n差值 ${(delta > 0 ? "+" : "")}${delta.toFixed(1)}%`;
+  }
+
   return (
     <div className={`panel ${chartStyles.chartCard}`}>
       <div className={chartStyles.chartTitleRow}>
@@ -308,6 +321,27 @@ export function BarChartCard({
           <p className={chartStyles.chartCopy}>{copy}</p>
         </div>
         <span className="pill">主图</span>
+      </div>
+      <div className={chartStyles.chartSummaryRow}>
+        <div className={chartStyles.chartSummaryCard}>
+          <span className={chartStyles.chartSummaryLabel}>当前版本均值</span>
+          <strong>{currentAvg.toFixed(1)}%</strong>
+        </div>
+        {compareAvg !== null ? (
+          <>
+            <div className={chartStyles.chartSummaryCard}>
+              <span className={chartStyles.chartSummaryLabel}>对比版本均值</span>
+              <strong>{compareAvg.toFixed(1)}%</strong>
+            </div>
+            <div className={chartStyles.chartSummaryCard}>
+              <span className={chartStyles.chartSummaryLabel}>差值</span>
+              <strong style={{ color: avgDelta && avgDelta < 0 ? "var(--red)" : "var(--teal)" }}>
+                {(avgDelta ?? 0) > 0 ? "+" : ""}
+                {(avgDelta ?? 0).toFixed(1)}%
+              </strong>
+            </div>
+          </>
+        ) : null}
       </div>
       <div className={chartStyles.bars}>
         {values.map((value, index) => {
@@ -321,6 +355,7 @@ export function BarChartCard({
                     height: `${compareValue}%`,
                     background: compareColor
                   }}
+                  title={`对比版本 ${compareValue.toFixed(1)}%`}
                 >
                   <span className={chartStyles.barValue}>{compareValue}%</span>
                 </div>
@@ -331,6 +366,7 @@ export function BarChartCard({
                   height: `${value}%`,
                   background: `linear-gradient(180deg, ${color}, rgba(255,255,255,0.08))`
                 }}
+                title={buildBarTooltip(value, compareValue)}
               >
                 <span className={chartStyles.barValue}>{value}%</span>
               </div>
@@ -385,6 +421,18 @@ export function LineChartCard({
 }) {
   const points = linePath(values);
   const comparePoints = compareValues?.length ? linePath(compareValues) : "";
+  const currentLatest = values.at(-1) ?? 0;
+  const compareLatest = compareValues?.length ? compareValues.at(-1) ?? 0 : null;
+  const latestDelta = compareLatest === null ? null : currentLatest - compareLatest;
+
+  function buildPointTooltip(value: number, compareValue?: number) {
+    if (compareValue === undefined) {
+      return `当前版本 ${value.toFixed(1)}%`;
+    }
+
+    const delta = value - compareValue;
+    return `当前版本 ${value.toFixed(1)}%\n对比版本 ${compareValue.toFixed(1)}%\n差值 ${(delta > 0 ? "+" : "")}${delta.toFixed(1)}%`;
+  }
 
   return (
     <div className={`panel ${chartStyles.chartCard}`}>
@@ -394,6 +442,27 @@ export function LineChartCard({
           <p className={chartStyles.chartCopy}>{copy}</p>
         </div>
         <span className="pill">趋势</span>
+      </div>
+      <div className={chartStyles.chartSummaryRow}>
+        <div className={chartStyles.chartSummaryCard}>
+          <span className={chartStyles.chartSummaryLabel}>当前末点</span>
+          <strong>{currentLatest.toFixed(1)}%</strong>
+        </div>
+        {compareLatest !== null ? (
+          <>
+            <div className={chartStyles.chartSummaryCard}>
+              <span className={chartStyles.chartSummaryLabel}>对比末点</span>
+              <strong>{compareLatest.toFixed(1)}%</strong>
+            </div>
+            <div className={chartStyles.chartSummaryCard}>
+              <span className={chartStyles.chartSummaryLabel}>差值</span>
+              <strong style={{ color: latestDelta && latestDelta < 0 ? "var(--red)" : "var(--teal)" }}>
+                {(latestDelta ?? 0) > 0 ? "+" : ""}
+                {(latestDelta ?? 0).toFixed(1)}%
+              </strong>
+            </div>
+          </>
+        ) : null}
       </div>
       <div className={chartStyles.lineWrap}>
         <div className={chartStyles.grid} />
@@ -412,12 +481,26 @@ export function LineChartCard({
           {compareValues?.map((value, index) => {
             const x = (index / (compareValues.length - 1 || 1)) * 100;
             const y = 100 - value;
-            return <circle key={`compare-${index}`} cx={x} cy={y} r="2.2" fill={compareColor} />;
+            return (
+              <circle
+                key={`compare-${index}`}
+                cx={x}
+                cy={y}
+                r="2.2"
+                fill={compareColor}
+              >
+                <title>{`对比版本 ${value.toFixed(1)}%`}</title>
+              </circle>
+            );
           })}
           {values.map((value, index) => {
             const x = (index / (values.length - 1 || 1)) * 100;
             const y = 100 - value;
-            return <circle key={index} cx={x} cy={y} r="2.5" fill={color} />;
+            return (
+              <circle key={index} cx={x} cy={y} r="2.5" fill={color}>
+                <title>{buildPointTooltip(value, compareValues?.[index])}</title>
+              </circle>
+            );
           })}
         </svg>
       </div>
@@ -439,6 +522,7 @@ export function DonutChartCard({
   labels: readonly string[];
 }) {
   const total = values.reduce((sum, value) => sum + value, 0);
+  const peakIndex = values.reduce((bestIndex, value, index, all) => (value > (all[bestIndex] ?? -1) ? index : bestIndex), 0);
   const segments = values.reduce<string[]>((result, value, index) => {
     const consumed = values.slice(0, index).reduce((sum, current) => sum + current, 0);
     const start = (consumed / total) * 360;
@@ -456,6 +540,20 @@ export function DonutChartCard({
         </div>
         <span className="pill">构成</span>
       </div>
+      <div className={chartStyles.chartSummaryRow}>
+        <div className={chartStyles.chartSummaryCard}>
+          <span className={chartStyles.chartSummaryLabel}>最大构成项</span>
+          <strong>{labels[peakIndex] ?? "—"}</strong>
+        </div>
+        <div className={chartStyles.chartSummaryCard}>
+          <span className={chartStyles.chartSummaryLabel}>占比</span>
+          <strong>{values[peakIndex] ?? 0}%</strong>
+        </div>
+        <div className={chartStyles.chartSummaryCard}>
+          <span className={chartStyles.chartSummaryLabel}>覆盖总量</span>
+          <strong>{total.toFixed(0)}%</strong>
+        </div>
+      </div>
       <div className={chartStyles.pieWrap}>
         <div
           className={chartStyles.donut}
@@ -468,7 +566,7 @@ export function DonutChartCard({
                 <span className={chartStyles.dot} style={{ background: colors[index] }} />
                 {label}
               </div>
-              <strong>{values[index]}%</strong>
+              <strong title={`${label} 占比 ${values[index]}%`}>{values[index]}%</strong>
             </div>
           ))}
         </div>

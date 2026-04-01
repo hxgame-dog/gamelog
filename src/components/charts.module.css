@@ -22,6 +22,34 @@
   font-size: 12px;
 }
 
+.chartSummaryRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.chartSummaryCard {
+  display: grid;
+  gap: 4px;
+  min-width: 92px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #fcfcfb;
+}
+
+.chartSummaryCard strong {
+  font-family: var(--font-number);
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.chartSummaryLabel {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .bars {
   display: flex;
   align-items: flex-end;
