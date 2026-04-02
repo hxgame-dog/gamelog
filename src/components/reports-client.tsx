@@ -5,10 +5,19 @@ import { useState, useTransition } from "react";
 
 export function ReportsActions({
   projectId,
-  compareVersion
+  compareVersion,
+  currentImportId,
+  importOptions
 }: {
   projectId: string | null;
   compareVersion?: string | null;
+  currentImportId?: string | null;
+  importOptions?: Array<{
+    id: string;
+    label: string;
+    source?: string | null;
+    uploadedAt?: string | Date;
+  }>;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -17,6 +26,31 @@ export function ReportsActions({
 
   return (
     <div className="header-actions">
+      {importOptions?.length ? (
+        <select
+          className="button-secondary"
+          value={currentImportId ?? ""}
+          onChange={(event) => {
+            const params = new URLSearchParams();
+            if (projectId) {
+              params.set("projectId", projectId);
+            }
+            if (compareVersion) {
+              params.set("compareVersion", compareVersion);
+            }
+            if (event.target.value) {
+              params.set("importId", event.target.value);
+            }
+            router.push(`/reports?${params.toString()}`);
+          }}
+        >
+          {importOptions.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+      ) : null}
       <button
         className="button-primary"
         disabled={isPending || !projectId}
@@ -33,7 +67,7 @@ export function ReportsActions({
               const response = await fetch("/api/reports/generate", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ projectId, compareVersion })
+                body: JSON.stringify({ projectId, compareVersion, importId: currentImportId })
               });
               const data = await response.json();
               if (!response.ok) {

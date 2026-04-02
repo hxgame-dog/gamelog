@@ -180,6 +180,15 @@
   font-size: 12px;
 }
 
+.compareStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .ctaRow {
   display: flex;
   gap: 10px;

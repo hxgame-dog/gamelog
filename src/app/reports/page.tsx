@@ -16,13 +16,13 @@ import { getAiReportView } from "@/lib/server/reports";
 export default async function ReportsPage({
   searchParams
 }: {
-  searchParams: Promise<{ projectId?: string; compareVersion?: string }>;
+  searchParams: Promise<{ projectId?: string; compareVersion?: string; importId?: string }>;
 }) {
   const user = await requireUser();
   const projects = await getProjectsForUser(user.id);
-  const { projectId, compareVersion } = await searchParams;
+  const { projectId, compareVersion, importId } = await searchParams;
   const activeProjectId = projectId ?? projects[0]?.id ?? null;
-  const reportView = activeProjectId ? await getAiReportView(activeProjectId, compareVersion) : null;
+  const reportView = activeProjectId ? await getAiReportView(activeProjectId, compareVersion, importId) : null;
 
   const report = reportView?.report;
   const onboardingEvidence = reportView?.evidence.onboarding;
@@ -94,10 +94,15 @@ export default async function ReportsPage({
               compareVersion={reportView?.compareVersionLabel}
               versionOptions={reportView?.versionOptions}
               buildHref={(version) =>
-                `/reports${activeProjectId ? `?projectId=${activeProjectId}&compareVersion=${encodeURIComponent(version)}` : `?compareVersion=${encodeURIComponent(version)}`}`
+                `/reports${activeProjectId ? `?projectId=${activeProjectId}&compareVersion=${encodeURIComponent(version)}${reportView?.currentImportId ? `&importId=${encodeURIComponent(reportView.currentImportId)}` : ""}` : `?compareVersion=${encodeURIComponent(version)}`}`
               }
             />
-            <ReportsActions projectId={activeProjectId} compareVersion={reportView?.compareVersionLabel} />
+            <ReportsActions
+              projectId={activeProjectId}
+              compareVersion={reportView?.compareVersionLabel}
+              currentImportId={reportView?.currentImportId}
+              importOptions={reportView?.importOptions}
+            />
           </div>
         }
       />

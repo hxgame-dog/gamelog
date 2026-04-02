@@ -74,7 +74,7 @@ function buildFallbackReport(input: {
   };
 }
 
-async function buildReportDraft(projectId: string, requestedCompareVersion?: string | null) {
+async function buildReportDraft(projectId: string, requestedCompareVersion?: string | null, importId?: string | null) {
   const prisma = getPrismaClient();
   let projectName = "当前项目";
 
@@ -96,31 +96,39 @@ async function buildReportDraft(projectId: string, requestedCompareVersion?: str
     getLatestImportForProject(projectId),
     getImportsForProject(projectId)
   ]);
-  const compareVersion = latestImport
-    ? requestedCompareVersion && requestedCompareVersion !== latestImport.version
+  const currentImport = importId ? imports.find((item) => item.id === importId) ?? latestImport : latestImport;
+  const compareVersion = currentImport
+    ? requestedCompareVersion && requestedCompareVersion !== currentImport.version
       ? imports.find((item) => item.version === requestedCompareVersion)?.version ?? null
-      : imports.find((item) => item.version !== latestImport.version)?.version ?? null
+      : imports.find((item) => item.version !== currentImport.version)?.version ?? null
     : null;
   const [system, onboarding, level, monetization, ads] = await Promise.all([
-    getAnalyticsCategoryData("system", projectId, compareVersion),
-    getAnalyticsCategoryData("onboarding", projectId, compareVersion),
-    getAnalyticsCategoryData("level", projectId, compareVersion),
-    getAnalyticsCategoryData("monetization", projectId, compareVersion),
-    getAnalyticsCategoryData("ads", projectId, compareVersion)
+    getAnalyticsCategoryData("system", projectId, compareVersion, currentImport?.id ?? null),
+    getAnalyticsCategoryData("onboarding", projectId, compareVersion, currentImport?.id ?? null),
+    getAnalyticsCategoryData("level", projectId, compareVersion, currentImport?.id ?? null),
+    getAnalyticsCategoryData("monetization", projectId, compareVersion, currentImport?.id ?? null),
+    getAnalyticsCategoryData("ads", projectId, compareVersion, currentImport?.id ?? null)
   ]);
 
   return {
     projectName,
-    versionLabel: latestImport?.version ?? "未导入版本",
+    versionLabel: currentImport?.version ?? "未导入版本",
     compareVersionLabel: compareVersion,
     versionOptions: [...new Set(imports.map((item) => item.version))],
-    dataSource: latestImport?.source === "SYNTHETIC" ? "模拟数据" : latestImport ? "真实数据" : "演示数据",
+    importOptions: imports.map((item) => ({
+      id: item.id,
+      label: `${item.fileName} / v${item.version}`,
+      source: item.source,
+      uploadedAt: item.uploadedAt instanceof Date ? item.uploadedAt : new Date(item.uploadedAt)
+    })),
+    currentImportId: currentImport?.id ?? null,
+    dataSource: currentImport?.source === "SYNTHETIC" ? "模拟数据" : currentImport ? "真实数据" : "演示数据",
     system,
     onboarding,
     level,
     monetization,
     ads,
-    latestImport
+    latestImport: currentImport
   };
 }
 
@@ -187,8 +195,8 @@ function decodeReportSummary(summary: string) {
   }
 }
 
-export async function generateAiReport(projectId: string, compareVersion?: string | null) {
-  const draft = await buildReportDraft(projectId, compareVersion);
+export async function generateAiReport(projectId: string, compareVersion?: string | null, importId?: string | null) {
+  const draft = await buildReportDraft(projectId, compareVersion, importId);
   const report = await maybeGenerateWithGemini(draft);
   const prisma = getPrismaClient();
   const now = new Date();
@@ -201,7 +209,7 @@ export async function generateAiReport(projectId: string, compareVersion?: strin
       summary: encodeReportSummary(report),
       riskLevel: report.riskLevel,
       dataSource: draft.dataSource,
-      versionFrom: null,
+      versionFrom: draft.compareVersionLabel,
       versionTo: draft.versionLabel,
       generatedAt: now.getTime(),
       projectId
@@ -220,7 +228,7 @@ export async function generateAiReport(projectId: string, compareVersion?: strin
       summary: encodeReportSummary(report),
       riskLevel: report.riskLevel,
       dataSource: draft.dataSource,
-      versionFrom: null,
+      versionFrom: draft.compareVersionLabel,
       versionTo: draft.versionLabel,
       projectId
     }
@@ -266,11 +274,15 @@ export async function getLatestAiReport(projectId: string) {
   };
 }
 
-export async function getAiReportView(projectId: string, compareVersion?: string | null) {
+export async function getAiReportView(projectId: string, compareVersion?: string | null, importId?: string | null) {
   const latest = await getLatestAiReport(projectId);
-  const draft = await buildReportDraft(projectId, compareVersion);
+  const draft = await buildReportDraft(projectId, compareVersion, importId);
+  const canReuseLatest =
+    latest?.content &&
+    latest.versionTo === draft.versionLabel &&
+    (draft.compareVersionLabel ? latest.versionFrom === draft.compareVersionLabel : true);
 
-  if (latest?.content) {
+  if (canReuseLatest && latest?.content) {
     return {
       report: latest.content,
       generatedAt: latest.generatedAt,
@@ -279,6 +291,8 @@ export async function getAiReportView(projectId: string, compareVersion?: string
       versionLabel: latest.versionTo ?? draft.versionLabel,
       compareVersionLabel: draft.compareVersionLabel,
       versionOptions: draft.versionOptions,
+      importOptions: draft.importOptions,
+      currentImportId: draft.currentImportId,
       evidence: {
         system: draft.system,
         onboarding: draft.onboarding,
@@ -299,6 +313,8 @@ export async function getAiReportView(projectId: string, compareVersion?: string
     versionLabel: draft.versionLabel,
     compareVersionLabel: draft.compareVersionLabel,
     versionOptions: draft.versionOptions,
+    importOptions: draft.importOptions,
+    currentImportId: draft.currentImportId,
     evidence: {
       system: draft.system,
       onboarding: draft.onboarding,

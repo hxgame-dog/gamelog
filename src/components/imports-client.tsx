@@ -447,6 +447,8 @@ export function ImportsClient({
   const selectedHistoryImport =
     importHistory.find((item) => item.id === selectedHistoryImportId) ?? latestImport ?? null;
   const displaySummary = summary ?? (selectedHistoryImport?.summaryJson ?? null);
+  const compareHistoryImport =
+    importHistory.find((item) => item.id !== (selectedHistoryImport?.id ?? "")) ?? null;
   const rowsToShow = displaySummary?.previewRows ?? [];
   const keyword = previewFilter.trim().toLowerCase();
   const previewRows = !keyword
@@ -454,6 +456,15 @@ export function ImportsClient({
     : rowsToShow.filter((row) =>
         Object.values(row).some((value) => String(value ?? "").toLowerCase().includes(keyword))
       );
+
+  function summaryDelta(current: number | undefined, compare: number | undefined, suffix = "") {
+    if (current === undefined || compare === undefined) {
+      return null;
+    }
+    const delta = current - compare;
+    const sign = delta > 0 ? "+" : "";
+    return `${sign}${delta.toFixed(1)}${suffix}`;
+  }
 
   async function handleFile(file: File) {
     const extension = file.name.split(".").pop()?.toLowerCase();
@@ -814,6 +825,14 @@ export function ImportsClient({
                 <div className={styles.selectedImportMeta}>
                   当前查看批次：{selectedHistoryImport.fileName} / v{selectedHistoryImport.version}
                   {selectedHistoryImport.source ? ` / ${selectedHistoryImport.source === "SYNTHETIC" ? "模拟数据" : "真实数据"}` : ""}
+                </div>
+              ) : null}
+              {compareHistoryImport?.summaryJson ? (
+                <div className={styles.compareStrip}>
+                  <span>对比批次：{compareHistoryImport.fileName} / v{compareHistoryImport.version}</span>
+                  <span>通过率 {summaryDelta(displaySummary.successRate, compareHistoryImport.summaryJson.successRate, "%")}</span>
+                  <span>异常数 {summaryDelta(displaySummary.errorCount, compareHistoryImport.summaryJson.errorCount)}</span>
+                  <span>记录数 {summaryDelta(displaySummary.recordCount, compareHistoryImport.summaryJson.recordCount)}</span>
                 </div>
               ) : null}
               <div className={styles.rankBlock}>
