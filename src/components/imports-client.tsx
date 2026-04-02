@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import * as XLSX from "xlsx";
 
 import { buildImportSummary, type ImportSummary } from "@/lib/import-summary";
@@ -29,6 +29,8 @@ type ImportPreview = {
   id: string;
   fileName: string;
   version: string;
+  source?: "REAL" | "SYNTHETIC";
+  uploadedAt?: string | Date;
   summaryJson?: ImportSummary | null;
 };
 
@@ -404,12 +406,14 @@ export function ImportsClient({
   projects,
   initialProjectId,
   plansByProject,
-  latestImportsByProject
+  latestImportsByProject,
+  importsHistoryByProject
 }: {
   projects: Project[];
   initialProjectId: string | null;
   plansByProject: Record<string, Plan[]>;
   latestImportsByProject: Record<string, ImportPreview | null>;
+  importsHistoryByProject: Record<string, ImportPreview[]>;
 }) {
   const [mode, setMode] = useState<"real" | "synthetic">("real");
   const [selectedProjectId, setSelectedProjectId] = useState(initialProjectId ?? projects[0]?.id ?? "");
@@ -430,24 +434,26 @@ export function ImportsClient({
   const [latestImportId, setLatestImportId] = useState(
     latestImportsByProject[initialProjectId ?? projects[0]?.id ?? ""]?.id ?? null
   );
+  const [selectedHistoryImportId, setSelectedHistoryImportId] = useState(
+    latestImportsByProject[initialProjectId ?? projects[0]?.id ?? ""]?.id ?? null
+  );
   const [previewFilter, setPreviewFilter] = useState("");
   const [isPending, startTransition] = useTransition();
 
   const activePlans = plansByProject[selectedProjectId] ?? [];
   const selectedPlan = activePlans.find((plan) => plan.id === selectedPlanId) ?? null;
   const latestImport = latestImportsByProject[selectedProjectId] ?? null;
-  const displaySummary = summary ?? (latestImport?.summaryJson ?? null);
-  const previewRows = useMemo(() => {
-    const rowsToShow = displaySummary?.previewRows ?? [];
-    const keyword = previewFilter.trim().toLowerCase();
-    if (!keyword) {
-      return rowsToShow;
-    }
-
-    return rowsToShow.filter((row) =>
-      Object.values(row).some((value) => String(value ?? "").toLowerCase().includes(keyword))
-    );
-  }, [displaySummary, previewFilter]);
+  const importHistory = importsHistoryByProject[selectedProjectId] ?? [];
+  const selectedHistoryImport =
+    importHistory.find((item) => item.id === selectedHistoryImportId) ?? latestImport ?? null;
+  const displaySummary = summary ?? (selectedHistoryImport?.summaryJson ?? null);
+  const rowsToShow = displaySummary?.previewRows ?? [];
+  const keyword = previewFilter.trim().toLowerCase();
+  const previewRows = !keyword
+    ? rowsToShow
+    : rowsToShow.filter((row) =>
+        Object.values(row).some((value) => String(value ?? "").toLowerCase().includes(keyword))
+      );
 
   async function handleFile(file: File) {
     const extension = file.name.split(".").pop()?.toLowerCase();
@@ -489,11 +495,12 @@ export function ImportsClient({
     setRows(parsed.rows);
     setHeaders(parsed.headers);
     setMappings(parsed.headers.map((header) => ({ source: header, target: suggestTarget(header) })));
-    setCleaningNote(parsed.notice ?? null);
-    setSummary(null);
-    setMessage(
-      parsed.notice
-        ? `已识别并清洗 ${parsed.rows.length} 行原始日志，下一步请确认清洗后字段映射。`
+      setCleaningNote(parsed.notice ?? null);
+      setSummary(null);
+      setSelectedHistoryImportId(latestImportId);
+      setMessage(
+        parsed.notice
+          ? `已识别并清洗 ${parsed.rows.length} 行原始日志，下一步请确认清洗后字段映射。`
         : `已读取 ${parsed.rows.length} 行日志，下一步请确认字段映射。`
     );
     setError(null);
@@ -574,6 +581,7 @@ export function ImportsClient({
       const data = (await response.json()) as { item: { id: string; summary: ImportSummary } };
       setSummary(data.item.summary);
       setLatestImportId(data.item.id);
+      setSelectedHistoryImportId(data.item.id);
       setMessage(`日志已导入，已基于 ${compactRows.length} 行清洗结果生成导入摘要并更新聚合指标。`);
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : "日志导入失败。");
@@ -599,6 +607,7 @@ export function ImportsClient({
     }
     setSummary(data.summary);
     setLatestImportId(data.id ?? null);
+    setSelectedHistoryImportId(data.id ?? null);
     setMessage(`已生成并导入模拟数据：${data.generatedUsers} 名玩家，覆盖 ${data.days} 天。`);
   }
 
@@ -617,6 +626,7 @@ export function ImportsClient({
                   setSelectedProjectId(nextProjectId);
                   setSelectedPlanId(plansByProject[nextProjectId]?.[0]?.id ?? "");
                   setLatestImportId(latestImportsByProject[nextProjectId]?.id ?? null);
+                  setSelectedHistoryImportId(latestImportsByProject[nextProjectId]?.id ?? null);
                   setSummary(null);
                   setPreviewFilter("");
                 }}
@@ -788,8 +798,8 @@ export function ImportsClient({
                 </div>
               </div>
               <div className={styles.ctaRow}>
-                {latestImportId ? (
-                  <Link className="button-secondary" href={`/api/imports/${latestImportId}/preview`} target="_blank">
+                {selectedHistoryImport?.id ? (
+                  <Link className="button-secondary" href={`/api/imports/${selectedHistoryImport.id}/preview`} target="_blank">
                     查看导入预览
                   </Link>
                 ) : null}
@@ -800,6 +810,12 @@ export function ImportsClient({
                   前往关卡分析
                 </Link>
               </div>
+              {selectedHistoryImport ? (
+                <div className={styles.selectedImportMeta}>
+                  当前查看批次：{selectedHistoryImport.fileName} / v{selectedHistoryImport.version}
+                  {selectedHistoryImport.source ? ` / ${selectedHistoryImport.source === "SYNTHETIC" ? "模拟数据" : "真实数据"}` : ""}
+                </div>
+              ) : null}
               <div className={styles.rankBlock}>
                 <h3 className={styles.stepTitle}>Top 事件</h3>
                 {displaySummary.topEvents.map((item) => (
@@ -841,6 +857,51 @@ export function ImportsClient({
               </button>
             )}
           </div>
+        </section>
+
+        <section className={`panel ${styles.card}`}>
+          <div className={styles.previewTop}>
+            <h2 className="section-title" style={{ fontSize: 18 }}>
+              导入批次历史
+            </h2>
+            <span className="pill">共 {importHistory.length} 批</span>
+          </div>
+          {importHistory.length ? (
+            <div className={styles.historyList}>
+              {importHistory.slice(0, 8).map((item) => {
+                const itemSummary = item.summaryJson;
+                const active = item.id === (selectedHistoryImport?.id ?? latestImportId);
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`${styles.historyItem} ${active ? styles.historyItemActive : ""}`}
+                    onClick={() => {
+                      setSelectedHistoryImportId(item.id);
+                      setSummary(null);
+                      setPreviewFilter("");
+                      setMessage(`已切换到导入批次：${item.fileName}`);
+                      setError(null);
+                    }}
+                  >
+                    <div className={styles.historyHeader}>
+                      <strong>{item.fileName}</strong>
+                      <span className="pill">
+                        {item.source === "SYNTHETIC" ? "模拟" : "真实"} / v{item.version}
+                      </span>
+                    </div>
+                    <div className={styles.historyMeta}>
+                      <span>记录 {itemSummary?.recordCount ?? 0}</span>
+                      <span>通过率 {itemSummary?.successRate?.toFixed(1) ?? "0.0"}%</span>
+                      <span>{item.uploadedAt ? new Date(item.uploadedAt).toLocaleString("zh-CN") : "刚刚"}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className={styles.emptyState}>导入完成后，这里会保留最近批次，方便切换预览和重新进入分析。</div>
+          )}
         </section>
 
         {mode === "real" ? (

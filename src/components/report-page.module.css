@@ -64,6 +64,50 @@
   margin-top: 12px;
 }
 
+.detailPanel {
+  padding: 18px;
+  margin-top: 12px;
+}
+
+.detailGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.detailCard {
+  padding: 14px;
+  border-radius: 14px;
+  background: #fcfcfb;
+  border: 1px solid var(--border);
+}
+
+.detailRows {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.detailRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+}
+
+.detailStats {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .evidenceExplainHeader {
   display: flex;
   justify-content: space-between;
@@ -90,7 +134,16 @@
   .summaryRow,
   .cards,
   .evidenceGrid,
-  .evidenceExplainGrid {
+  .evidenceExplainGrid,
+  .detailGrid {
     grid-template-columns: 1fr;
+  }
+
+  .detailRow {
+    flex-direction: column;
+  }
+
+  .detailStats {
+    text-align: left;
   }
 }

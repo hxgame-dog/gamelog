@@ -174,11 +174,56 @@
   margin-top: 18px;
 }
 
+.selectedImportMeta {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .ctaRow {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
   margin-top: 18px;
+}
+
+.historyList {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.historyItem {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: #fcfcfb;
+  cursor: pointer;
+}
+
+.historyItemActive {
+  border-color: rgba(31, 154, 133, 0.24);
+  background: rgba(31, 154, 133, 0.06);
+}
+
+.historyHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.historyMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .stepTitle {

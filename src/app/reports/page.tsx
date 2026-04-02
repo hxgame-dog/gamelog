@@ -25,6 +25,42 @@ export default async function ReportsPage({
   const reportView = activeProjectId ? await getAiReportView(activeProjectId, compareVersion) : null;
 
   const report = reportView?.report;
+  const onboardingEvidence = reportView?.evidence.onboarding;
+  const levelEvidence = reportView?.evidence.level;
+  const onboardingRows = (onboardingEvidence as (typeof onboardingEvidence & {
+    onboardingRows?: Array<{
+      label: string;
+      current: string;
+      compare?: string | null;
+      delta?: string | null;
+      note: string;
+    }>;
+  }) | undefined)?.onboardingRows ?? [];
+  const levelRows = (levelEvidence as (typeof levelEvidence & {
+    levelRows?: Array<{
+      label: string;
+      current: string;
+      compare?: string | null;
+      delta?: string | null;
+      note: string;
+    }>;
+    microflowRows?: Array<{
+      label: string;
+      current: string;
+      compare?: string | null;
+      delta?: string | null;
+      note: string;
+    }>;
+  }) | undefined)?.levelRows ?? [];
+  const microflowRows = (levelEvidence as (typeof levelEvidence & {
+    microflowRows?: Array<{
+      label: string;
+      current: string;
+      compare?: string | null;
+      delta?: string | null;
+      note: string;
+    }>;
+  }) | undefined)?.microflowRows ?? [];
   const evidenceNotes = reportView
     ? [
         {
@@ -139,6 +175,81 @@ export default async function ReportsPage({
           color={reportView?.evidence.system.color ?? "var(--blue)"}
         />
       </div>
+
+      {(onboardingRows.length || levelRows.length || microflowRows.length) ? (
+        <section className={`panel ${styles.detailPanel}`}>
+          <div className={styles.evidenceExplainHeader}>
+            <h2 className="section-title" style={{ fontSize: 18 }}>
+              真实数据证据明细
+            </h2>
+            <span className="pill">步骤 / 关卡 / 心流</span>
+          </div>
+          <div className={styles.detailGrid}>
+            {onboardingRows.length ? (
+              <div className={styles.detailCard}>
+                <h3 className={styles.reportTitle}>新手引导关键步骤</h3>
+                <div className={styles.detailRows}>
+                  {onboardingRows.slice(0, 5).map((row) => (
+                    <div key={row.label} className={styles.detailRow}>
+                      <div>
+                        <strong>{row.label}</strong>
+                        <p className={styles.reportCopy}>{row.note}</p>
+                      </div>
+                      <div className={styles.detailStats}>
+                        <span>{row.current}</span>
+                        {row.compare ? <span>对比 {row.compare}</span> : null}
+                        {row.delta ? <span>{row.delta}</span> : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {levelRows.length ? (
+              <div className={styles.detailCard}>
+                <h3 className={styles.reportTitle}>关卡进度关键关卡</h3>
+                <div className={styles.detailRows}>
+                  {levelRows.slice(0, 5).map((row) => (
+                    <div key={row.label} className={styles.detailRow}>
+                      <div>
+                        <strong>{row.label}</strong>
+                        <p className={styles.reportCopy}>{row.note}</p>
+                      </div>
+                      <div className={styles.detailStats}>
+                        <span>{row.current}</span>
+                        {row.compare ? <span>对比 {row.compare}</span> : null}
+                        {row.delta ? <span>{row.delta}</span> : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {microflowRows.length ? (
+              <div className={styles.detailCard}>
+                <h3 className={styles.reportTitle}>局内微观心流行为</h3>
+                <div className={styles.detailRows}>
+                  {microflowRows.slice(0, 5).map((row) => (
+                    <div key={row.label} className={styles.detailRow}>
+                      <div>
+                        <strong>{row.label}</strong>
+                        <p className={styles.reportCopy}>{row.note}</p>
+                      </div>
+                      <div className={styles.detailStats}>
+                        <span>{row.current}</span>
+                        {row.compare ? <span>对比 {row.compare}</span> : null}
+                        {row.delta ? <span>{row.delta}</span> : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       {evidenceNotes.length ? (
         <section className={`panel ${styles.evidenceExplainPanel}`}>
