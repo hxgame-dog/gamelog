@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import * as XLSX from "xlsx";
 
+import { buildImportSummary } from "@/lib/import-summary";
+
 import styles from "./import-page.module.css";
 
 type Project = {
@@ -530,6 +532,8 @@ export function ImportsClient({
           (importPayloadTargets.has(mapping.target) || (mapping.target === "property_hint" && importPayloadTargets.has(mapping.source)))
       );
 
+      const summary = buildImportSummary(compactRows, activeMappings);
+
       const response = await fetch("/api/imports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -538,7 +542,8 @@ export function ImportsClient({
           trackingPlanId: selectedPlanId,
           version,
           fileName,
-          rows: compactRows,
+          rawHeaders: headers,
+          summary,
           mappings: activeMappings
         })
       });
@@ -550,7 +555,7 @@ export function ImportsClient({
 
       const data = (await response.json()) as { item: { summary: ImportSummary } };
       setSummary(data.item.summary);
-      setMessage(`日志已导入，已提交 ${compactRows.length} 行清洗结果并更新聚合指标。`);
+      setMessage(`日志已导入，已基于 ${compactRows.length} 行清洗结果生成导入摘要并更新聚合指标。`);
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : "日志导入失败。");
     }

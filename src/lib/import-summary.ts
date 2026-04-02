@@ -1,63 +1,37 @@
-import crypto from "node:crypto";
-
-import { JobStatus, UploadSource } from "@prisma/client";
-import { z } from "zod";
-
-import { buildImportSummary as buildSharedImportSummary, type ImportSummary } from "../import-summary";
-import { getPrismaClient, hasDatabaseUrl } from "./prisma";
-import { getMemoryStore } from "./store";
-
-const mappingSchema = z.object({
-  source: z.string(),
-  target: z.string()
-});
-
-const summarySchema = z.custom<ImportSummary>((value) => {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const candidate = value as Partial<ImportSummary>;
-  return (
-    typeof candidate.recordCount === "number" &&
-    typeof candidate.successRate === "number" &&
-    typeof candidate.errorCount === "number" &&
-    typeof candidate.unmatchedEvents === "number" &&
-    Array.isArray(candidate.topEvents) &&
-    Array.isArray(candidate.metrics) &&
-    !!candidate.categories &&
-    !!candidate.overview
-  );
-}, "Invalid import summary");
-
-const importSchema = z
-  .object({
-    projectId: z.string().min(1),
-    trackingPlanId: z.string().min(1),
-    version: z.string().min(1),
-    fileName: z.string().min(1),
-    source: z.enum(["REAL", "SYNTHETIC"]).default("REAL"),
-    rows: z
-      .array(z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])))
-      .min(1)
-      .optional(),
-    rawHeaders: z.array(z.string()).optional(),
-    summary: summarySchema.optional(),
-    mappings: z.array(mappingSchema)
-  })
-  .refine((input) => Boolean(input.summary) || Boolean(input.rows?.length), {
-    message: "rows or summary is required"
-  });
-
-type ImportRow = Record<string, string | number | boolean | null>;
-type CategoryKey = "system" | "onboarding" | "level" | "monetization" | "ads" | "custom";
-type RankedItem = { name: string; count: number; meta?: string };
-type CategorySummary = {
+export type ImportRow = Record<string, string | number | boolean | null>;
+export type CategoryKey = "system" | "onboarding" | "level" | "monetization" | "ads" | "custom";
+export type RankedItem = { name: string; count: number; meta?: string };
+export type CategorySummary = {
   metrics: Record<string, number>;
   main: number[];
   aux: number[];
   auxLabels: string[];
   ranking: RankedItem[];
   insight: string;
+};
+
+export type ImportSummary = {
+  recordCount: number;
+  successRate: number;
+  errorCount: number;
+  unmatchedEvents: number;
+  topEvents: RankedItem[];
+  topPlacements: RankedItem[];
+  topLevels: RankedItem[];
+  failReasons: RankedItem[];
+  categories: Record<CategoryKey, CategorySummary>;
+  overview: {
+    activeUsers: number;
+    healthScore: number;
+    keyAnomalyCount: number;
+    monetizationValue: number;
+  };
+  metrics: Array<{
+    metricKey: string;
+    metricLabel: string;
+    metricValue: number;
+    dimension: string;
+  }>;
 };
 
 function safeNumber(value: unknown) {
@@ -182,7 +156,7 @@ function buildInsight(category: CategoryKey, summary: CategorySummary) {
   }
 }
 
-function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: string; target: string }>): ImportSummary {
+export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: string; target: string }>): ImportSummary {
   const activeMappings = mappings.filter((item) => item.target !== "ignore");
   const findMapping = (target: string) => activeMappings.find((item) => item.target === target);
 
@@ -296,7 +270,8 @@ function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: string;
 
     if (category === "level") {
       perCategory.level.count += 1;
-      levelCounts.set(levelId ? `${levelId}${levelType ? ` (${levelType})` : ""}` : eventName, (levelCounts.get(levelId ? `${levelId}${levelType ? ` (${levelType})` : ""}` : eventName) ?? 0) + 1);
+      const levelKey = levelId ? `${levelId}${levelType ? ` (${levelType})` : ""}` : eventName;
+      levelCounts.set(levelKey, (levelCounts.get(levelKey) ?? 0) + 1);
       if (result === "success" || result === "complete" || /complete|win|clear/i.test(eventName)) {
         perCategory.level.success += 1;
       }
@@ -376,7 +351,7 @@ function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: string;
     main: onboardingStepRanking.length
       ? onboardingStepRanking.map((item) => clampPercent((item.count / Math.max(onboardingStepRanking[0]?.count || 1, 1)) * 100))
       : [0, 0, 0, 0],
-    aux: onboardingStepRanking.map((item) => clampPercent(item.count / Math.max(recordCount, 1) * 100)),
+    aux: onboardingStepRanking.map((item) => clampPercent((item.count / Math.max(recordCount, 1)) * 100)),
     auxLabels: onboardingStepRanking.map((item) => item.name),
     ranking: onboardingStepRanking.map((item) => ({ ...item, meta: `${item.count} 次触达` })),
     insight: ""
@@ -396,7 +371,7 @@ function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: string;
       retryAvg
     },
     main: [100, clampPercent(levelStart), clampPercent(levelCompletion), clampPercent(levelFail)],
-    aux: levelReasonRanking.map((item) => clampPercent(item.count / Math.max(perCategory.level.fail || 1, 1) * 100)),
+    aux: levelReasonRanking.map((item) => clampPercent((item.count / Math.max(perCategory.level.fail || 1, 1)) * 100)),
     auxLabels: levelReasonRanking.map((item) => item.name),
     ranking: levelRanking.map((item) => ({ ...item, meta: `${item.count} 次进入/结算` })),
     insight: ""
@@ -416,9 +391,9 @@ function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: string;
     main: [100, clampPercent(monetizationConversion * 2), clampPercent(monetizationConversion), clampPercent(monetizationConversion * 0.6)],
     aux: [
       clampPercent(perCategory.monetization.value),
-      clampPercent(perCategory.monetization.count / Math.max(recordCount, 1) * 100),
+      clampPercent((perCategory.monetization.count / Math.max(recordCount, 1)) * 100),
       clampPercent(monetizationConversion),
-      clampPercent(perCategory.monetization.count > 0 ? (perCategory.monetization.value / perCategory.monetization.count) : 0)
+      clampPercent(perCategory.monetization.count > 0 ? perCategory.monetization.value / perCategory.monetization.count : 0)
     ],
     auxLabels: ["收入", "付费事件", "转化率", "客单值"],
     ranking: toCountRanking(categoryEventCounts.monetization, 5).map((item) => ({ ...item, meta: `${item.count} 次触发` })),
@@ -437,7 +412,7 @@ function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: string;
       closeRate: clampPercent(100 - adCompletion)
     },
     main: [100, clampPercent(adTrigger), clampPercent(adCompletion), clampPercent(adRewardRate)],
-    aux: placementRanking.map((item) => clampPercent(item.count / Math.max(perCategory.ads.count || 1, 1) * 100)),
+    aux: placementRanking.map((item) => clampPercent((item.count / Math.max(perCategory.ads.count || 1, 1)) * 100)),
     auxLabels: placementRanking.map((item) => item.name),
     ranking: placementRanking.map((item) => ({ ...item, meta: `${item.count} 次触发` })),
     insight: ""
@@ -452,7 +427,7 @@ function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: string;
       anomalyCount: levelReasonRanking.length
     },
     main: customRanking.length ? customRanking.map((item) => clampPercent((item.count / Math.max(customRanking[0]?.count || 1, 1)) * 100)) : [0, 0, 0],
-    aux: levelReasonRanking.map((item) => clampPercent(item.count / Math.max(errorCount || 1, 1) * 100)),
+    aux: levelReasonRanking.map((item) => clampPercent((item.count / Math.max(errorCount || 1, 1)) * 100)),
     auxLabels: levelReasonRanking.map((item) => item.name),
     ranking: customRanking.map((item) => ({ ...item, meta: `${item.count} 次触发` })),
     insight: ""
@@ -485,126 +460,26 @@ function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: string;
   );
 
   const metrics = [
-    {
-      metricKey: "active_users",
-      metricLabel: "活跃用户数",
-      metricValue: categories.system.metrics.activeUsers,
-      dimension: "system"
-    },
-    {
-      metricKey: "system_event_count",
-      metricLabel: "公共事件量",
-      metricValue: categories.system.metrics.eventCount,
-      dimension: "system"
-    },
-    {
-      metricKey: "system_valid_rate",
-      metricLabel: "公共事件有效率",
-      metricValue: categories.system.metrics.validRate,
-      dimension: "system"
-    },
-    {
-      metricKey: "system_error_rate",
-      metricLabel: "公共事件异常占比",
-      metricValue: categories.system.metrics.errorRate,
-      dimension: "system"
-    },
-    {
-      metricKey: "import_success_rate",
-      metricLabel: "导入通过率",
-      metricValue: Number((successRate * 100).toFixed(2)),
-      dimension: "overview"
-    },
-    {
-      metricKey: "health_score",
-      metricLabel: "版本健康分",
-      metricValue: healthScore,
-      dimension: "overview"
-    },
-    {
-      metricKey: "onboarding_reach_rate",
-      metricLabel: "新手引导到达率",
-      metricValue: categories.onboarding.metrics.reachRate,
-      dimension: "onboarding"
-    },
-    {
-      metricKey: "onboarding_completion_rate",
-      metricLabel: "新手引导完成率",
-      metricValue: categories.onboarding.metrics.completionRate,
-      dimension: "onboarding"
-    },
-    {
-      metricKey: "onboarding_drop_rate",
-      metricLabel: "新手引导流失率",
-      metricValue: categories.onboarding.metrics.dropRate,
-      dimension: "onboarding"
-    },
-    {
-      metricKey: "onboarding_avg_duration",
-      metricLabel: "新手引导平均耗时",
-      metricValue: categories.onboarding.metrics.avgDuration,
-      dimension: "onboarding"
-    },
-    {
-      metricKey: "level_start_rate",
-      metricLabel: "关卡开局率",
-      metricValue: categories.level.metrics.startRate,
-      dimension: "level"
-    },
-    {
-      metricKey: "level_completion_rate",
-      metricLabel: "关卡完成率",
-      metricValue: categories.level.metrics.completionRate,
-      dimension: "level"
-    },
-    {
-      metricKey: "level_fail_rate",
-      metricLabel: "关卡失败率",
-      metricValue: categories.level.metrics.failRate,
-      dimension: "level"
-    },
-    {
-      metricKey: "level_retry_avg",
-      metricLabel: "平均重试次数",
-      metricValue: categories.level.metrics.retryAvg,
-      dimension: "level"
-    },
-    {
-      metricKey: "ad_trigger_rate",
-      metricLabel: "广告触发率",
-      metricValue: categories.ads.metrics.triggerRate,
-      dimension: "ads"
-    },
-    {
-      metricKey: "ad_completion_rate",
-      metricLabel: "广告完成率",
-      metricValue: categories.ads.metrics.completionRate,
-      dimension: "ads"
-    },
-    {
-      metricKey: "ad_reward_rate",
-      metricLabel: "广告奖励领取率",
-      metricValue: categories.ads.metrics.rewardRate,
-      dimension: "ads"
-    },
-    {
-      metricKey: "monetization_conversion_rate",
-      metricLabel: "商业化转化率",
-      metricValue: categories.monetization.metrics.conversionRate,
-      dimension: "monetization"
-    },
-    {
-      metricKey: "monetization_event_count",
-      metricLabel: "商业化事件数",
-      metricValue: categories.monetization.metrics.eventCount,
-      dimension: "monetization"
-    },
-    {
-      metricKey: "monetization_value",
-      metricLabel: "商业化金额",
-      metricValue: categories.monetization.metrics.value,
-      dimension: "monetization"
-    }
+    { metricKey: "active_users", metricLabel: "活跃用户数", metricValue: categories.system.metrics.activeUsers, dimension: "system" },
+    { metricKey: "system_event_count", metricLabel: "公共事件量", metricValue: categories.system.metrics.eventCount, dimension: "system" },
+    { metricKey: "system_valid_rate", metricLabel: "公共事件有效率", metricValue: categories.system.metrics.validRate, dimension: "system" },
+    { metricKey: "system_error_rate", metricLabel: "公共事件异常占比", metricValue: categories.system.metrics.errorRate, dimension: "system" },
+    { metricKey: "import_success_rate", metricLabel: "导入通过率", metricValue: Number((successRate * 100).toFixed(2)), dimension: "overview" },
+    { metricKey: "health_score", metricLabel: "版本健康分", metricValue: healthScore, dimension: "overview" },
+    { metricKey: "onboarding_reach_rate", metricLabel: "新手引导到达率", metricValue: categories.onboarding.metrics.reachRate, dimension: "onboarding" },
+    { metricKey: "onboarding_completion_rate", metricLabel: "新手引导完成率", metricValue: categories.onboarding.metrics.completionRate, dimension: "onboarding" },
+    { metricKey: "onboarding_drop_rate", metricLabel: "新手引导流失率", metricValue: categories.onboarding.metrics.dropRate, dimension: "onboarding" },
+    { metricKey: "onboarding_avg_duration", metricLabel: "新手引导平均耗时", metricValue: categories.onboarding.metrics.avgDuration, dimension: "onboarding" },
+    { metricKey: "level_start_rate", metricLabel: "关卡开局率", metricValue: categories.level.metrics.startRate, dimension: "level" },
+    { metricKey: "level_completion_rate", metricLabel: "关卡完成率", metricValue: categories.level.metrics.completionRate, dimension: "level" },
+    { metricKey: "level_fail_rate", metricLabel: "关卡失败率", metricValue: categories.level.metrics.failRate, dimension: "level" },
+    { metricKey: "level_retry_avg", metricLabel: "平均重试次数", metricValue: categories.level.metrics.retryAvg, dimension: "level" },
+    { metricKey: "ad_trigger_rate", metricLabel: "广告触发率", metricValue: categories.ads.metrics.triggerRate, dimension: "ads" },
+    { metricKey: "ad_completion_rate", metricLabel: "广告完成率", metricValue: categories.ads.metrics.completionRate, dimension: "ads" },
+    { metricKey: "ad_reward_rate", metricLabel: "广告奖励领取率", metricValue: categories.ads.metrics.rewardRate, dimension: "ads" },
+    { metricKey: "monetization_conversion_rate", metricLabel: "商业化转化率", metricValue: categories.monetization.metrics.conversionRate, dimension: "monetization" },
+    { metricKey: "monetization_event_count", metricLabel: "商业化事件数", metricValue: categories.monetization.metrics.eventCount, dimension: "monetization" },
+    { metricKey: "monetization_value", metricLabel: "商业化金额", metricValue: categories.monetization.metrics.value, dimension: "monetization" }
   ];
 
   return {
@@ -625,157 +500,4 @@ function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: string;
     },
     metrics
   };
-}
-
-export async function createLogImport(input: unknown) {
-  const payload = importSchema.parse(input);
-  const prisma = getPrismaClient();
-  const summary = payload.summary ?? buildSharedImportSummary(payload.rows ?? [], payload.mappings);
-  const rawHeaders = payload.rawHeaders ?? Object.keys(payload.rows?.[0] ?? {});
-
-  if (!prisma || !hasDatabaseUrl()) {
-    const store = getMemoryStore();
-    const now = Date.now();
-    const uploadId = crypto.randomUUID();
-
-    store.logUploads.push({
-      id: uploadId,
-      fileName: payload.fileName,
-      source: payload.source,
-      version: payload.version,
-      rawHeaders,
-      fieldMappings: payload.mappings,
-      summaryJson: summary,
-      recordCount: summary.recordCount,
-      successRate: summary.successRate,
-      errorCount: summary.errorCount,
-      unmatchedEvents: summary.unmatchedEvents,
-      status: "COMPLETED",
-      uploadedAt: now,
-      projectId: payload.projectId,
-      trackingPlanId: payload.trackingPlanId
-    });
-
-    store.metricSnapshots = store.metricSnapshots.filter(
-      (item) => !(item.projectId === payload.projectId && item.version === payload.version)
-    );
-
-    summary.metrics.forEach((metric) => {
-      store.metricSnapshots.push({
-        id: crypto.randomUUID(),
-        metricKey: metric.metricKey,
-        metricLabel: metric.metricLabel,
-        metricValue: metric.metricValue,
-        dimension: metric.dimension,
-        version: payload.version,
-        capturedAt: now,
-        projectId: payload.projectId
-      });
-    });
-
-    return {
-      id: uploadId,
-      fileName: payload.fileName,
-      status: "COMPLETED",
-      uploadedAt: now,
-      summary
-    };
-  }
-
-  const upload = await prisma.logUpload.create({
-    data: {
-      fileName: payload.fileName,
-      source: payload.source === "SYNTHETIC" ? UploadSource.SYNTHETIC : UploadSource.REAL,
-      version: payload.version,
-      rawHeaders,
-      fieldMappings: payload.mappings,
-      summaryJson: summary,
-      recordCount: summary.recordCount,
-      successRate: summary.successRate,
-      errorCount: summary.errorCount,
-      unmatchedEvents: summary.unmatchedEvents,
-      status: JobStatus.COMPLETED,
-      projectId: payload.projectId,
-      trackingPlanId: payload.trackingPlanId
-    }
-  });
-
-  await prisma.metricSnapshot.deleteMany({
-    where: {
-      projectId: payload.projectId,
-      version: payload.version
-    }
-  });
-
-  if (summary.metrics.length) {
-    await prisma.metricSnapshot.createMany({
-      data: summary.metrics.map((metric) => ({
-        metricKey: metric.metricKey,
-        metricLabel: metric.metricLabel,
-        metricValue: metric.metricValue,
-        dimension: metric.dimension,
-        version: payload.version,
-        projectId: payload.projectId
-      }))
-    });
-  }
-
-  return {
-    id: upload.id,
-    fileName: upload.fileName,
-    status: upload.status,
-    uploadedAt: upload.uploadedAt,
-    summary
-  };
-}
-
-export async function getLatestImportForProject(projectId: string) {
-  const prisma = getPrismaClient();
-
-  if (!prisma || !hasDatabaseUrl()) {
-    const store = getMemoryStore();
-    return store.logUploads
-      .filter((item) => item.projectId === projectId)
-      .sort((a, b) => b.uploadedAt - a.uploadedAt)[0] ?? null;
-  }
-
-  return prisma.logUpload.findFirst({
-    where: { projectId },
-    orderBy: { uploadedAt: "desc" }
-  });
-}
-
-export async function getImportsForProject(projectId: string) {
-  const prisma = getPrismaClient();
-
-  if (!prisma || !hasDatabaseUrl()) {
-    const store = getMemoryStore();
-    return store.logUploads
-      .filter((item) => item.projectId === projectId)
-      .sort((a, b) => b.uploadedAt - a.uploadedAt);
-  }
-
-  return prisma.logUpload.findMany({
-    where: { projectId },
-    orderBy: { uploadedAt: "desc" }
-  });
-}
-
-export async function getMetricSnapshotsForProject(projectId: string, version?: string | null) {
-  const prisma = getPrismaClient();
-
-  if (!prisma || !hasDatabaseUrl()) {
-    const store = getMemoryStore();
-    return store.metricSnapshots
-      .filter((item) => item.projectId === projectId && (version ? item.version === version : true))
-      .sort((a, b) => b.capturedAt - a.capturedAt);
-  }
-
-  return prisma.metricSnapshot.findMany({
-    where: {
-      projectId,
-      ...(version ? { version } : {})
-    },
-    orderBy: { capturedAt: "desc" }
-  });
 }
