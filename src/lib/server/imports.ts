@@ -612,10 +612,14 @@ function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: string;
     successRate,
     errorCount,
     unmatchedEvents,
+    previewRows: rows.slice(0, 20),
     topEvents,
     topPlacements,
     topLevels,
     failReasons,
+    onboardingSteps: [],
+    levelProgress: [],
+    microflowRows: [],
     categories,
     overview: {
       activeUsers: uniqueUsers.size,
@@ -759,6 +763,51 @@ export async function getImportsForProject(projectId: string) {
     where: { projectId },
     orderBy: { uploadedAt: "desc" }
   });
+}
+
+export async function getImportPreviewById(importId: string) {
+  const prisma = getPrismaClient();
+
+  if (!prisma || !hasDatabaseUrl()) {
+    const store = getMemoryStore();
+    const item = store.logUploads.find((entry) => entry.id === importId);
+    if (!item) {
+      return null;
+    }
+
+    const summary = (item.summaryJson ?? {}) as ImportSummary;
+    return {
+      id: item.id,
+      fileName: item.fileName,
+      version: item.version,
+      source: item.source,
+      rawHeaders: item.rawHeaders ?? [],
+      fieldMappings: item.fieldMappings ?? [],
+      previewRows: summary.previewRows ?? [],
+      summary
+    };
+  }
+
+  const item = await prisma.logUpload.findUnique({
+    where: { id: importId }
+  });
+
+  if (!item) {
+    return null;
+  }
+
+  const summary = (item.summaryJson ?? {}) as ImportSummary;
+  return {
+    id: item.id,
+    fileName: item.fileName,
+    version: item.version,
+    source: item.source,
+    rawHeaders: (item.rawHeaders as string[] | null) ?? [],
+    fieldMappings:
+      (item.fieldMappings as Array<{ source: string; target: string }> | null) ?? [],
+    previewRows: summary.previewRows ?? [],
+    summary
+  };
 }
 
 export async function getMetricSnapshotsForProject(projectId: string, version?: string | null) {

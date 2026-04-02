@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import Link from "next/link";
+import { useMemo, useState, useTransition } from "react";
 import * as XLSX from "xlsx";
 
-import { buildImportSummary } from "@/lib/import-summary";
+import { buildImportSummary, type ImportSummary } from "@/lib/import-summary";
 
 import styles from "./import-page.module.css";
 
@@ -24,13 +25,11 @@ type Mapping = {
   target: string;
 };
 
-type ImportSummary = {
-  recordCount: number;
-  successRate: number;
-  errorCount: number;
-  unmatchedEvents: number;
-  topEvents: Array<{ name: string; count: number }>;
-  topPlacements: Array<{ name: string; count: number }>;
+type ImportPreview = {
+  id: string;
+  fileName: string;
+  version: string;
+  summaryJson?: ImportSummary | null;
 };
 
 const targetOptions = [
@@ -404,11 +403,13 @@ function suggestTarget(header: string) {
 export function ImportsClient({
   projects,
   initialProjectId,
-  plansByProject
+  plansByProject,
+  latestImportsByProject
 }: {
   projects: Project[];
   initialProjectId: string | null;
   plansByProject: Record<string, Plan[]>;
+  latestImportsByProject: Record<string, ImportPreview | null>;
 }) {
   const [mode, setMode] = useState<"real" | "synthetic">("real");
   const [selectedProjectId, setSelectedProjectId] = useState(initialProjectId ?? projects[0]?.id ?? "");
@@ -426,10 +427,27 @@ export function ImportsClient({
   const [error, setError] = useState<string | null>(null);
   const [cleaningNote, setCleaningNote] = useState<string | null>(null);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
+  const [latestImportId, setLatestImportId] = useState(
+    latestImportsByProject[initialProjectId ?? projects[0]?.id ?? ""]?.id ?? null
+  );
+  const [previewFilter, setPreviewFilter] = useState("");
   const [isPending, startTransition] = useTransition();
 
   const activePlans = plansByProject[selectedProjectId] ?? [];
   const selectedPlan = activePlans.find((plan) => plan.id === selectedPlanId) ?? null;
+  const latestImport = latestImportsByProject[selectedProjectId] ?? null;
+  const displaySummary = summary ?? (latestImport?.summaryJson ?? null);
+  const previewRows = useMemo(() => {
+    const rowsToShow = displaySummary?.previewRows ?? [];
+    const keyword = previewFilter.trim().toLowerCase();
+    if (!keyword) {
+      return rowsToShow;
+    }
+
+    return rowsToShow.filter((row) =>
+      Object.values(row).some((value) => String(value ?? "").toLowerCase().includes(keyword))
+    );
+  }, [displaySummary, previewFilter]);
 
   async function handleFile(file: File) {
     const extension = file.name.split(".").pop()?.toLowerCase();
@@ -553,8 +571,9 @@ export function ImportsClient({
         return;
       }
 
-      const data = (await response.json()) as { item: { summary: ImportSummary } };
+      const data = (await response.json()) as { item: { id: string; summary: ImportSummary } };
       setSummary(data.item.summary);
+      setLatestImportId(data.item.id);
       setMessage(`日志已导入，已基于 ${compactRows.length} 行清洗结果生成导入摘要并更新聚合指标。`);
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : "日志导入失败。");
@@ -579,6 +598,7 @@ export function ImportsClient({
       return;
     }
     setSummary(data.summary);
+    setLatestImportId(data.id ?? null);
     setMessage(`已生成并导入模拟数据：${data.generatedUsers} 名玩家，覆盖 ${data.days} 天。`);
   }
 
@@ -596,6 +616,9 @@ export function ImportsClient({
                   const nextProjectId = event.target.value;
                   setSelectedProjectId(nextProjectId);
                   setSelectedPlanId(plansByProject[nextProjectId]?.[0]?.id ?? "");
+                  setLatestImportId(latestImportsByProject[nextProjectId]?.id ?? null);
+                  setSummary(null);
+                  setPreviewFilter("");
                 }}
               >
                 {projects.map((project) => (
@@ -744,29 +767,42 @@ export function ImportsClient({
           <h2 className="section-title" style={{ fontSize: 18 }}>
             导入结果摘要
           </h2>
-          {summary ? (
+          {displaySummary ? (
             <>
               <div className={styles.summaryGrid}>
                 <div className={styles.summaryItem}>
                   <div className={styles.summaryLabel}>导入通过率</div>
-                  <div className={styles.summaryValue}>{summary.successRate.toFixed(1)}%</div>
+                  <div className={styles.summaryValue}>{displaySummary.successRate.toFixed(1)}%</div>
                 </div>
                 <div className={styles.summaryItem}>
                   <div className={styles.summaryLabel}>错误记录</div>
-                  <div className={styles.summaryValue}>{summary.errorCount}</div>
+                  <div className={styles.summaryValue}>{displaySummary.errorCount}</div>
                 </div>
                 <div className={styles.summaryItem}>
                   <div className={styles.summaryLabel}>未匹配事件</div>
-                  <div className={styles.summaryValue}>{summary.unmatchedEvents}</div>
+                  <div className={styles.summaryValue}>{displaySummary.unmatchedEvents}</div>
                 </div>
                 <div className={styles.summaryItem}>
                   <div className={styles.summaryLabel}>日志总数</div>
-                  <div className={styles.summaryValue}>{summary.recordCount}</div>
+                  <div className={styles.summaryValue}>{displaySummary.recordCount}</div>
                 </div>
+              </div>
+              <div className={styles.ctaRow}>
+                {latestImportId ? (
+                  <Link className="button-secondary" href={`/api/imports/${latestImportId}/preview`} target="_blank">
+                    查看导入预览
+                  </Link>
+                ) : null}
+                <Link className="button-secondary" href={`/analytics/onboarding${selectedProjectId ? `?projectId=${selectedProjectId}` : ""}`}>
+                  前往新手引导分析
+                </Link>
+                <Link className="button-secondary" href={`/analytics/level${selectedProjectId ? `?projectId=${selectedProjectId}` : ""}`}>
+                  前往关卡分析
+                </Link>
               </div>
               <div className={styles.rankBlock}>
                 <h3 className={styles.stepTitle}>Top 事件</h3>
-                {summary.topEvents.map((item) => (
+                {displaySummary.topEvents.map((item) => (
                   <div key={item.name} className={styles.rankItem}>
                     <span>{item.name}</span>
                     <strong>{item.count}</strong>
@@ -809,26 +845,38 @@ export function ImportsClient({
 
         {mode === "real" ? (
           <section className={`panel ${styles.card}`}>
-            <h2 className="section-title" style={{ fontSize: 18 }}>
-              文件预览
-            </h2>
-            {rows.length ? (
+            <div className={styles.previewTop}>
+              <h2 className="section-title" style={{ fontSize: 18 }}>
+                导入后预览
+              </h2>
+              <input
+                className={styles.previewFilter}
+                placeholder="按事件名 / 步骤 / 关卡筛选"
+                value={previewFilter}
+                onChange={(event) => setPreviewFilter(event.target.value)}
+              />
+            </div>
+            {previewRows.length ? (
               <div className={styles.previewWrap}>
                 <div className={styles.previewHeader}>
-                  {headers.map((header) => (
+                  {Object.keys(previewRows[0] ?? {}).map((header) => (
                     <div key={header}>{header}</div>
                   ))}
                 </div>
-                {rows.slice(0, 5).map((row, index) => (
-                  <div key={`${fileName}-${index}`} className={styles.previewRow}>
-                    {headers.map((header) => (
+                {previewRows.map((row, index) => (
+                  <div key={`${fileName || latestImport?.fileName || "import"}-${index}`} className={styles.previewRow}>
+                    {Object.keys(previewRows[0] ?? {}).map((header) => (
                       <div key={header}>{String(row[header] ?? "")}</div>
                     ))}
                   </div>
                 ))}
               </div>
             ) : (
-              <div className={styles.emptyState}>上传文件后，这里会显示前 5 行预览。</div>
+              <div className={styles.emptyState}>
+                {rows.length
+                  ? "当前文件已上传，但还没有完成导入。导入完成后，这里会显示保存下来的清洗后标准字段预览。"
+                  : "导入完成后，这里会保存并展示当前批次的清洗后数据预览。"}
+              </div>
             )}
           </section>
         ) : (

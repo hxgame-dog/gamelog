@@ -14,10 +14,35 @@ type ImportCategorySummary = {
 };
 
 type ImportSummary = {
+  previewRows?: Array<Record<string, string | number | boolean | null>>;
   topEvents?: RankedItem[];
   topPlacements?: RankedItem[];
   topLevels?: RankedItem[];
   failReasons?: RankedItem[];
+  onboardingSteps?: Array<{
+    stepId: string;
+    stepName: string;
+    arrivals: number;
+    completions: number;
+    completionRate: number;
+    avgDuration: number;
+  }>;
+  levelProgress?: Array<{
+    levelId: string;
+    levelType: string;
+    starts: number;
+    completes: number;
+    fails: number;
+    retries: number;
+    topFailReason: string;
+  }>;
+  microflowRows?: Array<{
+    levelId: string;
+    action: string;
+    count: number;
+    ratio: number;
+    avgDuration: number;
+  }>;
   categories?: Partial<Record<CategoryKey, ImportCategorySummary>>;
   overview?: {
     activeUsers?: number;
@@ -246,6 +271,49 @@ function versionDelta(current: number, compare: number | null | undefined, suffi
   const delta = current - compare;
   const sign = delta > 0 ? "+" : "";
   return `${sign}${delta.toFixed(1)}${suffix}`;
+}
+
+function buildOnboardingStepRows(summary: ImportSummary, compareSummary?: ImportSummary) {
+  return (summary.onboardingSteps ?? []).map((step) => {
+    const compare = compareSummary?.onboardingSteps?.find((item) => item.stepId === step.stepId);
+    return {
+      label: step.stepName || step.stepId,
+      current: `${step.arrivals} 到达 / ${step.completions} 完成`,
+      compare: compare ? `${compare.arrivals} 到达 / ${compare.completions} 完成` : null,
+      delta: versionDelta(step.completionRate, compare?.completionRate ?? null),
+      note: `完成率 ${step.completionRate.toFixed(1)}%，平均耗时 ${step.avgDuration.toFixed(1)} 秒`,
+      kind: "step" as const
+    };
+  });
+}
+
+function buildLevelRows(summary: ImportSummary, compareSummary?: ImportSummary) {
+  return (summary.levelProgress ?? []).map((level) => {
+    const compare = compareSummary?.levelProgress?.find((item) => item.levelId === level.levelId);
+    const currentCompletion = level.starts ? (level.completes / level.starts) * 100 : 0;
+    const compareCompletion = compare && compare.starts ? (compare.completes / compare.starts) * 100 : null;
+    return {
+      label: level.levelType ? `${level.levelId} (${level.levelType})` : level.levelId,
+      current: `${level.starts} 开始 / ${level.completes} 完成 / ${level.fails} 失败 / ${level.retries} 重试`,
+      compare: compare
+        ? `${compare.starts} 开始 / ${compare.completes} 完成 / ${compare.fails} 失败 / ${compare.retries} 重试`
+        : null,
+      delta: versionDelta(currentCompletion, compareCompletion),
+      note: `主要失败原因：${level.topFailReason || "—"}`,
+      kind: "level" as const
+    };
+  });
+}
+
+function buildMicroflowRows(summary: ImportSummary) {
+  return (summary.microflowRows ?? []).slice(0, 12).map((item) => ({
+    label: `${item.levelId} / ${item.action}`,
+    current: `${item.count} 次`,
+    compare: null,
+    delta: `${item.ratio.toFixed(1)}%`,
+    note: `平均耗时 ${item.avgDuration.toFixed(1)} 秒`,
+    kind: "action" as const
+  }));
 }
 
 function resolveCompareImport(
@@ -504,6 +572,23 @@ export async function getAnalyticsCategoryData(
     const avgDuration = getMetric("onboarding_avg_duration");
     const compareDuration = compareImport ? getCompareMetric("onboarding_avg_duration") : null;
 
+    const onboardingRows = summary.onboardingSteps ?? [];
+    const compareOnboardingRows = compareSummary.onboardingSteps ?? [];
+    const funnelValues =
+      onboardingRows.length > 0
+        ? onboardingRows.map((item) => item.completionRate)
+        : normalizeSeries(categorySummary.main, 6);
+    const compareFunnelValues =
+      compareOnboardingRows.length > 0
+        ? compareOnboardingRows.map((item) => item.completionRate)
+        : compareCategorySummary
+          ? normalizeSeries(compareCategorySummary.main, 6)
+          : emptyCompareSeries(funnelValues);
+    const durationSeries =
+      onboardingRows.length > 0
+        ? onboardingRows.map((item) => clampPercent(item.avgDuration))
+        : normalizeSeries(categorySummary.aux, 6);
+
     return {
       ...base,
       metrics: [
@@ -512,21 +597,37 @@ export async function getAnalyticsCategoryData(
         metricCard("中途流失率", formatMetric(drop), compareDrop !== null ? formatMetric(compareDrop) : null),
         metricCard("平均完成时长", `${avgDuration.toFixed(1)} 秒`, compareDuration !== null ? `${compareDuration.toFixed(1)} 秒` : null)
       ],
-      main: normalizeSeries(categorySummary.main, 6),
-      compareMain: compareCategorySummary ? normalizeSeries(compareCategorySummary.main, 6) : emptyCompareSeries(normalizeSeries(categorySummary.main, 6)),
+      main: funnelValues,
+      compareMain: compareFunnelValues,
       trend: buildRecentTrend(allSnapshots, "onboarding_completion_rate", fallback.trend),
       compareTrend: compareImport
         ? buildRecentTrend(compareSnapshots, "onboarding_completion_rate", fallback.trend)
         : emptyCompareSeries(buildRecentTrend(allSnapshots, "onboarding_completion_rate", fallback.trend)),
-      aux: normalizeSeries(categorySummary.aux, 6),
-      auxLabels: categorySummary.auxLabels.length ? categorySummary.auxLabels : fallback.auxLabels,
-      ranking: buildRanking(categorySummary.ranking, "引导步骤", " 次"),
-      detailRows: buildDetailRows(category, categorySummary, compareCategorySummary, compareImport?.version),
+      aux: durationSeries,
+      auxLabels:
+        onboardingRows.length > 0
+          ? onboardingRows.map((item) => item.stepName || item.stepId)
+          : categorySummary.auxLabels.length
+            ? categorySummary.auxLabels
+            : fallback.auxLabels,
+      ranking:
+        onboardingRows.length > 0
+          ? onboardingRows
+              .slice()
+              .sort((a, b) => a.completionRate - b.completionRate)
+              .slice(0, 5)
+              .map((item) => [item.stepName || item.stepId, `完成率 ${item.completionRate.toFixed(1)}%`] as [string, string])
+          : buildRanking(categorySummary.ranking, "引导步骤", " 次"),
+      detailRows:
+        onboardingRows.length > 0
+          ? buildOnboardingStepRows(summary, compareSummary)
+          : buildDetailRows(category, categorySummary, compareCategorySummary, compareImport?.version),
       insight:
         compareImport && compareCompletion !== null
           ? `${categorySummary.insight} 与 ${compareImport.version} 相比，引导完成率 ${versionDelta(completion, compareCompletion)}，流失率 ${versionDelta(drop, compareDrop)}。`
           : categorySummary.insight,
-      compareInsight: compareSummaryText
+      compareInsight: compareSummaryText,
+      onboardingRows
     };
   }
 
@@ -540,6 +641,25 @@ export async function getAnalyticsCategoryData(
     const retry = getMetric("level_retry_avg");
     const compareRetry = compareImport ? getCompareMetric("level_retry_avg") : null;
 
+    const levelRows = summary.levelProgress ?? [];
+    const compareLevelRows = compareSummary.levelProgress ?? [];
+    const mainValues =
+      levelRows.length > 0
+        ? levelRows.map((item) => {
+            const startBase = Math.max(item.starts, 1);
+            return clampPercent((item.completes / startBase) * 100);
+          })
+        : normalizeSeries(categorySummary.main);
+    const compareMainValues =
+      compareLevelRows.length > 0
+        ? compareLevelRows.map((item) => {
+            const startBase = Math.max(item.starts, 1);
+            return clampPercent((item.completes / startBase) * 100);
+          })
+        : compareCategorySummary
+          ? normalizeSeries(compareCategorySummary.main)
+          : emptyCompareSeries(mainValues);
+
     return {
       ...base,
       metrics: [
@@ -548,21 +668,36 @@ export async function getAnalyticsCategoryData(
         metricCard("平均失败率", formatMetric(fail), compareFail !== null ? formatMetric(compareFail) : null),
         metricCard("平均重试次数", retry.toFixed(1), compareRetry !== null ? compareRetry.toFixed(1) : null)
       ],
-      main: normalizeSeries(categorySummary.main),
-      compareMain: compareCategorySummary ? normalizeSeries(compareCategorySummary.main) : emptyCompareSeries(normalizeSeries(categorySummary.main)),
+      main: mainValues,
+      compareMain: compareMainValues,
       trend: buildRecentTrend(allSnapshots, "level_completion_rate", fallback.trend),
       compareTrend: compareImport
         ? buildRecentTrend(compareSnapshots, "level_completion_rate", fallback.trend)
         : emptyCompareSeries(buildRecentTrend(allSnapshots, "level_completion_rate", fallback.trend)),
       aux: categorySummary.aux,
       auxLabels: categorySummary.auxLabels.length ? categorySummary.auxLabels : fallback.auxLabels,
-      ranking: buildRanking(categorySummary.ranking, "关卡", " 次"),
-      detailRows: buildDetailRows(category, categorySummary, compareCategorySummary, compareImport?.version),
+      ranking:
+        levelRows.length > 0
+          ? levelRows
+              .slice()
+              .sort((a, b) => b.fails - a.fails)
+              .slice(0, 5)
+              .map((item) => [
+                item.levelType ? `${item.levelId} (${item.levelType})` : item.levelId,
+                `失败 ${item.fails} / 重试 ${item.retries}`
+              ] as [string, string])
+          : buildRanking(categorySummary.ranking, "关卡", " 次"),
+      detailRows:
+        levelRows.length > 0
+          ? buildLevelRows(summary, compareSummary)
+          : buildDetailRows(category, categorySummary, compareCategorySummary, compareImport?.version),
       insight:
         compareImport && compareCompletion !== null
           ? `${categorySummary.insight} 与 ${compareImport.version} 相比，通关率 ${versionDelta(completion, compareCompletion)}，失败率 ${versionDelta(fail, compareFail)}。`
           : categorySummary.insight,
-      compareInsight: compareSummaryText
+      compareInsight: compareSummaryText,
+      levelRows,
+      microflowRows: summary.microflowRows ?? []
     };
   }
 

@@ -55,6 +55,9 @@ export default async function AnalyticsCategoryPage({
     auxLabels: string[];
     ranking: Array<[string, string]>;
     detailRows: Array<{ label: string; current: string; compare?: string | null; delta?: string | null; note: string }>;
+    onboardingRows?: Array<{ stepId: string; stepName: string; arrivals: number; completions: number; completionRate: number; avgDuration: number }>;
+    levelRows?: Array<{ levelId: string; levelType: string; starts: number; completes: number; fails: number; retries: number; topFailReason: string }>;
+    microflowRows?: Array<{ levelId: string; action: string; count: number; ratio: number; avgDuration: number }>;
     insight: string;
     compareInsight?: string | null;
   };
@@ -189,6 +192,88 @@ export default async function AnalyticsCategoryPage({
             </div>
           </div>
         </section>
+
+        {category === "onboarding" && config.onboardingRows?.length ? (
+          <section className={`panel ${styles.deepDiveSection}`}>
+            <div className={styles.sectionTop}>
+              <div>
+                <h2 className="section-title" style={{ fontSize: 18 }}>
+                  分步骤漏斗
+                </h2>
+                <p className={styles.sectionCopy}>基于真实日志中的 step_id / step_name 统计每一步的到达、完成与平均耗时。</p>
+              </div>
+              <span className="pill">{config.onboardingRows.length} 个步骤</span>
+            </div>
+            <div className={styles.deepDiveGrid}>
+              {config.onboardingRows.map((row) => (
+                <div key={`${row.stepId}-${row.stepName}`} className={styles.deepDiveCard}>
+                  <div className={styles.deepDiveTitle}>{row.stepName || row.stepId}</div>
+                  <div className={styles.deepDiveMeta}>步骤 {row.stepId || "未命名"}</div>
+                  <div className={styles.deepDiveValue}>{row.completionRate.toFixed(1)}%</div>
+                  <div className={styles.deepDiveStats}>
+                    <span>{row.arrivals} 到达</span>
+                    <span>{row.completions} 完成</span>
+                    <span>{row.avgDuration.toFixed(1)} 秒</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {category === "level" && config.levelRows?.length ? (
+          <section className={`panel ${styles.deepDiveSection}`}>
+            <div className={styles.sectionTop}>
+              <div>
+                <h2 className="section-title" style={{ fontSize: 18 }}>
+                  关卡进度与局内微观心流
+                </h2>
+                <p className={styles.sectionCopy}>按关卡查看开始、完成、失败、重试，并在同一页观察局内行为占比。</p>
+              </div>
+              <span className="pill">{config.levelRows.length} 个关卡</span>
+            </div>
+            <div className={styles.levelGrid}>
+              <div className={styles.levelTable}>
+                <div className={styles.levelTableHeader}>
+                  <span>关卡</span>
+                  <span>开始</span>
+                  <span>完成</span>
+                  <span>失败</span>
+                  <span>重试</span>
+                  <span>主要失败原因</span>
+                </div>
+                {config.levelRows.map((row) => (
+                  <div key={`${row.levelId}-${row.levelType}`} className={styles.levelTableRow}>
+                    <span>{row.levelType ? `${row.levelId} (${row.levelType})` : row.levelId}</span>
+                    <span>{row.starts}</span>
+                    <span>{row.completes}</span>
+                    <span>{row.fails}</span>
+                    <span>{row.retries}</span>
+                    <span>{row.topFailReason || "—"}</span>
+                  </div>
+                ))}
+              </div>
+              <div className={styles.microflowPanel}>
+                <div className={styles.microflowTitle}>局内行为占比</div>
+                <div className={styles.microflowList}>
+                  {(config.microflowRows ?? []).slice(0, 10).map((row) => (
+                    <div key={`${row.levelId}-${row.action}`} className={styles.microflowItem}>
+                      <div>
+                        <strong>{row.action}</strong>
+                        <div className={styles.rankMeta}>{row.levelId}</div>
+                      </div>
+                      <div className={styles.microflowStats}>
+                        <span>{row.count} 次</span>
+                        <span>{row.ratio.toFixed(1)}%</span>
+                        <span>{row.avgDuration.toFixed(1)} 秒</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         <AnalyticsDetailClient
           ranking={config.ranking}

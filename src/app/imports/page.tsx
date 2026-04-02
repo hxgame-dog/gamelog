@@ -3,6 +3,7 @@ import { AppShell } from "@/components/app-shell";
 import { ImportsClient } from "@/components/imports-client";
 import { PageHeader } from "@/components/ui";
 import { requireUser } from "@/lib/server/auth";
+import { getLatestImportForProject } from "@/lib/server/imports";
 import { getPlansForProject } from "@/lib/server/plans";
 import { getProjectsForUser } from "@/lib/server/projects";
 
@@ -12,6 +13,11 @@ export default async function ImportsPage() {
   const plansByProject = Object.fromEntries(
     await Promise.all(
       projects.map(async (project) => [project.id, await getPlansForProject(project.id)])
+    )
+  );
+  const latestImportsByProject = Object.fromEntries(
+    await Promise.all(
+      projects.map(async (project) => [project.id, await getLatestImportForProject(project.id)])
     )
   );
 
@@ -30,6 +36,7 @@ export default async function ImportsPage() {
         projects={projects as never[]}
         initialProjectId={projects[0]?.id ?? null}
         plansByProject={plansByProject as never}
+        latestImportsByProject={latestImportsByProject as never}
       />
     </AppShell>
   );

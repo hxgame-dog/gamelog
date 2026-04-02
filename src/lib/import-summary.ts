@@ -15,10 +15,35 @@ export type ImportSummary = {
   successRate: number;
   errorCount: number;
   unmatchedEvents: number;
+  previewRows: ImportRow[];
   topEvents: RankedItem[];
   topPlacements: RankedItem[];
   topLevels: RankedItem[];
   failReasons: RankedItem[];
+  onboardingSteps: Array<{
+    stepId: string;
+    stepName: string;
+    arrivals: number;
+    completions: number;
+    completionRate: number;
+    avgDuration: number;
+  }>;
+  levelProgress: Array<{
+    levelId: string;
+    levelType: string;
+    starts: number;
+    completes: number;
+    fails: number;
+    retries: number;
+    topFailReason: string;
+  }>;
+  microflowRows: Array<{
+    levelId: string;
+    action: string;
+    count: number;
+    ratio: number;
+    avgDuration: number;
+  }>;
   categories: Record<CategoryKey, CategorySummary>;
   overview: {
     activeUsers: number;
@@ -90,6 +115,25 @@ function normalizeImportedEventName(eventName: string) {
       return "tutorial_complete";
     case "tutoriallevel_start":
       return "tutorial_level_start";
+    default:
+      return normalized;
+  }
+}
+
+function normalizeActionLabel(eventName: string) {
+  const normalized = eventName.trim().toLowerCase();
+
+  switch (normalized) {
+    case "camera_rotate":
+      return "旋转视角";
+    case "screw_interact":
+      return "螺丝操作";
+    case "item_use":
+      return "道具使用";
+    case "unlock_extra_slot":
+      return "开启额外槽位";
+    case "ad_reward_claim":
+      return "领取广告奖励";
     default:
       return normalized;
   }
@@ -184,6 +228,40 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
   const levelCounts = new Map<string, number>();
   const stepCounts = new Map<string, number>();
   const failReasonCounts = new Map<string, number>();
+  const stepStats = new Map<
+    string,
+    {
+      stepId: string;
+      stepName: string;
+      arrivals: number;
+      completions: number;
+      durationTotal: number;
+      durationCount: number;
+    }
+  >();
+  const levelStats = new Map<
+    string,
+    {
+      levelId: string;
+      levelType: string;
+      starts: number;
+      completes: number;
+      fails: number;
+      failReasons: Map<string, number>;
+    }
+  >();
+  const levelUserStarts = new Map<string, Map<string, number>>();
+  const microflowStats = new Map<
+    string,
+    Map<
+      string,
+      {
+        count: number;
+        durationTotal: number;
+        durationCount: number;
+      }
+    >
+  >();
   const categoryEventCounts: Record<CategoryKey, Map<string, number>> = {
     system: new Map(),
     onboarding: new Map(),
@@ -216,6 +294,9 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
     const stepName = String(row.step_name ?? "").trim();
     const levelType = String(row.level_type ?? "").trim();
     const gainSource = String(row.gain_source ?? "").trim();
+    const isLevelStart = /level_start|tutorial_level_start|begin|enter|start/i.test(eventName);
+    const isLevelComplete = result === "success" || result === "complete" || /complete|win|clear|achieved/i.test(eventName);
+    const isLevelFail = result === "fail" || result === "failed" || /fail|lose|timeout/i.test(eventName);
 
     if (!eventName) {
       errorCount += 1;
@@ -258,29 +339,64 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
 
     if (category === "onboarding") {
       perCategory.onboarding.count += 1;
+      const stepKey = stepId || stepName || eventName;
       stepCounts.set(stepName || stepId || eventName, (stepCounts.get(stepName || stepId || eventName) ?? 0) + 1);
+      const currentStep = stepStats.get(stepKey) ?? {
+        stepId: stepId || stepKey,
+        stepName: stepName || stepKey,
+        arrivals: 0,
+        completions: 0,
+        durationTotal: 0,
+        durationCount: 0
+      };
+      currentStep.arrivals += 1;
       if (result === "success" || result === "complete" || /complete|finish|done/i.test(eventName)) {
         perCategory.onboarding.success += 1;
+        currentStep.completions += 1;
       }
       if (duration !== null) {
         perCategory.onboarding.durationTotal += duration;
         perCategory.onboarding.durationCount += 1;
+        currentStep.durationTotal += duration;
+        currentStep.durationCount += 1;
       }
+      stepStats.set(stepKey, currentStep);
     }
 
     if (category === "level") {
       perCategory.level.count += 1;
-      const levelKey = levelId ? `${levelId}${levelType ? ` (${levelType})` : ""}` : eventName;
+      const levelKey = levelId || eventName;
+      const levelDisplayKey = levelId ? `${levelId}${levelType ? ` (${levelType})` : ""}` : eventName;
       levelCounts.set(levelKey, (levelCounts.get(levelKey) ?? 0) + 1);
-      if (result === "success" || result === "complete" || /complete|win|clear/i.test(eventName)) {
-        perCategory.level.success += 1;
-      }
-      if (result === "fail" || result === "failed" || /fail|lose|timeout/i.test(eventName)) {
-        perCategory.level.fail += 1;
-        if (reason) {
-          failReasonCounts.set(reason, (failReasonCounts.get(reason) ?? 0) + 1);
+      const currentLevel = levelStats.get(levelDisplayKey) ?? {
+        levelId: levelId || levelDisplayKey,
+        levelType,
+        starts: 0,
+        completes: 0,
+        fails: 0,
+        failReasons: new Map<string, number>()
+      };
+      if (isLevelStart) {
+        currentLevel.starts += 1;
+        if (userId) {
+          const perUser = levelUserStarts.get(levelDisplayKey) ?? new Map<string, number>();
+          perUser.set(userId, (perUser.get(userId) ?? 0) + 1);
+          levelUserStarts.set(levelDisplayKey, perUser);
         }
       }
+      if (isLevelComplete) {
+        perCategory.level.success += 1;
+        currentLevel.completes += 1;
+      }
+      if (isLevelFail) {
+        perCategory.level.fail += 1;
+        currentLevel.fails += 1;
+        if (reason) {
+          failReasonCounts.set(reason, (failReasonCounts.get(reason) ?? 0) + 1);
+          currentLevel.failReasons.set(reason, (currentLevel.failReasons.get(reason) ?? 0) + 1);
+        }
+      }
+      levelStats.set(levelDisplayKey, currentLevel);
     }
 
     if (category === "monetization") {
@@ -309,6 +425,19 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
       if (gainSource) {
         failReasonCounts.set(gainSource, (failReasonCounts.get(gainSource) ?? 0) + 1);
       }
+    }
+
+    if (levelId && !isLevelStart && !isLevelComplete && !isLevelFail) {
+      const actionKey = normalizeActionLabel(eventName);
+      const perLevel = microflowStats.get(levelId) ?? new Map<string, { count: number; durationTotal: number; durationCount: number }>();
+      const currentAction = perLevel.get(actionKey) ?? { count: 0, durationTotal: 0, durationCount: 0 };
+      currentAction.count += 1;
+      if (duration !== null) {
+        currentAction.durationTotal += duration;
+        currentAction.durationCount += 1;
+      }
+      perLevel.set(actionKey, currentAction);
+      microflowStats.set(levelId, perLevel);
     }
   });
 
@@ -450,6 +579,60 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
   const topPlacements = placementRanking;
   const topLevels = levelRanking;
   const failReasons = levelReasonRanking;
+  const previewRows = rows.slice(0, 20);
+  const onboardingSteps = [...stepStats.values()]
+    .sort((a, b) => {
+      const aNum = Number(a.stepId);
+      const bNum = Number(b.stepId);
+      if (Number.isFinite(aNum) && Number.isFinite(bNum)) {
+        return aNum - bNum;
+      }
+      return a.stepName.localeCompare(b.stepName, "zh-Hans-CN");
+    })
+    .map((item) => ({
+      stepId: item.stepId,
+      stepName: item.stepName,
+      arrivals: item.arrivals,
+      completions: item.completions,
+      completionRate: clampPercent(item.arrivals ? (item.completions / item.arrivals) * 100 : 0),
+      avgDuration: Number((item.durationCount ? item.durationTotal / item.durationCount : 0).toFixed(2))
+    }));
+  const levelProgress = [...levelStats.values()]
+    .map((item) => {
+      const userStartMap = levelUserStarts.get(item.levelId + (item.levelType ? ` (${item.levelType})` : "")) ?? levelUserStarts.get(item.levelId) ?? new Map<string, number>();
+      const retries = [...userStartMap.values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0);
+      const topFailReason = [...item.failReasons.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "—";
+      return {
+        levelId: item.levelId,
+        levelType: item.levelType,
+        starts: item.starts,
+        completes: item.completes,
+        fails: item.fails,
+        retries,
+        topFailReason
+      };
+    })
+    .sort((a, b) => {
+      const aNum = Number(a.levelId);
+      const bNum = Number(b.levelId);
+      if (Number.isFinite(aNum) && Number.isFinite(bNum)) {
+        return aNum - bNum;
+      }
+      return a.levelId.localeCompare(b.levelId, "zh-Hans-CN");
+    });
+  const microflowRows = [...microflowStats.entries()]
+    .flatMap(([levelId, actionMap]) => {
+      const totalCount = [...actionMap.values()].reduce((sum, item) => sum + item.count, 0);
+      return [...actionMap.entries()].map(([action, item]) => ({
+        levelId,
+        action,
+        count: item.count,
+        ratio: clampPercent(totalCount ? (item.count / totalCount) * 100 : 0),
+        avgDuration: Number((item.durationCount ? item.durationTotal / item.durationCount : 0).toFixed(2))
+      }));
+    })
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 40);
 
   const healthScore = clampPercent(
     successRate * 45 +
@@ -487,10 +670,14 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
     successRate,
     errorCount,
     unmatchedEvents,
+    previewRows,
     topEvents,
     topPlacements,
     topLevels,
     failReasons,
+    onboardingSteps,
+    levelProgress,
+    microflowRows,
     categories,
     overview: {
       activeUsers: uniqueUsers.size,
