@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import styles from "@/components/analytics-page.module.css";
+import { AnalyticsBatchSwitcher } from "@/components/analytics-batch-client";
 import { AnalyticsDetailClient } from "@/components/analytics-detail-client";
 import { AnalyticsExportButton } from "@/components/analytics-export-client";
 import { AppShell } from "@/components/app-shell";
@@ -22,7 +23,7 @@ export default async function AnalyticsCategoryPage({
   searchParams
 }: {
   params: Promise<{ category: string }>;
-  searchParams: Promise<{ projectId?: string; compareVersion?: string }>;
+  searchParams: Promise<{ projectId?: string; compareVersion?: string; importId?: string }>;
 }) {
   const user = await requireUser();
   const { category } = await params;
@@ -32,19 +33,22 @@ export default async function AnalyticsCategoryPage({
   }
 
   const projects = await getProjectsForUser(user.id);
-  const { projectId, compareVersion } = await searchParams;
+  const { projectId, compareVersion, importId } = await searchParams;
   const activeProjectId = projectId ?? projects[0]?.id ?? null;
   const config = await getAnalyticsCategoryData(
     category as "system" | "onboarding" | "level" | "monetization" | "ads" | "custom",
     activeProjectId,
-    compareVersion
+    compareVersion,
+    importId
   ) as unknown as {
     title: string;
     color: string;
     sourceLabel: string;
     versionLabel: string;
+    currentImportId?: string | null;
     compareVersionLabel?: string | null;
     versionOptions?: string[];
+    importOptions?: Array<{ id: string; label: string; source?: string | null }>;
     categories: ReadonlyArray<{ key: string; label: string }>;
     metrics: Array<{ label: string; value: string; compareValue?: string | null }>;
     main: number[];
@@ -71,7 +75,15 @@ export default async function AnalyticsCategoryPage({
           <div className="header-actions">
             <span className="pill">{config.sourceLabel}</span>
             <span className="pill">版本 {config.versionLabel}</span>
+            {config.currentImportId ? <span className="pill">按导入批次查看</span> : null}
             {config.compareVersionLabel ? <span className="pill">对比 {config.compareVersionLabel}</span> : null}
+            <AnalyticsBatchSwitcher
+              category={category}
+              projectId={activeProjectId}
+              compareVersion={config.compareVersionLabel}
+              currentImportId={config.currentImportId}
+              importOptions={config.importOptions}
+            />
             <AnalyticsExportButton
               payload={{
                 title: config.title,
@@ -101,7 +113,19 @@ export default async function AnalyticsCategoryPage({
                 {config.categories.map((item) => (
                   <a
                     key={item.key}
-                    href={`/analytics/${item.key}${activeProjectId ? `?projectId=${activeProjectId}` : ""}`}
+                    href={`/analytics/${item.key}${
+                      activeProjectId || config.compareVersionLabel || config.currentImportId
+                        ? `?${new URLSearchParams(
+                            Object.fromEntries(
+                              [
+                                activeProjectId ? ["projectId", activeProjectId] : null,
+                                config.compareVersionLabel ? ["compareVersion", config.compareVersionLabel] : null,
+                                config.currentImportId ? ["importId", config.currentImportId] : null
+                              ].filter(Boolean) as Array<[string, string]>
+                            )
+                          ).toString()}`
+                        : ""
+                    }`}
                     className={`${styles.pillButton} ${item.key === category ? styles.active : ""}`}
                   >
                     {item.label}
@@ -120,7 +144,7 @@ export default async function AnalyticsCategoryPage({
                 compareVersion={config.compareVersionLabel}
                 versionOptions={config.versionOptions}
                 buildHref={(version) =>
-                  `/analytics/${category}${activeProjectId ? `?projectId=${activeProjectId}&compareVersion=${encodeURIComponent(version)}` : `?compareVersion=${encodeURIComponent(version)}`}`
+                  `/analytics/${category}${activeProjectId ? `?projectId=${activeProjectId}&compareVersion=${encodeURIComponent(version)}${config.currentImportId ? `&importId=${encodeURIComponent(config.currentImportId)}` : ""}` : `?compareVersion=${encodeURIComponent(version)}`}`
                 }
               />
             </div>

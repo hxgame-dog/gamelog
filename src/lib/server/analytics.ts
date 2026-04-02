@@ -328,6 +328,17 @@ function resolveCompareImport(
   return imports.find((item) => item.version !== currentVersion) ?? null;
 }
 
+function resolveCurrentImport(
+  imports: Array<{ id?: string; version: string; uploadedAt?: Date | number; summaryJson?: unknown; source?: string | null }>,
+  importId?: string | null
+) {
+  if (importId) {
+    return imports.find((item) => item.id === importId) ?? null;
+  }
+
+  return imports[0] ?? null;
+}
+
 function emptyCompareSeries(values: number[]) {
   return values.map(() => 0);
 }
@@ -460,7 +471,8 @@ function buildDetailRows(
 export async function getAnalyticsCategoryData(
   category: CategoryKey,
   projectId?: string | null,
-  compareVersion?: string | null
+  compareVersion?: string | null,
+  currentImportId?: string | null
 ) {
   const fallback = fallbackConfig[category];
 
@@ -487,16 +499,22 @@ export async function getAnalyticsCategoryData(
   }
 
   const allImports = await getImportsForProject(projectId);
-  const compareImport = resolveCompareImport(allImports, latestImport.version, compareVersion);
+  const currentImport = resolveCurrentImport(allImports, currentImportId) ?? latestImport;
+  const compareImport = resolveCompareImport(allImports, currentImport.version, compareVersion);
   const versionOptions = [...new Set(allImports.map((item) => item.version))];
+  const importOptions = allImports.map((item) => ({
+    id: item.id,
+    label: `${item.fileName} / v${item.version}`,
+    source: item.source
+  }));
 
   const [currentSnapshots, allSnapshots, compareSnapshots] = await Promise.all([
-    getMetricSnapshotsForProject(projectId, latestImport.version),
+    getMetricSnapshotsForProject(projectId, currentImport.version),
     getMetricSnapshotsForProject(projectId),
     compareImport ? getMetricSnapshotsForProject(projectId, compareImport.version) : Promise.resolve([])
   ]);
 
-  const summary = (latestImport.summaryJson ?? {}) as ImportSummary;
+  const summary = (currentImport.summaryJson ?? {}) as ImportSummary;
   const categorySummary = summary.categories?.[category];
   const compareSummary = (compareImport?.summaryJson ?? {}) as ImportSummary;
   const compareCategorySummary = compareSummary.categories?.[category];
@@ -505,9 +523,11 @@ export async function getAnalyticsCategoryData(
     return {
       ...fallback,
       categories,
-      source: latestImport.source,
-      sourceLabel: sourceLabel(latestImport.source),
-      versionLabel: latestImport.version
+      source: currentImport.source,
+      sourceLabel: sourceLabel(currentImport.source),
+      versionLabel: currentImport.version,
+      currentImportId: currentImport.id,
+      importOptions
     };
   }
 
@@ -517,11 +537,13 @@ export async function getAnalyticsCategoryData(
     title: fallback.title,
     color: fallback.color,
     categories,
-    source: latestImport.source,
-    sourceLabel: sourceLabel(latestImport.source),
-    versionLabel: latestImport.version,
+    source: currentImport.source,
+    sourceLabel: sourceLabel(currentImport.source),
+    versionLabel: currentImport.version,
     compareVersionLabel: compareImport?.version ?? null,
-    versionOptions
+    versionOptions,
+    currentImportId: currentImport.id,
+    importOptions
   };
 
   const compareSummaryText = compareImport
