@@ -134,6 +134,36 @@
   margin-top: 14px;
 }
 
+.highlightStrip {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(31, 154, 133, 0.18);
+  background: linear-gradient(180deg, rgba(31, 154, 133, 0.08) 0%, rgba(31, 154, 133, 0.03) 100%);
+}
+
+.highlightLabel {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.highlightTitle {
+  margin-top: 6px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.highlightMeta {
+  font-family: var(--font-number);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--teal);
+}
+
 .deepDiveCard {
   padding: 14px;
   border-radius: 14px;
@@ -214,6 +244,16 @@
   margin-top: 12px;
 }
 
+.microflowGroup {
+  display: grid;
+  gap: 8px;
+}
+
+.microflowGroupTitle {
+  font-weight: 600;
+  color: var(--text);
+}
+
 .microflowItem {
   display: flex;
   justify-content: space-between;
@@ -230,6 +270,83 @@
   text-align: right;
   color: var(--muted);
   font-size: 12px;
+}
+
+.sideBySidePanels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.infoPanel {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: #fcfcfb;
+}
+
+.infoPanelTitle {
+  font-weight: 600;
+}
+
+.infoPanelList {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.infoPanelRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  font-size: 13px;
+}
+
+.funnelCompareGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.funnelCard {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: #fcfcfb;
+}
+
+.funnelTitle {
+  font-weight: 600;
+}
+
+.funnelStageList {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.funnelStage {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr 0.8fr;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  font-size: 13px;
+}
+
+.distributionTable {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
 }
 
 .primaryChart {
@@ -424,7 +541,9 @@
   .compareSummary,
   .chartGrid,
   .detailGrid,
-  .levelGrid {
+  .levelGrid,
+  .funnelCompareGrid,
+  .sideBySidePanels {
     grid-template-columns: 1fr;
   }
 

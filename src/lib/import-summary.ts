@@ -1,6 +1,12 @@
 export type ImportRow = Record<string, string | number | boolean | null>;
 export type CategoryKey = "system" | "onboarding" | "level" | "monetization" | "ads" | "custom";
 export type RankedItem = { name: string; count: number; meta?: string };
+export type FunnelStage = {
+  label: string;
+  count: number;
+  rate?: number;
+  inferred?: boolean;
+};
 export type CategorySummary = {
   metrics: Record<string, number>;
   main: number[];
@@ -20,6 +26,23 @@ export type ImportSummary = {
   topPlacements: RankedItem[];
   topLevels: RankedItem[];
   failReasons: RankedItem[];
+  onboardingFunnel: Array<{
+    stepId: string;
+    stepName: string;
+    arrivals: number;
+    completions: number;
+    completionRate: number;
+    dropoffCount: number;
+    avgDuration: number;
+  }>;
+  onboardingStepTrend: Array<{
+    stepId: string;
+    stepName: string;
+    arrivals: number;
+    completions: number;
+    completionRate: number;
+    avgDuration: number;
+  }>;
   onboardingSteps: Array<{
     stepId: string;
     stepName: string;
@@ -37,12 +60,67 @@ export type ImportSummary = {
     retries: number;
     topFailReason: string;
   }>;
+  levelFunnel: Array<{
+    levelId: string;
+    levelType: string;
+    starts: number;
+    completes: number;
+    fails: number;
+    retries: number;
+    completionRate: number;
+    failRate: number;
+    topFailReason: string;
+  }>;
+  levelFailReasonDistribution: RankedItem[];
+  levelRetryRanking: Array<{
+    levelId: string;
+    levelType: string;
+    retries: number;
+    starts: number;
+    retryRate: number;
+  }>;
   microflowRows: Array<{
     levelId: string;
     action: string;
     count: number;
     ratio: number;
     avgDuration: number;
+  }>;
+  microflowByLevel: Array<{
+    levelId: string;
+    actions: Array<{
+      action: string;
+      count: number;
+      ratio: number;
+      avgDuration: number;
+    }>;
+  }>;
+  monetizationStoreFunnel: FunnelStage[];
+  monetizationPaymentFunnel: FunnelStage[];
+  giftPackDistribution: Array<{
+    name: string;
+    exposures: number;
+    clicks: number;
+    orders: number;
+    successes: number;
+    successRate: number;
+    inferred?: boolean;
+  }>;
+  adPlacementBreakdown: Array<{
+    placement: string;
+    requests: number;
+    plays: number;
+    clicks: number;
+    rewards: number;
+    clickRate: number;
+    rewardRate: number;
+    inferred?: boolean;
+  }>;
+  adPlacementFlow: Array<{
+    placement: string;
+    requests: number;
+    plays: number;
+    clicks: number;
   }>;
   categories: Record<CategoryKey, CategorySummary>;
   overview: {
@@ -139,6 +217,36 @@ function normalizeActionLabel(eventName: string) {
   }
 }
 
+function looksRetryEvent(eventName: string) {
+  return /(retry|restart|replay)/i.test(eventName);
+}
+
+function looksStoreExposure(eventName: string, triggerScene: string, placement: string, rewardType: string) {
+  return /(store_view|shop_view|paywall_view|gift_pack_view|offer_view|shop|paywall)/i.test(eventName)
+    || /(shop|store|pass|gift)/i.test(triggerScene)
+    || /(shop|store|gift|礼包)/i.test(placement);
+}
+
+function looksStoreClick(eventName: string) {
+  return /(iap_click|purchase_click|pay_click|checkout_click|offer_click|store_click)/i.test(eventName);
+}
+
+function looksAdRequest(eventName: string) {
+  return /(ad_request|request_ad|load_ad)/i.test(eventName);
+}
+
+function looksAdPlay(eventName: string) {
+  return /(ad_play|ad_impression|af_ad_view|video_complete|rewarded_show)/i.test(eventName);
+}
+
+function looksAdClick(eventName: string) {
+  return /(ad_click|af_ad_click)/i.test(eventName);
+}
+
+function looksAdReward(eventName: string) {
+  return /(reward_claim|reward_complete|ad_reward_claim)/i.test(eventName);
+}
+
 function classifyRow(input: {
   eventName: string;
   levelId: string;
@@ -148,7 +256,11 @@ function classifyRow(input: {
 }) {
   const { eventName, levelId, stepId, placement, price } = input;
 
-  if (/(tutorial|camera_rotate|screw_interact|tutorial_level_start|tutorial_complete)/i.test(eventName)) {
+  if (/(camera_rotate|screw_interact|item_use|unlock_extra_slot)/i.test(eventName) && levelId) {
+    return "level" as const;
+  }
+
+  if (/(tutorial|guide|ftue|onboarding|tutorial_level_start|tutorial_complete)/i.test(eventName)) {
     return "onboarding" as const;
   }
 
@@ -228,6 +340,15 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
   const levelCounts = new Map<string, number>();
   const stepCounts = new Map<string, number>();
   const failReasonCounts = new Map<string, number>();
+  const storePlacementCounts = new Map<string, number>();
+  const giftPackStats = new Map<
+    string,
+    { exposures: number; clicks: number; orders: number; successes: number; inferred?: boolean }
+  >();
+  const adPlacementStats = new Map<
+    string,
+    { requests: number; plays: number; clicks: number; rewards: number; inferred?: boolean }
+  >();
   const stepStats = new Map<
     string,
     {
@@ -247,6 +368,7 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
       starts: number;
       completes: number;
       fails: number;
+      retries: number;
       failReasons: Map<string, number>;
     }
   >();
@@ -294,6 +416,11 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
     const stepName = String(row.step_name ?? "").trim();
     const levelType = String(row.level_type ?? "").trim();
     const gainSource = String(row.gain_source ?? "").trim();
+    const triggerScene = String(row.trigger_scene ?? "").trim();
+    const contentId =
+      String(row.reward_type ?? "").trim()
+      || String(row.product_id ?? "").trim()
+      || String(row.reward_id ?? row.item_name ?? "").trim();
     const isLevelStart = /level_start|tutorial_level_start|begin|enter|start/i.test(eventName);
     const isLevelComplete = result === "success" || result === "complete" || /complete|win|clear|achieved/i.test(eventName);
     const isLevelFail = result === "fail" || result === "failed" || /fail|lose|timeout/i.test(eventName);
@@ -374,6 +501,7 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
         starts: 0,
         completes: 0,
         fails: 0,
+        retries: 0,
         failReasons: new Map<string, number>()
       };
       if (isLevelStart) {
@@ -383,6 +511,9 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
           perUser.set(userId, (perUser.get(userId) ?? 0) + 1);
           levelUserStarts.set(levelDisplayKey, perUser);
         }
+      }
+      if (looksRetryEvent(eventName)) {
+        currentLevel.retries += 1;
       }
       if (isLevelComplete) {
         perCategory.level.success += 1;
@@ -407,6 +538,33 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
       if (userId) {
         monetizationUsers.add(userId);
       }
+
+      const monetizationKey = contentId || placement || triggerScene || rewardType || eventName;
+      const pack = giftPackStats.get(monetizationKey) ?? {
+        exposures: 0,
+        clicks: 0,
+        orders: 0,
+        successes: 0,
+        inferred: false
+      };
+
+      if (looksStoreExposure(eventName, triggerScene, placement, rewardType)) {
+        pack.exposures += 1;
+        storePlacementCounts.set(monetizationKey, (storePlacementCounts.get(monetizationKey) ?? 0) + 1);
+        if (!/(store_view|shop_view|paywall_view|gift_pack_view|offer_view)/i.test(eventName)) {
+          pack.inferred = true;
+        }
+      }
+      if (looksStoreClick(eventName)) {
+        pack.clicks += 1;
+      }
+      if (/iap_order_create|checkout|order/i.test(eventName)) {
+        pack.orders += 1;
+      }
+      if (/iap_success|purchase|pay_success/i.test(eventName) || (result === "success" && price !== null && price > 0)) {
+        pack.successes += 1;
+      }
+      giftPackStats.set(monetizationKey, pack);
     }
 
     if (category === "ads") {
@@ -418,6 +576,32 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
       if (rewardType || /reward/i.test(eventName)) {
         perCategory.ads.reward += 1;
       }
+
+      const placementKey = placement || triggerScene || eventName;
+      const stat = adPlacementStats.get(placementKey) ?? {
+        requests: 0,
+        plays: 0,
+        clicks: 0,
+        rewards: 0,
+        inferred: false
+      };
+      if (looksAdRequest(eventName)) {
+        stat.requests += 1;
+      }
+      if (looksAdPlay(eventName)) {
+        stat.plays += 1;
+      }
+      if (looksAdClick(eventName)) {
+        stat.clicks += 1;
+      }
+      if (looksAdReward(eventName)) {
+        stat.rewards += 1;
+      }
+      if (stat.requests === 0 && (stat.plays > 0 || looksAdPlay(eventName))) {
+        stat.requests += 1;
+        stat.inferred = true;
+      }
+      adPlacementStats.set(placementKey, stat);
     }
 
     if (category === "custom") {
@@ -597,10 +781,18 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
       completionRate: clampPercent(item.arrivals ? (item.completions / item.arrivals) * 100 : 0),
       avgDuration: Number((item.durationCount ? item.durationTotal / item.durationCount : 0).toFixed(2))
     }));
+  const onboardingFunnel = onboardingSteps.map((item, index) => {
+    const nextArrivals = onboardingSteps[index + 1]?.arrivals ?? item.completions;
+    return {
+      ...item,
+      dropoffCount: Math.max(0, item.arrivals - nextArrivals)
+    };
+  });
   const levelProgress = [...levelStats.values()]
     .map((item) => {
       const userStartMap = levelUserStarts.get(item.levelId + (item.levelType ? ` (${item.levelType})` : "")) ?? levelUserStarts.get(item.levelId) ?? new Map<string, number>();
-      const retries = [...userStartMap.values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0);
+      const inferredRetries = [...userStartMap.values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0);
+      const retries = item.retries > 0 ? item.retries : inferredRetries;
       const topFailReason = [...item.failReasons.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "—";
       return {
         levelId: item.levelId,
@@ -620,6 +812,23 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
       }
       return a.levelId.localeCompare(b.levelId, "zh-Hans-CN");
     });
+  const levelFunnel = levelProgress.map((item) => ({
+    ...item,
+    completionRate: clampPercent(item.starts ? (item.completes / item.starts) * 100 : 0),
+    failRate: clampPercent(item.starts ? (item.fails / item.starts) * 100 : 0)
+  }));
+  const levelFailReasonDistribution = failReasons;
+  const levelRetryRanking = levelFunnel
+    .slice()
+    .sort((a, b) => b.retries - a.retries)
+    .slice(0, 8)
+    .map((item) => ({
+      levelId: item.levelId,
+      levelType: item.levelType,
+      retries: item.retries,
+      starts: item.starts,
+      retryRate: clampPercent(item.starts ? (item.retries / item.starts) * 100 : 0)
+    }));
   const microflowRows = [...microflowStats.entries()]
     .flatMap(([levelId, actionMap]) => {
       const totalCount = [...actionMap.values()].reduce((sum, item) => sum + item.count, 0);
@@ -633,6 +842,101 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
     })
     .sort((a, b) => b.count - a.count)
     .slice(0, 40);
+  const microflowByLevel = [...microflowStats.entries()]
+    .map(([levelId, actionMap]) => {
+      const totalCount = [...actionMap.values()].reduce((sum, item) => sum + item.count, 0);
+      return {
+        levelId,
+        actions: [...actionMap.entries()]
+          .map(([action, item]) => ({
+            action,
+            count: item.count,
+            ratio: clampPercent(totalCount ? (item.count / totalCount) * 100 : 0),
+            avgDuration: Number((item.durationCount ? item.durationTotal / item.durationCount : 0).toFixed(2))
+          }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 8)
+      };
+    })
+    .sort((a, b) => {
+      const totalA = a.actions.reduce((sum, item) => sum + item.count, 0);
+      const totalB = b.actions.reduce((sum, item) => sum + item.count, 0);
+      return totalB - totalA;
+    });
+
+  const monetizationStoreFunnel: FunnelStage[] = [
+    {
+      label: "商店/礼包曝光",
+      count: [...giftPackStats.values()].reduce((sum, item) => sum + item.exposures, 0)
+    },
+    {
+      label: "点击",
+      count: [...giftPackStats.values()].reduce((sum, item) => sum + item.clicks, 0)
+    },
+    {
+      label: "下单",
+      count: [...giftPackStats.values()].reduce((sum, item) => sum + item.orders, 0)
+    },
+    {
+      label: "支付成功",
+      count: [...giftPackStats.values()].reduce((sum, item) => sum + item.successes, 0)
+    }
+  ].map((stage, index, collection) => ({
+    ...stage,
+    rate: index === 0 ? 100 : clampPercent((stage.count / Math.max(collection[index - 1]?.count || 1, 1)) * 100),
+    inferred: index === 0 && [...giftPackStats.values()].some((item) => item.inferred)
+  }));
+
+  const monetizationPaymentFunnel: FunnelStage[] = [
+    {
+      label: "支付请求",
+      count: [...giftPackStats.values()].reduce((sum, item) => sum + item.clicks + item.orders, 0)
+    },
+    {
+      label: "下单",
+      count: [...giftPackStats.values()].reduce((sum, item) => sum + item.orders, 0)
+    },
+    {
+      label: "支付成功",
+      count: [...giftPackStats.values()].reduce((sum, item) => sum + item.successes, 0)
+    }
+  ].map((stage, index, collection) => ({
+    ...stage,
+    rate: index === 0 ? 100 : clampPercent((stage.count / Math.max(collection[index - 1]?.count || 1, 1)) * 100)
+  }));
+
+  const giftPackDistribution = [...giftPackStats.entries()]
+    .map(([name, item]) => ({
+      name,
+      exposures: item.exposures,
+      clicks: item.clicks,
+      orders: item.orders,
+      successes: item.successes,
+      successRate: clampPercent(item.orders ? (item.successes / item.orders) * 100 : 0),
+      inferred: item.inferred
+    }))
+    .sort((a, b) => b.exposures + b.successes - (a.exposures + a.successes))
+    .slice(0, 10);
+
+  const adPlacementBreakdown = [...adPlacementStats.entries()]
+    .map(([placement, item]) => ({
+      placement,
+      requests: item.requests,
+      plays: item.plays,
+      clicks: item.clicks,
+      rewards: item.rewards,
+      clickRate: clampPercent(item.plays ? (item.clicks / item.plays) * 100 : 0),
+      rewardRate: clampPercent(item.plays ? (item.rewards / item.plays) * 100 : 0),
+      inferred: item.inferred
+    }))
+    .sort((a, b) => b.requests - a.requests)
+    .slice(0, 12);
+  const adPlacementFlow = adPlacementBreakdown.map((item) => ({
+    placement: item.placement,
+    requests: item.requests,
+    plays: item.plays,
+    clicks: item.clicks
+  }));
 
   const healthScore = clampPercent(
     successRate * 45 +
@@ -675,9 +979,20 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
     topPlacements,
     topLevels,
     failReasons,
+    onboardingFunnel,
+    onboardingStepTrend: onboardingSteps,
     onboardingSteps,
     levelProgress,
+    levelFunnel,
+    levelFailReasonDistribution,
+    levelRetryRanking,
     microflowRows,
+    microflowByLevel,
+    monetizationStoreFunnel,
+    monetizationPaymentFunnel,
+    giftPackDistribution,
+    adPlacementBreakdown,
+    adPlacementFlow,
     categories,
     overview: {
       activeUsers: uniqueUsers.size,

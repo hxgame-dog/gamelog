@@ -20,7 +20,8 @@ export function AnalyticsDetailClient({
   compareVersionLabel,
   insight,
   compareInsight,
-  color
+  color,
+  initialFilter = "all"
 }: {
   ranking: Array<[string, string]>;
   detailRows: DetailRow[];
@@ -29,10 +30,15 @@ export function AnalyticsDetailClient({
   insight: string;
   compareInsight?: string | null;
   color: string;
+  initialFilter?: "all" | "abnormal" | "delta";
 }) {
   const [selectedDetailLabel, setSelectedDetailLabel] = useState<string | null>(null);
-  const [detailFilter, setDetailFilter] = useState<"all" | "abnormal" | "delta">("all");
+  const [detailFilter, setDetailFilter] = useState<"all" | "abnormal" | "delta">(initialFilter);
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  useEffect(() => {
+    setDetailFilter(initialFilter);
+  }, [initialFilter]);
 
   const rankingLinks = useMemo(
     () =>

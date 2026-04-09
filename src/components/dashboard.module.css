@@ -193,14 +193,16 @@
 }
 
 .importBatchList,
-.snapshotList {
+.snapshotList,
+.priorityAlertList {
   display: grid;
   gap: 10px;
   margin-top: 14px;
 }
 
 .importBatchItem,
-.snapshotItem {
+.snapshotItem,
+.priorityAlertItem {
   padding: 14px;
   border-radius: 14px;
   background: #fcfcfb;

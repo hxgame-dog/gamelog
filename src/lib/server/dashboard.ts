@@ -171,6 +171,59 @@ export async function getDashboardOverview() {
     };
   });
 
+  const priorityAlerts = [
+    {
+      key: "onboarding",
+      title: "优先检查新手引导流失",
+      severity: summary.categories?.onboarding?.metrics?.dropRate ?? 0,
+      detail:
+        summary.categories?.onboarding?.insight ??
+        "优先核对关键步骤的完成率、流失节点与平均耗时。",
+      href: `/analytics/onboarding?${new URLSearchParams(
+        Object.fromEntries(
+          [
+            compareImport?.version ? ["compareVersion", compareImport.version] : null,
+            ["detailFilter", "abnormal"]
+          ].filter(Boolean) as Array<[string, string]>
+        )
+      ).toString()}`
+    },
+    {
+      key: "level",
+      title: "优先检查关卡失败与重试",
+      severity: summary.categories?.level?.metrics?.failRate ?? 0,
+      detail:
+        summary.categories?.level?.insight ??
+        "优先核对高失败关卡、主要失败原因和重试次数。",
+      href: `/analytics/level?${new URLSearchParams(
+        Object.fromEntries(
+          [
+            compareImport?.version ? ["compareVersion", compareImport.version] : null,
+            ["detailFilter", "abnormal"]
+          ].filter(Boolean) as Array<[string, string]>
+        )
+      ).toString()}`
+    },
+    {
+      key: "system",
+      title: "优先检查系统异常占比",
+      severity: summary.categories?.system?.metrics?.errorRate ?? 0,
+      detail:
+        summary.categories?.system?.insight ??
+        "先排除公共事件层异常，再继续判断玩法和商业化问题。",
+      href: `/analytics/system?${new URLSearchParams(
+        Object.fromEntries(
+          [
+            compareImport?.version ? ["compareVersion", compareImport.version] : null,
+            ["detailFilter", "abnormal"]
+          ].filter(Boolean) as Array<[string, string]>
+        )
+      ).toString()}`
+    }
+  ]
+    .sort((left, right) => right.severity - left.severity)
+    .slice(0, 3);
+
   function deltaLabel(current: number, compare: number | null, suffix = "") {
     if (compare === null || compare === undefined) {
       return "等待对比版本";
@@ -269,6 +322,7 @@ export async function getDashboardOverview() {
     recentTasks: dynamicTasks
     ,
     recentImports,
-    categorySnapshots
+    categorySnapshots,
+    priorityAlerts
   };
 }

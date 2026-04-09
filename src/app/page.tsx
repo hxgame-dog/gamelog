@@ -11,6 +11,7 @@ export default async function HomePage() {
   const overview = await getDashboardOverview();
   const recentImports = "recentImports" in overview ? overview.recentImports ?? [] : [];
   const categorySnapshots = "categorySnapshots" in overview ? overview.categorySnapshots ?? [] : [];
+  const priorityAlerts = "priorityAlerts" in overview ? overview.priorityAlerts ?? [] : [];
 
   return (
     <AppShell currentPath="/">
@@ -125,6 +126,26 @@ export default async function HomePage() {
       </div>
 
       <div className={styles.splitGrid}>
+        <section className={`panel ${styles.card}`}>
+          <div className={styles.sectionRow}>
+            <h2 className="section-title" style={{ fontSize: 18 }}>
+              异常优先入口
+            </h2>
+            <span className="pill">直达异常明细</span>
+          </div>
+          <div className={styles.priorityAlertList}>
+            {priorityAlerts.map((item) => (
+              <Link key={item.key} href={item.href} className={`surface ${styles.priorityAlertItem}`}>
+                <div className={styles.statusRow}>
+                  <strong>{item.title}</strong>
+                  <span className="pill">{item.severity.toFixed(1)}%</span>
+                </div>
+                <p className={styles.taskDetail}>{item.detail}</p>
+              </Link>
+            ))}
+          </div>
+        </section>
+
         <section className={`panel ${styles.card}`}>
           <div className={styles.sectionRow}>
             <h2 className="section-title" style={{ fontSize: 18 }}>
