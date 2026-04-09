@@ -6,9 +6,15 @@ import { AnalyticsDetailClient } from "@/components/analytics-detail-client";
 import { AnalyticsExportButton } from "@/components/analytics-export-client";
 import { AppShell } from "@/components/app-shell";
 import {
+  AdPlacementFlowCard,
   BarChartCard,
   DonutChartCard,
+  LevelProgressCard,
   LineChartCard,
+  MonetizationDualFunnelCard,
+  OnboardingDurationRankingCard,
+  OnboardingFunnelCard,
+  OnboardingTrendCard,
   PageHeader,
   VersionCompareSwitch
 } from "@/components/ui";
@@ -64,10 +70,13 @@ export default async function AnalyticsCategoryPage({
     microflowRows?: Array<{ levelId: string; action: string; count: number; ratio: number; avgDuration: number }>;
     onboardingFunnel?: Array<{ stepId: string; stepName: string; arrivals: number; completions: number; completionRate: number; dropoffCount: number; avgDuration: number }>;
     onboardingStepTrend?: Array<{ stepId: string; stepName: string; arrivals: number; completions: number; completionRate: number; avgDuration: number }>;
+    compareOnboardingFunnel?: Array<{ stepId: string; stepName: string; arrivals: number; completions: number; completionRate: number; dropoffCount: number; avgDuration: number }>;
+    compareOnboardingStepTrend?: Array<{ stepId: string; stepName: string; arrivals: number; completions: number; completionRate: number; avgDuration: number }>;
     levelFunnel?: Array<{ levelId: string; levelType: string; starts: number; completes: number; fails: number; retries: number; completionRate: number; failRate: number; topFailReason: string }>;
     levelFailReasonDistribution?: Array<{ name: string; count: number }>;
     levelRetryRanking?: Array<{ levelId: string; levelType: string; retries: number; starts: number; retryRate: number }>;
     microflowByLevel?: Array<{ levelId: string; actions: Array<{ action: string; count: number; ratio: number; avgDuration: number }> }>;
+    compareLevelFunnel?: Array<{ levelId: string; levelType: string; starts: number; completes: number; fails: number; retries: number; completionRate: number; failRate: number; topFailReason: string }>;
     monetizationStoreFunnel?: Array<{ label: string; count: number; rate?: number; inferred?: boolean }>;
     monetizationPaymentFunnel?: Array<{ label: string; count: number; rate?: number; inferred?: boolean }>;
     giftPackDistribution?: Array<{ name: string; exposures: number; clicks: number; orders: number; successes: number; successRate: number; inferred?: boolean }>;
@@ -249,32 +258,89 @@ export default async function AnalyticsCategoryPage({
           </div>
           <div className={styles.chartGrid}>
             <div className={styles.primaryChart}>
-              <BarChartCard
-                title={chartTitle}
-                copy={config.compareVersionLabel ? `深色柱为 ${config.versionLabel}，浅色柱为 ${config.compareVersionLabel}。${chartCopy}` : chartCopy}
-                values={config.main}
-                color={config.color}
-                compareValues={config.compareMain}
-              />
+              {category === "onboarding" && config.onboardingFunnel?.length ? (
+                <OnboardingFunnelCard
+                  title={chartTitle}
+                  copy={
+                    config.compareVersionLabel
+                      ? `按步骤展示到达、完成与流失，优先看掉队最多的环节；同时对比 ${config.compareVersionLabel} 的完成率变化。`
+                      : chartCopy
+                  }
+                  steps={config.onboardingFunnel}
+                  compareSteps={config.compareOnboardingFunnel}
+                  color={config.color}
+                />
+              ) : category === "level" && config.levelFunnel?.length ? (
+                <LevelProgressCard
+                  title={chartTitle}
+                  copy={
+                    config.compareVersionLabel
+                      ? `按关卡展示开始、完成、失败与重试，并对比 ${config.compareVersionLabel} 的通关率变化。`
+                      : chartCopy
+                  }
+                  rows={config.levelFunnel}
+                  compareRows={config.compareLevelFunnel}
+                />
+              ) : category === "monetization" && config.monetizationStoreFunnel?.length ? (
+                <MonetizationDualFunnelCard
+                  title={chartTitle}
+                  copy="双漏斗同时展示商店/礼包曝光链路和支付请求链路，优先判断转化损耗发生在哪一层。"
+                  storeFunnel={config.monetizationStoreFunnel}
+                  paymentFunnel={config.monetizationPaymentFunnel ?? []}
+                />
+              ) : category === "ads" && config.adPlacementBreakdown?.length ? (
+                <AdPlacementFlowCard
+                  title={chartTitle}
+                  copy="按广告位展示请求、播放、点击与发奖，优先识别表现最弱的 placement。"
+                  placements={config.adPlacementBreakdown}
+                />
+              ) : (
+                <BarChartCard
+                  title={chartTitle}
+                  copy={config.compareVersionLabel ? `深色柱为 ${config.versionLabel}，浅色柱为 ${config.compareVersionLabel}。${chartCopy}` : chartCopy}
+                  values={config.main}
+                  color={config.color}
+                  compareValues={config.compareMain}
+                />
+              )}
             </div>
             <div className={styles.secondaryCharts}>
-              <LineChartCard
-                title={trendTitle}
-                copy={config.compareVersionLabel ? `实线为 ${config.versionLabel}，虚线为 ${config.compareVersionLabel}。` : "观察最近导入或模拟批次的变化，判断问题是偶发波动还是持续趋势。"}
-                values={config.trend}
-                color={config.color}
-                compareValues={config.compareTrend}
-              />
-              <DonutChartCard
-                title={auxTitle}
-                copy={auxCopy}
-                values={config.aux}
-                labels={config.auxLabels}
-                colors={[config.color, "var(--blue)", "var(--violet)", "var(--teal)", "var(--red)", "var(--gold)"].slice(
-                  0,
-                  config.aux.length
-                )}
-              />
+              {category === "onboarding" && config.onboardingStepTrend?.length ? (
+                <>
+                  <OnboardingTrendCard
+                    title={trendTitle}
+                    copy={
+                      config.compareVersionLabel
+                        ? `按步骤查看完成率曲线，实线为 ${config.versionLabel}，虚线为 ${config.compareVersionLabel}。`
+                        : "按步骤查看完成率曲线，判断是某一步骤突然陡降，还是整体理解成本持续升高。"
+                    }
+                    steps={config.onboardingStepTrend}
+                    compareSteps={config.compareOnboardingStepTrend}
+                    color={config.color}
+                  />
+                  <OnboardingDurationRankingCard title={auxTitle} copy={auxCopy} steps={config.onboardingFunnel ?? config.onboardingStepTrend} />
+                </>
+              ) : (
+                <>
+                  <LineChartCard
+                    title={trendTitle}
+                    copy={config.compareVersionLabel ? `实线为 ${config.versionLabel}，虚线为 ${config.compareVersionLabel}。` : "观察最近导入或模拟批次的变化，判断问题是偶发波动还是持续趋势。"}
+                    values={config.trend}
+                    color={config.color}
+                    compareValues={config.compareTrend}
+                  />
+                  <DonutChartCard
+                    title={auxTitle}
+                    copy={auxCopy}
+                    values={config.aux}
+                    labels={config.auxLabels}
+                    colors={[config.color, "var(--blue)", "var(--violet)", "var(--teal)", "var(--red)", "var(--gold)"].slice(
+                      0,
+                      config.aux.length
+                    )}
+                  />
+                </>
+              )}
             </div>
           </div>
         </section>

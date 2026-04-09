@@ -785,7 +785,9 @@ export async function getAnalyticsCategoryData(
       compareInsight: buildOnboardingCompareInsight(summary, compareSummary, compareImport?.version),
       onboardingRows,
       onboardingFunnel: summary.onboardingFunnel ?? onboardingRows,
-      onboardingStepTrend: summary.onboardingStepTrend ?? onboardingTrendRows
+      onboardingStepTrend: summary.onboardingStepTrend ?? onboardingTrendRows,
+      compareOnboardingFunnel: compareSummary.onboardingFunnel ?? compareOnboardingRows,
+      compareOnboardingStepTrend: compareSummary.onboardingStepTrend ?? compareSummary.onboardingSteps ?? []
     };
   }
 
@@ -857,6 +859,7 @@ export async function getAnalyticsCategoryData(
       levelRows,
       microflowRows: summary.microflowRows ?? [],
       levelFunnel: summary.levelFunnel ?? levelRows,
+      compareLevelFunnel: compareSummary.levelFunnel ?? compareLevelRows,
       levelFailReasonDistribution: summary.levelFailReasonDistribution ?? summary.failReasons ?? [],
       levelRetryRanking: summary.levelRetryRanking ?? [],
       microflowByLevel: summary.microflowByLevel ?? []
