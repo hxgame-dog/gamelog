@@ -243,46 +243,64 @@ export function TimelinePanel() {
   );
 }
 
-export function StructuredTableEditor({ rows }: { rows: Array<Record<string, string>> }) {
+export function StructuredTableEditor({ rows }: { rows: Array<Record<string, string | number | null | undefined>> }) {
   const headers = Object.keys(rows[0] ?? {});
+
+  if (!headers.length) {
+    return (
+      <div style={{ marginTop: 16 }}>
+        <div
+          className="surface"
+          role="status"
+          style={{
+            padding: 12,
+            fontSize: 12,
+            color: "var(--muted)"
+          }}
+        >
+          当前还没有可展示的结构化明细。
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ marginTop: 16 }}>
-      <div
+      <table
         style={{
-          display: "grid",
-          gridTemplateColumns: `repeat(${headers.length}, minmax(0, 1fr))`,
-          gap: 8,
-          padding: "0 12px 8px",
-          color: "var(--muted)",
-          fontSize: 11,
-          textTransform: "uppercase",
-          letterSpacing: "0.04em"
+          width: "100%",
+          borderCollapse: "separate",
+          borderSpacing: "0 8px"
         }}
       >
-        {headers.map((header) => (
-          <div key={header}>{header}</div>
-        ))}
-      </div>
-        <div style={{ display: "grid", gap: 8 }}>
-          {rows.map((row, index) => (
-            <div
-              key={index}
-              className="surface"
-              style={{
-                display: "grid",
-                gridTemplateColumns: `repeat(${headers.length}, minmax(0, 1fr))`,
-                gap: 8,
-                padding: 12,
-                fontSize: 12
-              }}
-            >
+        <thead>
+          <tr
+            style={{
+              color: "var(--muted)",
+              fontSize: 11,
+              textTransform: "uppercase",
+              letterSpacing: "0.04em"
+            }}
+          >
             {headers.map((header) => (
-              <div key={header}>{row[header]}</div>
+              <th key={header} scope="col" style={{ padding: "0 12px 8px", textAlign: "left", fontWeight: 500 }}>
+                {header}
+              </th>
             ))}
-          </div>
-        ))}
-      </div>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={index} className="surface" style={{ fontSize: 12 }}>
+              {headers.map((header) => (
+                <td key={header} style={{ padding: 12 }}>
+                  {row[header] ?? "—"}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -515,23 +533,35 @@ export function DonutChartCard({
   copy,
   values,
   colors,
-  labels
+  labels,
+  valueFormat = "percent"
 }: {
   title: string;
   copy: string;
   values: number[];
   colors: readonly string[];
   labels: readonly string[];
+  valueFormat?: "percent" | "count";
 }) {
   const total = values.reduce((sum, value) => sum + value, 0);
   const peakIndex = values.reduce((bestIndex, value, index, all) => (value > (all[bestIndex] ?? -1) ? index : bestIndex), 0);
+  const peakValue = values[peakIndex] ?? 0;
+  const peakShare = total > 0 ? (peakValue / total) * 100 : 0;
   const segments = values.reduce<string[]>((result, value, index) => {
+    if (total <= 0 || value <= 0) {
+      return result;
+    }
+
     const consumed = values.slice(0, index).reduce((sum, current) => sum + current, 0);
     const start = (consumed / total) * 360;
     const end = ((consumed + value) / total) * 360;
     result.push(`${colors[index]} ${start}deg ${end}deg`);
     return result;
   }, []);
+
+  function formatValue(value: number) {
+    return valueFormat === "count" ? value.toFixed(0) : `${value.toFixed(1)}%`;
+  }
 
   return (
     <div className={`panel ${chartStyles.chartCard}`}>
@@ -549,17 +579,19 @@ export function DonutChartCard({
         </div>
         <div className={chartStyles.chartSummaryCard}>
           <span className={chartStyles.chartSummaryLabel}>占比</span>
-          <strong>{values[peakIndex] ?? 0}%</strong>
+          <strong>{peakShare.toFixed(1)}%</strong>
         </div>
         <div className={chartStyles.chartSummaryCard}>
           <span className={chartStyles.chartSummaryLabel}>覆盖总量</span>
-          <strong>{total.toFixed(0)}%</strong>
+          <strong>{formatValue(total)}</strong>
         </div>
       </div>
       <div className={chartStyles.pieWrap}>
         <div
           className={chartStyles.donut}
-          style={{ background: `conic-gradient(${segments.join(", ")})` } as CSSProperties}
+          style={{
+            background: total > 0 && segments.length ? `conic-gradient(${segments.join(", ")})` : "conic-gradient(rgba(15, 23, 32, 0.08) 0deg 360deg)"
+          } as CSSProperties}
         />
         <div className={chartStyles.legend}>
           {labels.map((label, index) => (
@@ -568,7 +600,13 @@ export function DonutChartCard({
                 <span className={chartStyles.dot} style={{ background: colors[index] }} />
                 {label}
               </div>
-              <strong title={`${label} 占比 ${values[index]}%`}>{values[index]}%</strong>
+              <strong
+                title={`${label} ${valueFormat === "count" ? "数量" : "占比"} ${formatValue(values[index] ?? 0)}${valueFormat === "count" ? `，占比 ${(total > 0 ? ((values[index] ?? 0) / total) * 100 : 0).toFixed(1)}%` : ""}`}
+              >
+                {valueFormat === "count"
+                  ? `${formatValue(values[index] ?? 0)} · ${(total > 0 ? ((values[index] ?? 0) / total) * 100 : 0).toFixed(1)}%`
+                  : formatValue(values[index] ?? 0)}
+              </strong>
             </div>
           ))}
         </div>
@@ -1045,11 +1083,13 @@ type AdPlacementRow = {
 export function AdPlacementFlowCard({
   title,
   copy,
-  placements
+  placements,
+  note
 }: {
   title: string;
   copy: string;
   placements: AdPlacementRow[];
+  note?: string | null;
 }) {
   const maxRequests = Math.max(...placements.map((row) => row.requests), 1);
   const totalRewardRate = placements.length
@@ -1075,6 +1115,24 @@ export function AdPlacementFlowCard({
           <strong>{totalRewardRate.toFixed(1)}%</strong>
         </div>
       </div>
+      {note ? (
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 10,
+            alignItems: "center",
+            marginBottom: 14,
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid rgba(198, 146, 35, 0.24)",
+            background: "rgba(198, 146, 35, 0.08)"
+          }}
+        >
+          <span className="pill">请求 / 播放口径提示</span>
+          <span style={{ color: "var(--muted)", fontSize: 12, lineHeight: 1.7 }}>{note}</span>
+        </div>
+      ) : null}
       <div className={chartStyles.placementFlowWrap}>
         {placements.map((row) => {
           const requestPct = Math.max(4, (row.requests / maxRequests) * 100);

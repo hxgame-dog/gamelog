@@ -298,6 +298,33 @@ test("level page keeps a dedicated checklist and lower microflow section instead
   assert.match(source, /<section id="level-detail" className=\{styles\.moduleSection\}>/);
 });
 
+test("monetization and ads pages keep dedicated dashboard checklists and top signal sections", () => {
+  const pagePath = path.resolve(process.cwd(), "src/app/analytics/[category]/page.tsx");
+  const source = readFileSync(pagePath, "utf8");
+
+  assert.match(source, /const monetizationSections = \[/);
+  assert.match(source, /"双漏斗主图"/);
+  assert.match(source, /"商业化明细表"/);
+  assert.match(source, /data-monetization-checklist=\{monetizationChecklist\}/);
+  assert.match(source, /<section id="monetization-signal" className=\{styles\.moduleSection\}>/);
+  assert.match(source, /<section id="monetization-main-chart" className=\{styles\.moduleSection\}>/);
+
+  assert.match(source, /const adsSections = \[/);
+  assert.match(source, /"广告位流转主图"/);
+  assert.match(source, /"广告明细表"/);
+  assert.match(source, /data-ads-checklist=\{adsChecklist\}/);
+  assert.match(source, /<section id="ads-signal" className=\{styles\.moduleSection\}>/);
+  assert.match(source, /<section id="ads-main-chart" className=\{styles\.moduleSection\}>/);
+});
+
+test("generic analytics charts only receive compare series when a compare version is selected", () => {
+  const pagePath = path.resolve(process.cwd(), "src/app/analytics/[category]/page.tsx");
+  const source = readFileSync(pagePath, "utf8");
+
+  assert.match(source, /compareValues=\{config\.compareVersionLabel \? config\.compareMain : undefined\}/);
+  assert.match(source, /compareValues=\{config\.compareVersionLabel \? config\.compareTrend : undefined\}/);
+});
+
 test("getOperationsOverviewData uses the globally worst level instead of pre-slicing the first eight rows", async () => {
   delete process.env.DATABASE_URL;
   resetMemoryStore();
@@ -327,6 +354,37 @@ test("getOperationsOverviewData uses the globally worst level instead of pre-sli
   assert.match(levelCard.anomaly, /L-9 \(boss\) 失败率 87\.0%/);
   assert.ok(levelShortcut);
   assert.match(levelShortcut.label, /失败最集中关卡: L-9 \(boss\) 失败率 87\.0%/);
+});
+
+test("getOperationsOverviewData picks the worst monetization loss stage across store and payment funnels", async () => {
+  delete process.env.DATABASE_URL;
+  resetMemoryStore();
+
+  const projectId = "project-monetization-loss-overview";
+
+  seedImportSummary("import-monetization-loss-overview", projectId, "6.2.0", 62, {
+    monetizationStoreFunnel: [
+      { label: "商店曝光", count: 200, rate: 100 },
+      { label: "礼包点击", count: 160, rate: 80 },
+      { label: "下单", count: 130, rate: 65 }
+    ],
+    monetizationPaymentFunnel: [
+      { label: "支付发起", count: 130, rate: 100 },
+      { label: "支付确认", count: 120, rate: 92.3 },
+      { label: "支付成功", count: 70, rate: 53.8 }
+    ]
+  });
+
+  const overview = await getOperationsOverviewData(projectId, null, "import-monetization-loss-overview");
+  const monetizationCard = overview.moduleCards.find((item) => item.key === "monetization");
+  const monetizationShortcut = overview.anomalyShortcuts.find((item) => item.label.startsWith("最大转化损耗点:"));
+
+  assert.ok(monetizationCard);
+  assert.match(monetizationCard.anomaly, /支付链路/);
+  assert.match(monetizationCard.anomaly, /支付确认 -> 支付成功 流失 50/);
+  assert.ok(monetizationShortcut);
+  assert.match(monetizationShortcut.label, /支付链路/);
+  assert.match(monetizationShortcut.label, /支付确认 -> 支付成功 流失 50/);
 });
 
 test("deriveOnboardingDurationSeries keeps long durations instead of clamping them to 100", () => {
@@ -365,4 +423,109 @@ test("getAnalyticsCategoryData does not render ad rate metrics as counts when tr
   assert.equal(ads.metrics[1]?.value, "—");
   assert.equal(ads.metrics[2]?.value, "—");
   assert.equal(ads.metrics[3]?.value, "71.8%");
+});
+
+test("getAnalyticsCategoryData compare summary text uses the selected current import version instead of the latest import", async () => {
+  delete process.env.DATABASE_URL;
+  resetMemoryStore();
+
+  const projectId = "project-compare-summary-current-import";
+  seedImport("import-v1", projectId, "1.0.0", 1);
+  seedImport("import-v2", projectId, "2.0.0", 2);
+  seedImport("import-v3", projectId, "3.0.0", 3);
+
+  seedMetricSnapshot(projectId, "1.0.0", "system_valid_rate", 81, "system", 1);
+  seedMetricSnapshot(projectId, "1.0.0", "import_success_rate", 81, "system", 1);
+  seedMetricSnapshot(projectId, "1.0.0", "system_error_rate", 4, "system", 1);
+  seedMetricSnapshot(projectId, "1.0.0", "active_users", 100, "system", 1);
+  seedMetricSnapshot(projectId, "1.0.0", "system_event_count", 1000, "system", 1);
+  seedMetricSnapshot(projectId, "2.0.0", "system_valid_rate", 84, "system", 2);
+  seedMetricSnapshot(projectId, "2.0.0", "import_success_rate", 84, "system", 2);
+  seedMetricSnapshot(projectId, "2.0.0", "system_error_rate", 3, "system", 2);
+  seedMetricSnapshot(projectId, "2.0.0", "active_users", 120, "system", 2);
+  seedMetricSnapshot(projectId, "2.0.0", "system_event_count", 1200, "system", 2);
+  seedMetricSnapshot(projectId, "3.0.0", "system_valid_rate", 90, "system", 3);
+  seedMetricSnapshot(projectId, "3.0.0", "import_success_rate", 90, "system", 3);
+  seedMetricSnapshot(projectId, "3.0.0", "system_error_rate", 2, "system", 3);
+  seedMetricSnapshot(projectId, "3.0.0", "active_users", 150, "system", 3);
+  seedMetricSnapshot(projectId, "3.0.0", "system_event_count", 1500, "system", 3);
+
+  const system = (await getAnalyticsCategoryData("system", projectId, "1.0.0", "import-v2")) as {
+    versionLabel: string;
+    compareVersionLabel?: string | null;
+    compareInsight?: string | null;
+  };
+
+  assert.equal(system.versionLabel, "2.0.0");
+  assert.equal(system.compareVersionLabel, "1.0.0");
+  assert.match(system.compareInsight ?? "", /当前版本 2\.0\.0 正在对比 1\.0\.0/);
+  assert.doesNotMatch(system.compareInsight ?? "", /当前版本 3\.0\.0/);
+});
+
+test("getAnalyticsCategoryData keeps monetization click rate empty when the stage-specific click rate is unavailable", async () => {
+  delete process.env.DATABASE_URL;
+  resetMemoryStore();
+
+  const projectId = "project-monetization-click-rate";
+  seedImportSummary("import-monetization-click-rate", projectId, "5.4.0", 54, {
+    categories: {
+      monetization: {
+        metrics: {
+          conversionRate: 8.7
+        },
+        main: [100, 80, 65],
+        aux: [60, 40],
+        auxLabels: ["礼包 A", "礼包 B"],
+        ranking: [],
+        insight: "商业化链路正常。"
+      }
+    },
+    monetizationStoreFunnel: [
+      { label: "商店曝光", count: 100 },
+      { label: "礼包点击", count: 42 },
+      { label: "下单", count: 10, rate: 10 }
+    ],
+    monetizationPaymentFunnel: [
+      { label: "支付发起", count: 10, rate: 100 },
+      { label: "支付成功", count: 8, rate: 80 }
+    ]
+  });
+  seedMetricSnapshot(projectId, "5.4.0", "monetization_conversion_rate", 8.7, "monetization", 54);
+  seedMetricSnapshot(projectId, "5.4.0", "monetization_event_count", 100, "monetization", 54);
+
+  const monetization = await getAnalyticsCategoryData("monetization", projectId, null, "import-monetization-click-rate");
+
+  assert.equal(monetization.metrics[1]?.label, "点击率");
+  assert.equal(monetization.metrics[1]?.value, "—");
+});
+
+test("getAnalyticsCategoryData explicitly calls out request and play ambiguity when ad counts are inferred", async () => {
+  delete process.env.DATABASE_URL;
+  resetMemoryStore();
+
+  const projectId = "project-ads-ambiguity";
+  const summary = buildImportSummary(
+    [
+      { event_name: "session_start", user_id: "u1" },
+      { event_name: "af_ad_view", user_id: "u1", placement: "Rewarded-End" },
+      { event_name: "af_ad_click", user_id: "u1", placement: "Rewarded-End" },
+      { event_name: "af_ad_reward", user_id: "u1", placement: "Rewarded-End" }
+    ],
+    mappings
+  );
+
+  if (summary.adPlacementBreakdown?.[0]) {
+    summary.adPlacementBreakdown[0].inferred = true;
+  }
+
+  seedImportSummary("import-ads-ambiguity", projectId, "3.1.0", 31, summary as unknown as Record<string, unknown>);
+  seedMetricSnapshot(projectId, "3.1.0", "ad_completion_rate", 100, "ads", 31);
+
+  const ads = (await getAnalyticsCategoryData("ads", projectId, null, "import-ads-ambiguity")) as {
+    adsNote?: string | null;
+  };
+
+  assert.match(ads.adsNote ?? "", /无法严格区分/);
+  assert.match(ads.adsNote ?? "", /请求/);
+  assert.match(ads.adsNote ?? "", /播放/);
 });

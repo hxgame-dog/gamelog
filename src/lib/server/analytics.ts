@@ -134,11 +134,19 @@ type LevelFunnelRow = NonNullable<ImportSummary["levelFunnel"]>[number];
 type LevelRetryRow = NonNullable<ImportSummary["levelRetryRanking"]>[number];
 type MicroflowGroup = NonNullable<ImportSummary["microflowByLevel"]>[number];
 type MicroflowHotRow = MicroflowGroup["actions"][number] & { levelId: string };
+type MonetizationFunnelStage = NonNullable<ImportSummary["monetizationStoreFunnel"]>[number];
 
 export type LevelDiagnostics = {
   levelWorst: LevelFunnelRow[];
   levelRetryHot: LevelRetryRow[];
   microflowHot: MicroflowHotRow[];
+};
+
+export type MonetizationLossStage = {
+  funnel: "store" | "payment";
+  funnelLabel: string;
+  label: string;
+  drop: number;
 };
 
 export type OperationsOverviewData = {
@@ -660,29 +668,46 @@ function getOverviewMetric(
   return summary.categories?.[category]?.metrics?.[metricKey] ?? null;
 }
 
-function biggestStoreLoss(summary: ImportSummary) {
-  const stages = summary.monetizationStoreFunnel ?? [];
-
+function rankMonetizationLossStages(
+  stages: MonetizationFunnelStage[],
+  funnel: MonetizationLossStage["funnel"],
+  funnelLabel: string
+) {
   if (stages.length < 2) {
-    return "暂无明显转化损耗点";
+    return [];
   }
 
-  const worstStage = stages
+  return stages
     .slice(1)
     .map((stage, index) => {
       const previous = stages[index];
       return {
+        funnel,
+        funnelLabel,
         label: `${previous?.label ?? "上一阶段"} -> ${stage.label}`,
         drop: Math.max((previous?.count ?? 0) - stage.count, 0)
-      };
+      } satisfies MonetizationLossStage;
     })
-    .sort((a, b) => b.drop - a.drop)[0];
+    .filter((stage) => stage.drop > 0);
+}
 
-  if (!worstStage || worstStage.drop <= 0) {
+export function getMonetizationWorstLossStage(summary: Pick<ImportSummary, "monetizationStoreFunnel" | "monetizationPaymentFunnel">) {
+  const rankedStages = [
+    ...rankMonetizationLossStages(summary.monetizationStoreFunnel ?? [], "store", "商店链路"),
+    ...rankMonetizationLossStages(summary.monetizationPaymentFunnel ?? [], "payment", "支付链路")
+  ].sort((a, b) => b.drop - a.drop);
+
+  return rankedStages[0] ?? null;
+}
+
+function biggestStoreLoss(summary: ImportSummary) {
+  const worstStage = getMonetizationWorstLossStage(summary);
+
+  if (!worstStage) {
     return "暂无明显转化损耗点";
   }
 
-  return `${worstStage.label} 流失 ${worstStage.drop}`;
+  return `${worstStage.funnelLabel} · ${worstStage.label} 流失 ${worstStage.drop}`;
 }
 
 function biggestLevelProblem(summary: ImportSummary) {
@@ -1091,7 +1116,7 @@ export async function getAnalyticsCategoryData(
   };
 
   const compareSummaryText = compareImport
-    ? `当前版本 ${latestImport.version} 正在对比 ${compareImport.version}。`
+    ? `当前版本 ${currentImport.version} 正在对比 ${compareImport.version}。`
     : "当前还没有可用的对比版本，建议再导入一批其他版本数据后查看差异。";
 
   if (category === "system") {
@@ -1286,6 +1311,8 @@ export async function getAnalyticsCategoryData(
     const compareConversion = compareImport ? getCompareMetric("monetization_conversion_rate") : null;
     const storeExposure = summary.monetizationStoreFunnel?.[0]?.count ?? getMetric("monetization_event_count");
     const compareStoreExposure = compareSummary.monetizationStoreFunnel?.[0]?.count ?? (compareImport ? getCompareMetric("monetization_event_count") : null);
+    const clickRate = summary.monetizationStoreFunnel?.[1]?.rate ?? null;
+    const compareClickRate = compareSummary.monetizationStoreFunnel?.[1]?.rate ?? null;
     const orderRate = summary.monetizationStoreFunnel?.[2]?.rate ?? 0;
     const compareOrderRate = compareSummary.monetizationStoreFunnel?.[2]?.rate ?? null;
     const successRate = summary.monetizationPaymentFunnel?.at(-1)?.rate ?? 0;
@@ -1295,7 +1322,7 @@ export async function getAnalyticsCategoryData(
       ...base,
       metrics: [
         metricCard("商店曝光数", storeExposure.toFixed(0), compareStoreExposure !== null ? compareStoreExposure.toFixed(0) : null),
-        metricCard("点击率", summary.monetizationStoreFunnel?.[1]?.rate ? formatMetric(summary.monetizationStoreFunnel[1].rate) : formatMetric(conversion), compareConversion !== null ? formatMetric(compareConversion) : null),
+        metricCard("点击率", clickRate !== null ? formatMetric(clickRate) : "—", compareClickRate !== null ? formatMetric(compareClickRate) : null),
         metricCard("下单率", formatMetric(orderRate), compareOrderRate !== null ? formatMetric(compareOrderRate) : null),
         metricCard("支付成功率", formatMetric(successRate), compareSuccessRate !== null ? formatMetric(compareSuccessRate) : null)
       ],
@@ -1323,8 +1350,10 @@ export async function getAnalyticsCategoryData(
       monetizationPaymentFunnel: summary.monetizationPaymentFunnel ?? [],
       giftPackDistribution: summary.giftPackDistribution ?? [],
       monetizationNote:
-        summary.monetizationStoreFunnel?.some((item) => item.inferred) || summary.giftPackDistribution?.some((item) => item.inferred)
-          ? "当前部分商店/礼包曝光节点基于 trigger_scene 或礼包字段推断。"
+        summary.monetizationStoreFunnel?.some((item) => item.inferred) ||
+        summary.monetizationPaymentFunnel?.some((item) => item.inferred) ||
+        summary.giftPackDistribution?.some((item) => item.inferred)
+          ? "当前部分商店、礼包或支付阶段基于可识别事件链路推断，更适合判断损耗区间，不建议直接作为绝对归因。"
           : null
     };
   }
@@ -1381,7 +1410,9 @@ export async function getAnalyticsCategoryData(
       compareInsight: compareSummaryText,
       adPlacementBreakdown: summary.adPlacementBreakdown ?? [],
       adPlacementFlow: summary.adPlacementFlow ?? [],
-      adsNote: summary.adPlacementBreakdown?.some((item) => item.inferred) ? "当前广告请求数缺少显式事件时，会以播放事件推断请求。" : null
+      adsNote: summary.adPlacementBreakdown?.some((item) => item.inferred)
+        ? "当前日志无法严格区分请求与播放时序，页面会把可识别的播放事件兼容推断为请求，因此请求 / 播放差值更适合定位埋点缺口，不宜直接解释为流量损耗。"
+        : null
     };
   }
 
