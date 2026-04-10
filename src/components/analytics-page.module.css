@@ -17,12 +17,20 @@
   color: var(--muted);
   font-weight: 500;
   font-size: 12px;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease, color 160ms ease;
 }
 
 .active {
   color: var(--text);
   border-color: var(--border);
   background: #ffffff;
+}
+
+.pillButton:focus-visible {
+  outline: 2px solid rgba(31, 154, 133, 0.7);
+  outline-offset: 2px;
+  border-color: rgba(31, 154, 133, 0.45);
+  box-shadow: 0 0 0 4px rgba(31, 154, 133, 0.14);
 }
 
 .hero {
@@ -565,6 +573,12 @@
   gap: 12px;
 }
 
+.levelSignalGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .moduleSignalCard {
   display: grid;
   gap: 10px;
@@ -640,6 +654,142 @@
   font-size: 13px;
 }
 
+.levelMicroflowHighlight {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(31, 154, 133, 0.2);
+  background:
+    radial-gradient(circle at top right, rgba(31, 154, 133, 0.16), transparent 38%),
+    linear-gradient(180deg, rgba(31, 154, 133, 0.1) 0%, rgba(255, 255, 255, 0.96) 100%);
+}
+
+.levelMicroflowHighlightStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.levelMicroflowGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.levelMicroflowPanel {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(31, 154, 133, 0.14);
+  background:
+    linear-gradient(180deg, #ffffff 0%, #fbfcfb 100%);
+  box-shadow: var(--shadow-soft);
+}
+
+.levelMicroflowPanelTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.levelMicroflowPanelTitle {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.levelMicroflowList {
+  display: grid;
+  gap: 8px;
+}
+
+.levelMicroflowItem {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+}
+
+.levelMicroflowItemStats {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.levelDetailTables {
+  display: grid;
+  gap: 12px;
+}
+
+.levelDetailBlock {
+  display: grid;
+  gap: 10px;
+}
+
+.levelDetailBlockTitle {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.levelDetailTable,
+.levelFlowTable {
+  display: grid;
+  gap: 8px;
+}
+
+.levelDetailTableRow {
+  display: grid;
+  grid-template-columns: 1.5fr repeat(4, minmax(0, 0.72fr)) 1.2fr 0.9fr;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: #fcfcfb;
+  font-size: 13px;
+}
+
+.levelFlowTableRow {
+  display: grid;
+  grid-template-columns: 1.1fr 1.2fr repeat(3, minmax(0, 0.72fr));
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: #fcfcfb;
+  font-size: 13px;
+}
+
+.levelDetailTableHeaderRow,
+.levelFlowTableHeaderRow {
+  background: #f8f8f6;
+}
+
+.levelDetailPrimary {
+  display: grid;
+  gap: 4px;
+}
+
+.levelDetailPrimary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .detailTableHeader {
   display: flex;
   justify-content: space-between;
@@ -671,12 +821,20 @@
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease, color 160ms ease;
 }
 
 .detailFilterButtonActive {
   border-color: rgba(31, 154, 133, 0.24);
   background: rgba(31, 154, 133, 0.08);
   color: var(--text);
+}
+
+.detailFilterButton:focus-visible {
+  outline: 2px solid rgba(31, 154, 133, 0.7);
+  outline-offset: 2px;
+  border-color: rgba(31, 154, 133, 0.45);
+  box-shadow: 0 0 0 4px rgba(31, 154, 133, 0.14);
 }
 
 .rankList {
@@ -772,7 +930,8 @@
 
 @media (max-width: 1080px) {
   .qualityGrid,
-  .signalGrid {
+  .signalGrid,
+  .levelSignalGrid {
     grid-template-columns: 1fr;
   }
 }
@@ -802,12 +961,15 @@
   .detailGrid,
   .levelGrid,
   .funnelCompareGrid,
-  .sideBySidePanels {
+  .sideBySidePanels,
+  .levelMicroflowGrid {
     grid-template-columns: 1fr;
   }
 
   .detailTableRow,
-  .moduleDetailTableRow {
+  .moduleDetailTableRow,
+  .levelDetailTableRow,
+  .levelFlowTableRow {
     grid-template-columns: 1fr;
   }
 
@@ -826,7 +988,8 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .moduleSignalGrid {
+  .moduleSignalGrid,
+  .levelSignalGrid {
     grid-template-columns: 1fr;
   }
 }

@@ -20,7 +20,7 @@ import {
   VersionCompareSwitch
 } from "@/components/ui";
 import { requireUser } from "@/lib/server/auth";
-import { getAnalyticsCategoryData } from "@/lib/server/analytics";
+import { getAnalyticsCategoryData, getLevelDiagnostics } from "@/lib/server/analytics";
 import { getProjectsForUser } from "@/lib/server/projects";
 
 const validCategories = new Set(["system", "onboarding", "level", "monetization", "ads", "custom"]);
@@ -34,6 +34,21 @@ const onboardingSections = [
   "步骤完成率曲线",
   "步骤耗时排行",
   "步骤明细表"
+] as const;
+
+// Keep level in this dedicated level-first analysis sequence instead of the shared analytics chart ordering.
+const levelSections = [
+  "数据质量卡",
+  "关键结论卡",
+  "失败最集中关卡",
+  "重试最高关卡",
+  "行为占比异常关卡",
+  "关卡漏斗主图",
+  "失败原因分布",
+  "重试排行",
+  "局内微观心流",
+  "关卡明细表",
+  "心流明细表"
 ] as const;
 
 export default async function AnalyticsCategoryPage({
@@ -96,6 +111,11 @@ export default async function AnalyticsCategoryPage({
     levelFailReasonDistribution?: Array<{ name: string; count: number }>;
     levelRetryRanking?: Array<{ levelId: string; levelType: string; retries: number; starts: number; retryRate: number }>;
     microflowByLevel?: Array<{ levelId: string; actions: Array<{ action: string; count: number; ratio: number; avgDuration: number }> }>;
+    levelDiagnostics?: {
+      levelWorst: Array<{ levelId: string; levelType: string; starts: number; completes: number; fails: number; retries: number; completionRate: number; failRate: number; topFailReason: string }>;
+      levelRetryHot: Array<{ levelId: string; levelType: string; retries: number; starts: number; retryRate: number }>;
+      microflowHot: Array<{ levelId: string; action: string; count: number; ratio: number; avgDuration: number }>;
+    };
     compareLevelFunnel?: Array<{ levelId: string; levelType: string; starts: number; completes: number; fails: number; retries: number; completionRate: number; failRate: number; topFailReason: string }>;
     monetizationStoreFunnel?: Array<{ label: string; count: number; rate?: number; inferred?: boolean }>;
     monetizationPaymentFunnel?: Array<{ label: string; count: number; rate?: number; inferred?: boolean }>;
@@ -153,18 +173,19 @@ export default async function AnalyticsCategoryPage({
             ? "围绕广告位请求、播放、点击和发奖流转，帮助团队识别表现最弱的广告位和链路断点。"
           : "围绕当前模块展示版本对比、关键指标、核心结构图和 AI 判断，帮助团队快速确认问题位置与影响范围。";
 
-  const levelWorst = config.levelFunnel?.slice().sort((a, b) => b.failRate - a.failRate)[0] ?? null;
-  const levelRetryHot = config.levelRetryRanking?.slice().sort((a, b) => b.retryRate - a.retryRate)[0] ?? null;
-  const microflowHot =
-    config.microflowByLevel
-      ?.flatMap((group) =>
-        group.actions.map((action) => ({
-          levelId: group.levelId,
-          ...action
-        }))
-      )
-      .slice()
-      .sort((a, b) => b.ratio - a.ratio)[0] ?? null;
+  const levelDiagnostics =
+    config.levelDiagnostics ??
+    getLevelDiagnostics({
+      levelFunnel: config.levelFunnel ?? [],
+      levelRetryRanking: config.levelRetryRanking ?? [],
+      microflowByLevel: config.microflowByLevel ?? []
+    });
+  const levelWorst = levelDiagnostics.levelWorst[0] ?? null;
+  const levelRetryHot = levelDiagnostics.levelRetryHot[0] ?? null;
+  const microflowHot = levelDiagnostics.microflowHot[0] ?? null;
+  const nextWorstLevel = levelDiagnostics.levelWorst[1] ?? null;
+  const nextRetryLevel = levelDiagnostics.levelRetryHot[1] ?? null;
+  const nextMicroflowHot = levelDiagnostics.microflowHot[1] ?? null;
   const storeLossStage =
     config.monetizationStoreFunnel && config.monetizationStoreFunnel.length > 1
       ? config.monetizationStoreFunnel
@@ -199,10 +220,24 @@ export default async function AnalyticsCategoryPage({
         }).toString()}`
       : null;
   const onboardingChecklist = onboardingSections.join(" / ");
+  const levelChecklist = levelSections.join(" / ");
   const onboardingRows = category === "onboarding" ? config.onboardingFunnel ?? [] : [];
   const compareOnboardingRows = category === "onboarding" ? config.compareOnboardingFunnel ?? [] : [];
   const onboardingTrendRows = category === "onboarding" ? config.onboardingStepTrend ?? onboardingRows : [];
   const onboardingCompareMap = new Map(compareOnboardingRows.map((row) => [row.stepId || row.stepName, row]));
+  const levelRows = category === "level" ? levelDiagnostics.levelWorst : [];
+  const compareLevelMap = new Map((config.compareLevelFunnel ?? []).map((row) => [row.levelId, row]));
+  const levelRetryRows = category === "level" ? levelDiagnostics.levelRetryHot : [];
+  const levelMicroflowRows = category === "level" ? levelDiagnostics.microflowHot : [];
+  const levelMicroflowGroups =
+    category === "level"
+      ? (config.microflowByLevel ?? [])
+          .map((group) => ({
+            ...group,
+            actions: group.actions.slice().sort((a, b) => b.ratio - a.ratio)
+          }))
+          .sort((a, b) => (b.actions[0]?.ratio ?? 0) - (a.actions[0]?.ratio ?? 0))
+      : [];
   const onboardingLargestDrop = onboardingRows.slice().sort((a, b) => b.dropoffCount - a.dropoffCount)[0] ?? null;
   const onboardingSlowestStep = onboardingRows.slice().sort((a, b) => b.avgDuration - a.avgDuration)[0] ?? null;
   const onboardingLastStep = onboardingRows.at(-1) ?? null;
@@ -324,59 +359,63 @@ export default async function AnalyticsCategoryPage({
             <p className={styles.compareSummaryCopy}>{config.compareInsight ?? config.insight}</p>
           </div>
 
-          <div className={styles.qualityGrid}>
-            <div className={`${styles.qualityCard} ${importPreviewHref ? styles.qualityCardInteractive : ""}`}>
-              {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看当前批次导入预览" /> : null}
-              <div className={styles.qualityLabel}>技术通过率</div>
-              <div className={styles.qualityValue}>{config.technicalSuccessRate?.toFixed(1) ?? "0.0"}%</div>
-              {config.compareTechnicalSuccessRate !== null && config.compareTechnicalSuccessRate !== undefined ? (
-                <div className={styles.qualityMeta}>对比 {config.compareVersionLabel}: {config.compareTechnicalSuccessRate.toFixed(1)}%</div>
-              ) : null}
-            </div>
-            <div className={`${styles.qualityCard} ${importPreviewHref ? styles.qualityCardInteractive : ""}`}>
-              {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看当前批次导入预览" /> : null}
-              <div className={styles.qualityLabel}>技术异常</div>
-              <div className={styles.qualityValue}>{config.technicalErrorCount ?? 0}</div>
-              {config.compareTechnicalErrorCount !== null && config.compareTechnicalErrorCount !== undefined ? (
-                <div className={styles.qualityMeta}>对比 {config.compareVersionLabel}: {config.compareTechnicalErrorCount}</div>
-              ) : null}
-            </div>
-            <div className={`${styles.qualityCard} ${importPreviewHref ? styles.qualityCardInteractive : ""}`}>
-              {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看当前批次导入预览" /> : null}
-              <div className={styles.qualityLabel}>业务失败事件</div>
-              <div className={styles.qualityValue}>{config.businessFailureCount ?? 0}</div>
-              {config.compareBusinessFailureCount !== null && config.compareBusinessFailureCount !== undefined ? (
-                <div className={styles.qualityMeta}>对比 {config.compareVersionLabel}: {config.compareBusinessFailureCount}</div>
-              ) : null}
-            </div>
-            <div className={`${styles.qualityCard} ${importPreviewHref ? styles.qualityCardInteractive : ""}`}>
-              {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看当前批次导入预览" /> : null}
-              <div className={styles.qualityLabel}>模块覆盖率</div>
-              <div className={styles.qualityValue}>{config.moduleCoverage?.toFixed(1) ?? "0.0"}%</div>
-              {config.compareModuleCoverage !== null && config.compareModuleCoverage !== undefined ? (
-                <div className={styles.qualityMeta}>对比 {config.compareVersionLabel}: {config.compareModuleCoverage.toFixed(1)}%</div>
-              ) : null}
-            </div>
-          </div>
-
-          <div className={styles.qualityHint}>
-            <span className="pill">{hasInference ? "含推断统计" : "显式统计优先"}</span>
-            <span>{qualityNote}</span>
-          </div>
-
-          <div className={styles.metricGrid}>
-            {config.metrics.map((metric) => (
-              <div key={metric.label} className={`surface ${styles.metricCard}`}>
-                <div className={styles.metricLabel}>{metric.label}</div>
-                <div className={styles.metricValue} style={{ color: config.color }}>
-                  {metric.value}
+          {category !== "level" ? (
+            <>
+              <div className={styles.qualityGrid}>
+                <div className={`${styles.qualityCard} ${importPreviewHref ? styles.qualityCardInteractive : ""}`}>
+                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看当前批次导入预览" /> : null}
+                  <div className={styles.qualityLabel}>技术通过率</div>
+                  <div className={styles.qualityValue}>{config.technicalSuccessRate?.toFixed(1) ?? "0.0"}%</div>
+                  {config.compareTechnicalSuccessRate !== null && config.compareTechnicalSuccessRate !== undefined ? (
+                    <div className={styles.qualityMeta}>对比 {config.compareVersionLabel}: {config.compareTechnicalSuccessRate.toFixed(1)}%</div>
+                  ) : null}
                 </div>
-                {metric.compareValue ? (
-                  <div className={styles.metricCompare}>对比 {config.compareVersionLabel}: {metric.compareValue}</div>
-                ) : null}
+                <div className={`${styles.qualityCard} ${importPreviewHref ? styles.qualityCardInteractive : ""}`}>
+                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看当前批次导入预览" /> : null}
+                  <div className={styles.qualityLabel}>技术异常</div>
+                  <div className={styles.qualityValue}>{config.technicalErrorCount ?? 0}</div>
+                  {config.compareTechnicalErrorCount !== null && config.compareTechnicalErrorCount !== undefined ? (
+                    <div className={styles.qualityMeta}>对比 {config.compareVersionLabel}: {config.compareTechnicalErrorCount}</div>
+                  ) : null}
+                </div>
+                <div className={`${styles.qualityCard} ${importPreviewHref ? styles.qualityCardInteractive : ""}`}>
+                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看当前批次导入预览" /> : null}
+                  <div className={styles.qualityLabel}>业务失败事件</div>
+                  <div className={styles.qualityValue}>{config.businessFailureCount ?? 0}</div>
+                  {config.compareBusinessFailureCount !== null && config.compareBusinessFailureCount !== undefined ? (
+                    <div className={styles.qualityMeta}>对比 {config.compareVersionLabel}: {config.compareBusinessFailureCount}</div>
+                  ) : null}
+                </div>
+                <div className={`${styles.qualityCard} ${importPreviewHref ? styles.qualityCardInteractive : ""}`}>
+                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看当前批次导入预览" /> : null}
+                  <div className={styles.qualityLabel}>模块覆盖率</div>
+                  <div className={styles.qualityValue}>{config.moduleCoverage?.toFixed(1) ?? "0.0"}%</div>
+                  {config.compareModuleCoverage !== null && config.compareModuleCoverage !== undefined ? (
+                    <div className={styles.qualityMeta}>对比 {config.compareVersionLabel}: {config.compareModuleCoverage.toFixed(1)}%</div>
+                  ) : null}
+                </div>
               </div>
-            ))}
-          </div>
+
+              <div className={styles.qualityHint}>
+                <span className="pill">{hasInference ? "含推断统计" : "显式统计优先"}</span>
+                <span>{qualityNote}</span>
+              </div>
+
+              <div className={styles.metricGrid}>
+                {config.metrics.map((metric) => (
+                  <div key={metric.label} className={`surface ${styles.metricCard}`}>
+                    <div className={styles.metricLabel}>{metric.label}</div>
+                    <div className={styles.metricValue} style={{ color: config.color }}>
+                      {metric.value}
+                    </div>
+                    {metric.compareValue ? (
+                      <div className={styles.metricCompare}>对比 {config.compareVersionLabel}: {metric.compareValue}</div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : null}
         </section>
 
         {category === "onboarding" ? (
@@ -607,7 +646,332 @@ export default async function AnalyticsCategoryPage({
           </>
         ) : null}
 
-        {category !== "onboarding" ? (
+        {category === "level" ? (
+          <>
+            <section className={styles.moduleSection} data-level-checklist={levelChecklist}>
+              <div className={styles.moduleHeader}>
+                <div>
+                  <h2 className="section-title" style={{ fontSize: 18 }}>
+                    {levelSections[0]}
+                  </h2>
+                  <p className={styles.sectionCopy}>先确认关卡页的数据质量，再判断失败、重试和行为异常，避免把导入口径问题误判为难度问题。</p>
+                </div>
+                <span className="pill">{config.compareVersionLabel ? "带版本对比" : "当前批次"}</span>
+              </div>
+              <div className={styles.moduleGrid}>
+                <article className={styles.moduleCard}>
+                  <div className={styles.moduleCardLabel}>技术通过率</div>
+                  <div className={styles.moduleCardValue}>{config.technicalSuccessRate?.toFixed(1) ?? "0.0"}%</div>
+                  <div className={styles.moduleCardMeta}>
+                    {config.compareTechnicalSuccessRate !== null && config.compareTechnicalSuccessRate !== undefined
+                      ? `对比 ${config.compareVersionLabel}: ${config.compareTechnicalSuccessRate.toFixed(1)}%`
+                      : "导入质量稳定时，关卡页的失败和重试结论才有解释力。"}
+                  </div>
+                </article>
+                <article className={styles.moduleCard}>
+                  <div className={styles.moduleCardLabel}>技术异常</div>
+                  <div className={styles.moduleCardValue}>{config.technicalErrorCount ?? 0}</div>
+                  <div className={styles.moduleCardMeta}>
+                    {config.compareTechnicalErrorCount !== null && config.compareTechnicalErrorCount !== undefined
+                      ? `对比 ${config.compareVersionLabel}: ${config.compareTechnicalErrorCount}`
+                      : "优先排除埋点缺失、level_id 错位或批次导入截断。"}
+                  </div>
+                </article>
+                <article className={styles.moduleCard}>
+                  <div className={styles.moduleCardLabel}>业务失败事件</div>
+                  <div className={styles.moduleCardValue}>{config.businessFailureCount ?? 0}</div>
+                  <div className={styles.moduleCardMeta}>
+                    {config.compareBusinessFailureCount !== null && config.compareBusinessFailureCount !== undefined
+                      ? `对比 ${config.compareVersionLabel}: ${config.compareBusinessFailureCount}`
+                      : "如果失败事件同步抬升，优先结合失败原因分布复核是体验问题还是链路问题。"}
+                  </div>
+                </article>
+                <article className={styles.moduleCard}>
+                  <div className={styles.moduleCardLabel}>模块覆盖率</div>
+                  <div className={styles.moduleCardValue}>{config.moduleCoverage?.toFixed(1) ?? "0.0"}%</div>
+                  <div className={styles.moduleCardMeta}>{qualityNote}</div>
+                </article>
+              </div>
+            </section>
+
+            <section className={styles.moduleSection}>
+              <div className={styles.moduleHeader}>
+                <div>
+                  <h2 className="section-title" style={{ fontSize: 18 }}>
+                    {levelSections[1]}
+                  </h2>
+                  <p className={styles.sectionCopy}>关键指标只服务关卡诊断叙事，帮助团队先判断是整体难度、失败密度，还是重试黏滞在变坏。</p>
+                </div>
+                <span className="pill">{levelRows.length ? `${levelRows.length} 个关卡` : "等待关卡数据"}</span>
+              </div>
+              <div className={styles.moduleGrid}>
+                {config.metrics.map((metric) => (
+                  <article key={metric.label} className={styles.moduleCard}>
+                    <div className={styles.moduleCardLabel}>{metric.label}</div>
+                    <div className={styles.moduleCardValue} style={{ color: config.color }}>
+                      {metric.value}
+                    </div>
+                    <div className={styles.moduleCardMeta}>
+                      {metric.compareValue
+                        ? `对比 ${config.compareVersionLabel}: ${metric.compareValue}`
+                        : "用于判断当前关卡链路是整体波动还是局部卡点。"}
+                    </div>
+                  </article>
+                ))}
+              </div>
+              <div className={styles.moduleNarrative}>{config.compareInsight ?? config.insight}</div>
+            </section>
+
+            <section id="level-signal" className={styles.moduleSection}>
+              <div className={styles.moduleHeader}>
+                <div>
+                  <h2 className="section-title" style={{ fontSize: 18 }}>
+                    失败 / 重试 / 行为异常信号
+                  </h2>
+                  <p className={styles.sectionCopy}>这里直接使用排序后的一级诊断信号，不再把关卡热点埋在通用排行或附属图表里。</p>
+                </div>
+                <span className="pill">level first signals</span>
+              </div>
+              <div className={styles.levelSignalGrid}>
+                <article className={styles.moduleSignalCard}>
+                  <div className={styles.moduleSignalLabel}>{levelSections[2]}</div>
+                  <div className={styles.moduleSignalTitle}>
+                    {levelWorst ? (levelWorst.levelType ? `${levelWorst.levelId} (${levelWorst.levelType})` : levelWorst.levelId) : "暂无高失败关卡"}
+                  </div>
+                  <div className={styles.moduleSignalMeta}>
+                    {levelWorst
+                      ? `失败率 ${levelWorst.failRate.toFixed(1)}%，失败 ${levelWorst.fails} 次，主要失败原因 ${levelWorst.topFailReason || "未记录"}。${nextWorstLevel ? `其次是 ${nextWorstLevel.levelType ? `${nextWorstLevel.levelId} (${nextWorstLevel.levelType})` : nextWorstLevel.levelId}。` : ""}`
+                      : "当前批次还没有足够的关卡样本，暂时无法判断失败最集中关卡。"}
+                  </div>
+                </article>
+                <article className={styles.moduleSignalCard}>
+                  <div className={styles.moduleSignalLabel}>{levelSections[3]}</div>
+                  <div className={styles.moduleSignalTitle}>
+                    {levelRetryHot
+                      ? levelRetryHot.levelType
+                        ? `${levelRetryHot.levelId} (${levelRetryHot.levelType})`
+                        : levelRetryHot.levelId
+                      : "暂无重试热点"}
+                  </div>
+                  <div className={styles.moduleSignalMeta}>
+                    {levelRetryHot
+                      ? `重试率 ${levelRetryHot.retryRate.toFixed(1)}%，累计 ${levelRetryHot.retries} 次。${nextRetryLevel ? `次高为 ${nextRetryLevel.levelType ? `${nextRetryLevel.levelId} (${nextRetryLevel.levelType})` : nextRetryLevel.levelId}。` : ""}`
+                      : "当前批次未识别到显著的重试堆积。"}
+                  </div>
+                </article>
+                <article className={styles.moduleSignalCard}>
+                  <div className={styles.moduleSignalLabel}>{levelSections[4]}</div>
+                  <div className={styles.moduleSignalTitle}>
+                    {microflowHot ? `${microflowHot.levelId} / ${microflowHot.action}` : "暂无异常行为占比"}
+                  </div>
+                  <div className={styles.moduleSignalMeta}>
+                    {microflowHot
+                      ? `占比 ${microflowHot.ratio.toFixed(1)}%，平均耗时 ${microflowHot.avgDuration.toFixed(1)} 秒。${nextMicroflowHot ? `次高异常为 ${nextMicroflowHot.levelId} / ${nextMicroflowHot.action}。` : ""}`
+                      : "当前批次未识别到需要单独抬出的局内行为异常。"}
+                  </div>
+                </article>
+              </div>
+            </section>
+
+            <section className={styles.moduleSection}>
+              <div className={styles.moduleHeader}>
+                <div>
+                  <h2 className="section-title" style={{ fontSize: 18 }}>
+                    {levelSections[5]}
+                  </h2>
+                  <p className={styles.sectionCopy}>主图只服务关卡漏斗判断，先确认哪些关卡通关率塌陷，再回看失败原因和微观心流。</p>
+                </div>
+                <span className="pill">{config.compareVersionLabel ? "带版本对比" : "当前批次"}</span>
+              </div>
+              {levelRows.length ? (
+                <LevelProgressCard
+                  title={levelSections[5]}
+                  copy={
+                    config.compareVersionLabel
+                      ? `按关卡展示开始、完成、失败与重试，并对比 ${config.compareVersionLabel} 的通关率变化。`
+                      : "按关卡展示开始、完成、失败与重试，优先判断问题是少数关卡集中失守，还是整条关卡链路普遍吃力。"
+                  }
+                  rows={levelRows}
+                  compareRows={config.compareLevelFunnel}
+                />
+              ) : (
+                <div className={styles.moduleEmptyState}>当前批次还没有可展示的关卡漏斗主图，导入 level_start / level_complete / level_fail 后会自动补齐。</div>
+              )}
+            </section>
+
+            <section className={styles.moduleSection}>
+              <div className={styles.moduleHeader}>
+                <div>
+                  <h2 className="section-title" style={{ fontSize: 18 }}>
+                    失败原因 + 重试排行
+                  </h2>
+                  <p className={styles.sectionCopy}>失败原因解释“为什么卡住”，重试排行解释“玩家是否被迫反复尝试”，两者一起看才知道优先级。</p>
+                </div>
+                <span className="pill">双侧复核</span>
+              </div>
+              <div className={styles.sideBySidePanels}>
+                <div className={styles.infoPanel}>
+                  <div className={styles.infoPanelTitle}>{levelSections[6]}</div>
+                  <div className={styles.infoPanelList}>
+                    {(config.levelFailReasonDistribution ?? []).slice(0, 6).map((item) => (
+                      <div key={item.name} className={styles.infoPanelRow}>
+                        <span>{item.name}</span>
+                        <strong>{item.count}</strong>
+                      </div>
+                    ))}
+                  </div>
+                  {!(config.levelFailReasonDistribution ?? []).length ? (
+                    <div className={styles.moduleEmptyState}>当前批次还没有可展示的失败原因分布。</div>
+                  ) : null}
+                </div>
+                <div className={styles.infoPanel}>
+                  <div className={styles.infoPanelTitle}>{levelSections[7]}</div>
+                  <div className={styles.infoPanelList}>
+                    {levelRetryRows.slice(0, 6).map((item) => (
+                      <div key={`${item.levelId}-${item.levelType}`} className={styles.infoPanelRow}>
+                        <span>{item.levelType ? `${item.levelId} (${item.levelType})` : item.levelId}</span>
+                        <strong>{item.retryRate.toFixed(1)}%</strong>
+                      </div>
+                    ))}
+                  </div>
+                  {!levelRetryRows.length ? <div className={styles.moduleEmptyState}>当前批次还没有可展示的重试排行。</div> : null}
+                </div>
+              </div>
+            </section>
+
+            <section id="level-microflow" className={styles.moduleSection}>
+              <div className={styles.moduleHeader}>
+                <div>
+                  <h2 className="section-title" style={{ fontSize: 18 }}>
+                    {levelSections[8]}
+                  </h2>
+                  <p className={styles.sectionCopy}>微观心流保留在关卡页下半区，单独解释玩家在局内到底被什么动作拖慢，而不是挤在侧栏里当附属信息。</p>
+                </div>
+                <span className="pill">same page, lower section</span>
+              </div>
+              {microflowHot ? (
+                <div className={styles.levelMicroflowHighlight}>
+                  <div>
+                    <div className={styles.highlightLabel}>当前最高占比异常动作</div>
+                    <div className={styles.highlightTitle}>{microflowHot.levelId} / {microflowHot.action}</div>
+                  </div>
+                  <div className={styles.levelMicroflowHighlightStats}>
+                    <span>{microflowHot.count} 次</span>
+                    <span>{microflowHot.ratio.toFixed(1)}%</span>
+                    <span>{microflowHot.avgDuration.toFixed(1)} 秒</span>
+                  </div>
+                </div>
+              ) : null}
+              <div className={styles.levelMicroflowGrid}>
+                {levelMicroflowGroups.slice(0, 6).map((group) => (
+                  <article key={group.levelId} className={styles.levelMicroflowPanel}>
+                    <div className={styles.levelMicroflowPanelTop}>
+                      <div>
+                        <div className={styles.levelMicroflowPanelTitle}>关卡 {group.levelId}</div>
+                        <div className={styles.rankMeta}>按行为占比从高到低排序</div>
+                      </div>
+                      <span className="pill">{group.actions.length} 个动作</span>
+                    </div>
+                    <div className={styles.levelMicroflowList}>
+                      {group.actions.slice(0, 4).map((row) => (
+                        <div key={`${group.levelId}-${row.action}`} className={styles.levelMicroflowItem}>
+                          <div>
+                            <strong>{row.action}</strong>
+                            <div className={styles.rankMeta}>局内动作</div>
+                          </div>
+                          <div className={styles.levelMicroflowItemStats}>
+                            <span>{row.count} 次</span>
+                            <span>{row.ratio.toFixed(1)}%</span>
+                            <span>{row.avgDuration.toFixed(1)} 秒</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                ))}
+              </div>
+              {!levelMicroflowGroups.length ? (
+                <div className={styles.moduleEmptyState}>当前批次还没有足够的微观心流样本，导入局内行为事件后这里会展示动作占比和耗时热点。</div>
+              ) : null}
+            </section>
+
+            <section id="level-detail" className={styles.moduleSection}>
+              <div className={styles.moduleHeader}>
+                <div>
+                  <h2 className="section-title" style={{ fontSize: 18 }}>
+                    明细表
+                  </h2>
+                  <p className={styles.sectionCopy}>最后用关卡明细表和心流明细表收口，方便团队逐行核对热点关卡、失败率、重试率和局内动作异常。</p>
+                </div>
+                <span className="pill">
+                  {config.compareVersionLabel ? `${config.versionLabel} vs ${config.compareVersionLabel}` : config.versionLabel}
+                </span>
+              </div>
+              <div className={styles.levelDetailTables}>
+                <div className={styles.levelDetailBlock}>
+                  <div className={styles.levelDetailBlockTitle}>{levelSections[9]}</div>
+                  <div className={styles.levelDetailTable}>
+                    <div className={`${styles.levelDetailTableRow} ${styles.levelDetailTableHeaderRow}`}>
+                      <div className={styles.levelDetailTableHead}>关卡</div>
+                      <div className={styles.levelDetailTableHead}>开始</div>
+                      <div className={styles.levelDetailTableHead}>完成</div>
+                      <div className={styles.levelDetailTableHead}>失败率</div>
+                      <div className={styles.levelDetailTableHead}>重试率</div>
+                      <div className={styles.levelDetailTableHead}>主要失败原因</div>
+                      <div className={styles.levelDetailTableHead}>对比通关率</div>
+                    </div>
+                    {levelRows.map((row) => {
+                      const compare = compareLevelMap.get(row.levelId);
+                      const retryRate = row.starts ? (row.retries / Math.max(row.starts, 1)) * 100 : 0;
+                      return (
+                        <div key={`${row.levelId}-${row.levelType}`} className={styles.levelDetailTableRow}>
+                          <div className={styles.levelDetailPrimary}>
+                            <strong>{row.levelType ? `${row.levelId} (${row.levelType})` : row.levelId}</strong>
+                            <span>{row.completes} 完成 / {row.fails} 失败</span>
+                          </div>
+                          <div>{row.starts}</div>
+                          <div>{row.completes}</div>
+                          <div className={styles.moduleDetailStrong}>{row.failRate.toFixed(1)}%</div>
+                          <div>{retryRate.toFixed(1)}%</div>
+                          <div>{row.topFailReason || "—"}</div>
+                          <div>{compare ? `${compare.completionRate.toFixed(1)}%` : "—"}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {!levelRows.length ? <div className={styles.moduleEmptyState}>当前批次还没有可展示的关卡明细。</div> : null}
+                </div>
+                <div className={styles.levelDetailBlock}>
+                  <div className={styles.levelDetailBlockTitle}>{levelSections[10]}</div>
+                  <div className={styles.levelFlowTable}>
+                    <div className={`${styles.levelFlowTableRow} ${styles.levelFlowTableHeaderRow}`}>
+                      <div className={styles.levelDetailTableHead}>关卡</div>
+                      <div className={styles.levelDetailTableHead}>动作</div>
+                      <div className={styles.levelDetailTableHead}>次数</div>
+                      <div className={styles.levelDetailTableHead}>占比</div>
+                      <div className={styles.levelDetailTableHead}>平均耗时</div>
+                    </div>
+                    {levelMicroflowRows.slice(0, 12).map((row) => (
+                      <div key={`${row.levelId}-${row.action}`} className={styles.levelFlowTableRow}>
+                        <div className={styles.levelDetailPrimary}>
+                          <strong>{row.levelId}</strong>
+                          <span>行为热点</span>
+                        </div>
+                        <div>{row.action}</div>
+                        <div>{row.count}</div>
+                        <div className={styles.moduleDetailStrong}>{row.ratio.toFixed(1)}%</div>
+                        <div>{row.avgDuration.toFixed(1)} 秒</div>
+                      </div>
+                    ))}
+                  </div>
+                  {!levelMicroflowRows.length ? <div className={styles.moduleEmptyState}>当前批次还没有可展示的心流明细。</div> : null}
+                </div>
+              </div>
+            </section>
+          </>
+        ) : null}
+
+        {category !== "onboarding" && category !== "level" ? (
           <section className={`panel ${styles.chartSection}`}>
             <div className={styles.sectionTop}>
               <div>
@@ -620,18 +984,7 @@ export default async function AnalyticsCategoryPage({
             </div>
             <div className={styles.chartGrid}>
               <div className={styles.primaryChart}>
-                {category === "level" && config.levelFunnel?.length ? (
-                  <LevelProgressCard
-                    title={chartTitle}
-                    copy={
-                      config.compareVersionLabel
-                        ? `按关卡展示开始、完成、失败与重试，并对比 ${config.compareVersionLabel} 的通关率变化。`
-                        : chartCopy
-                    }
-                    rows={config.levelFunnel}
-                    compareRows={config.compareLevelFunnel}
-                  />
-                ) : category === "monetization" && config.monetizationStoreFunnel?.length ? (
+                {category === "monetization" && config.monetizationStoreFunnel?.length ? (
                   <MonetizationDualFunnelCard
                     title={chartTitle}
                     copy="双漏斗同时展示商店/礼包曝光链路和支付请求链路，优先判断转化损耗发生在哪一层。"
@@ -672,126 +1025,6 @@ export default async function AnalyticsCategoryPage({
                     config.aux.length
                   )}
                 />
-              </div>
-            </div>
-          </section>
-        ) : null}
-
-        {category === "level" && config.levelFunnel?.length ? (
-          <section className={`panel ${styles.deepDiveSection}`}>
-            <div className={styles.sectionTop}>
-              <div>
-                <h2 className="section-title" style={{ fontSize: 18 }}>
-                  关卡进度与局内微观心流
-                </h2>
-                <p className={styles.sectionCopy}>按关卡查看开始、完成、失败、重试，并在同一页观察局内行为占比。</p>
-              </div>
-              <span className="pill">{config.levelFunnel.length} 个关卡</span>
-            </div>
-            <div className={styles.signalGrid}>
-              <div className={styles.signalCard}>
-                <div className={styles.signalLabel}>失败最集中关卡</div>
-                <div className={styles.signalTitle}>
-                  {levelWorst ? (levelWorst.levelType ? `${levelWorst.levelId} (${levelWorst.levelType})` : levelWorst.levelId) : "暂无异常"}
-                </div>
-                <div className={styles.signalMeta}>
-                  {levelWorst ? `失败率 ${levelWorst.failRate.toFixed(1)}%，失败 ${levelWorst.fails} 次` : "暂无可识别关卡失败热点"}
-                </div>
-              </div>
-              <div className={styles.signalCard}>
-                <div className={styles.signalLabel}>重试最高关卡</div>
-                <div className={styles.signalTitle}>
-                  {levelRetryHot
-                    ? levelRetryHot.levelType
-                      ? `${levelRetryHot.levelId} (${levelRetryHot.levelType})`
-                      : levelRetryHot.levelId
-                    : "暂无明显重试"}
-                </div>
-                <div className={styles.signalMeta}>
-                  {levelRetryHot
-                    ? `重试率 ${levelRetryHot.retryRate.toFixed(1)}%，累计 ${levelRetryHot.retries} 次`
-                    : "当前批次未识别到显著重试热点"}
-                </div>
-              </div>
-              <div className={styles.signalCard}>
-                <div className={styles.signalLabel}>行为占比异常关卡</div>
-                <div className={styles.signalTitle}>
-                  {microflowHot ? `${microflowHot.levelId} / ${microflowHot.action}` : "暂无异常占比"}
-                </div>
-                <div className={styles.signalMeta}>
-                  {microflowHot
-                    ? `占比 ${microflowHot.ratio.toFixed(1)}%，平均耗时 ${microflowHot.avgDuration.toFixed(1)} 秒`
-                    : "当前批次未识别到高占比行为"}
-                </div>
-              </div>
-            </div>
-            <div className={styles.levelGrid}>
-              <div className={styles.levelTable}>
-                <div className={styles.levelTableHeader}>
-                  <span>关卡</span>
-                  <span>开始</span>
-                  <span>完成</span>
-                  <span>失败</span>
-                  <span>重试</span>
-                  <span>主要失败原因</span>
-                </div>
-                {config.levelFunnel.map((row) => (
-                  <div key={`${row.levelId}-${row.levelType}`} className={styles.levelTableRow}>
-                    <span>{row.levelType ? `${row.levelId} (${row.levelType})` : row.levelId}</span>
-                    <span>{row.starts}</span>
-                    <span>{row.completes}</span>
-                    <span>{row.fails}</span>
-                    <span>{row.retries}</span>
-                    <span>{row.topFailReason || "—"}</span>
-                  </div>
-                ))}
-              </div>
-              <div className={styles.microflowPanel}>
-                <div className={styles.microflowTitle}>局内微观心流</div>
-                <div className={styles.microflowList}>
-                  {(config.microflowByLevel ?? []).slice(0, 4).map((group) => (
-                    <div key={group.levelId} className={styles.microflowGroup}>
-                      <div className={styles.microflowGroupTitle}>关卡 {group.levelId}</div>
-                      {group.actions.slice(0, 4).map((row) => (
-                        <div key={`${group.levelId}-${row.action}`} className={styles.microflowItem}>
-                          <div>
-                            <strong>{row.action}</strong>
-                            <div className={styles.rankMeta}>行为占比</div>
-                          </div>
-                          <div className={styles.microflowStats}>
-                            <span>{row.count} 次</span>
-                            <span>{row.ratio.toFixed(1)}%</span>
-                            <span>{row.avgDuration.toFixed(1)} 秒</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className={styles.sideBySidePanels}>
-              <div className={styles.infoPanel}>
-                <div className={styles.infoPanelTitle}>失败原因分布</div>
-                <div className={styles.infoPanelList}>
-                  {(config.levelFailReasonDistribution ?? []).slice(0, 5).map((item) => (
-                    <div key={item.name} className={styles.infoPanelRow}>
-                      <span>{item.name}</span>
-                      <strong>{item.count}</strong>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className={styles.infoPanel}>
-                <div className={styles.infoPanelTitle}>重试排行</div>
-                <div className={styles.infoPanelList}>
-                  {(config.levelRetryRanking ?? []).slice(0, 5).map((item) => (
-                    <div key={`${item.levelId}-${item.levelType}`} className={styles.infoPanelRow}>
-                      <span>{item.levelType ? `${item.levelId} (${item.levelType})` : item.levelId}</span>
-                      <strong>{item.retries} 次</strong>
-                    </div>
-                  ))}
-                </div>
               </div>
             </div>
           </section>
@@ -943,7 +1176,7 @@ export default async function AnalyticsCategoryPage({
           </section>
         ) : null}
 
-        {category !== "onboarding" ? (
+        {category !== "onboarding" && category !== "level" ? (
           <AnalyticsDetailClient
             ranking={config.ranking}
             detailRows={config.detailRows}

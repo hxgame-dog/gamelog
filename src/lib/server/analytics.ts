@@ -130,6 +130,17 @@ type ImportSummary = {
 
 type OperationsModuleKey = "onboarding" | "level" | "monetization" | "ads";
 
+type LevelFunnelRow = NonNullable<ImportSummary["levelFunnel"]>[number];
+type LevelRetryRow = NonNullable<ImportSummary["levelRetryRanking"]>[number];
+type MicroflowGroup = NonNullable<ImportSummary["microflowByLevel"]>[number];
+type MicroflowHotRow = MicroflowGroup["actions"][number] & { levelId: string };
+
+export type LevelDiagnostics = {
+  levelWorst: LevelFunnelRow[];
+  levelRetryHot: LevelRetryRow[];
+  microflowHot: MicroflowHotRow[];
+};
+
 export type OperationsOverviewData = {
   projectId: string | null;
   sourceLabel: string;
@@ -366,6 +377,10 @@ function metricCard(label: string, current: string, compare?: string | null) {
   };
 }
 
+function countMetricCard(label: string, current: number | null, compare?: number | null) {
+  return metricCard(label, current === null ? "—" : current.toFixed(0), compare === null || compare === undefined ? null : compare.toFixed(0));
+}
+
 function versionDelta(current: number, compare: number | null | undefined, suffix = "%") {
   if (compare === null || compare === undefined) {
     return null;
@@ -390,6 +405,27 @@ function buildOnboardingStepRows(summary: ImportSummary, compareSummary?: Import
       kind: "step" as const
     };
   });
+}
+
+export function getLevelDiagnostics(
+  summary?: Pick<ImportSummary, "levelFunnel" | "levelRetryRanking" | "microflowByLevel">
+): LevelDiagnostics {
+  const levelWorst = (summary?.levelFunnel ?? []).slice().sort((a, b) => b.failRate - a.failRate);
+  const levelRetryHot = (summary?.levelRetryRanking ?? []).slice().sort((a, b) => b.retryRate - a.retryRate);
+  const microflowHot = (summary?.microflowByLevel ?? [])
+    .flatMap((group) =>
+      group.actions.map((action) => ({
+        levelId: group.levelId,
+        ...action
+      }))
+    )
+    .sort((a, b) => b.ratio - a.ratio);
+
+  return {
+    levelWorst,
+    levelRetryHot,
+    microflowHot
+  };
 }
 
 export function deriveOnboardingFunnel(
@@ -418,11 +454,37 @@ export function resolveOnboardingFunnelRows(
   return deriveOnboardingFunnel(summary?.onboardingFunnel ?? summary?.onboardingStepTrend ?? summary?.onboardingSteps ?? []);
 }
 
+export function deriveOnboardingDurationSeries(
+  rows: Array<{
+    avgDuration: number;
+  }>,
+  fallbackValues: number[]
+) {
+  if (!rows.length) {
+    return normalizeSeries(fallbackValues, 6);
+  }
+
+  return rows.map((item) => Number(item.avgDuration.toFixed(1)));
+}
+
 function buildLevelRows(summary: ImportSummary, compareSummary?: ImportSummary) {
-  return (summary.levelProgress ?? []).map((level) => {
-    const compare = compareSummary?.levelProgress?.find((item) => item.levelId === level.levelId);
-    const currentCompletion = level.starts ? (level.completes / level.starts) * 100 : 0;
-    const compareCompletion = compare && compare.starts ? (compare.completes / compare.starts) * 100 : null;
+  const currentRows = (summary.levelFunnel ?? summary.levelProgress?.map((item) => ({
+    ...item,
+    completionRate: clampPercent((item.completes / Math.max(item.starts, 1)) * 100),
+    failRate: clampPercent((item.fails / Math.max(item.starts, 1)) * 100)
+  })) ?? [])
+    .slice()
+    .sort((a, b) => b.failRate - a.failRate);
+  const compareRows = compareSummary?.levelFunnel ?? compareSummary?.levelProgress?.map((item) => ({
+    ...item,
+    completionRate: clampPercent((item.completes / Math.max(item.starts, 1)) * 100),
+    failRate: clampPercent((item.fails / Math.max(item.starts, 1)) * 100)
+  })) ?? [];
+
+  return currentRows.map((level) => {
+    const compare = compareRows.find((item) => item.levelId === level.levelId);
+    const currentCompletion = level.completionRate;
+    const compareCompletion = compare?.completionRate ?? null;
     return {
       label: level.levelType ? `${level.levelId} (${level.levelType})` : level.levelId,
       current: `${level.starts} 开始 / ${level.completes} 完成 / ${level.fails} 失败 / ${level.retries} 重试`,
@@ -430,14 +492,20 @@ function buildLevelRows(summary: ImportSummary, compareSummary?: ImportSummary) 
         ? `${compare.starts} 开始 / ${compare.completes} 完成 / ${compare.fails} 失败 / ${compare.retries} 重试`
         : null,
       delta: versionDelta(currentCompletion, compareCompletion),
-      note: `主要失败原因：${level.topFailReason || "—"}`,
+      note: `失败率 ${level.failRate.toFixed(1)}%，主要失败原因：${level.topFailReason || "—"}`,
       kind: "level" as const
     };
   });
 }
 
 function buildMicroflowRows(summary: ImportSummary) {
-  return (summary.microflowRows ?? []).slice(0, 12).map((item) => ({
+  const directRows = (summary.microflowRows ?? [])
+    .slice()
+    .sort((a, b) => b.ratio - a.ratio);
+  const fallbackRows = getLevelDiagnostics(summary).microflowHot;
+  const rows = (directRows.length ? directRows : fallbackRows).slice(0, 12);
+
+  return rows.map((item) => ({
     label: `${item.levelId} / ${item.action}`,
     current: `${item.count} 次`,
     compare: null,
@@ -445,6 +513,20 @@ function buildMicroflowRows(summary: ImportSummary) {
     note: `平均耗时 ${item.avgDuration.toFixed(1)} 秒`,
     kind: "action" as const
   }));
+}
+
+function sumAdBreakdownCount(
+  rows: ImportSummary["adPlacementBreakdown"] | undefined,
+  key: "requests" | "plays" | "clicks" | "rewards"
+) {
+  return rows?.length ? rows.reduce((sum, item) => sum + item[key], 0) : null;
+}
+
+function sumAdFlowCount(
+  rows: ImportSummary["adPlacementFlow"] | undefined,
+  key: "requests" | "plays" | "clicks"
+) {
+  return rows?.length ? rows.reduce((sum, item) => sum + item[key], 0) : null;
 }
 
 function buildMonetizationRows(summary: ImportSummary, compareSummary?: ImportSummary) {
@@ -488,7 +570,7 @@ function biggestOnboardingDrop(summary: ImportSummary) {
 }
 
 function levelFunnelRanking(summary: ImportSummary) {
-  return (summary.levelFunnel ?? []).slice(0, 8);
+  return getLevelDiagnostics(summary).levelWorst;
 }
 
 function monetizationConversion(summary: ImportSummary) {
@@ -1070,10 +1152,7 @@ export async function getAnalyticsCategoryData(
         : compareCategorySummary
           ? normalizeSeries(compareCategorySummary.main, 6)
           : emptyCompareSeries(funnelValues);
-    const durationSeries =
-      onboardingTrendRows.length > 0
-        ? onboardingTrendRows.map((item) => clampPercent(item.avgDuration))
-        : normalizeSeries(categorySummary.aux, 6);
+    const durationSeries = deriveOnboardingDurationSeries(onboardingTrendRows, categorySummary.aux);
 
     return {
       ...base,
@@ -1141,6 +1220,11 @@ export async function getAnalyticsCategoryData(
       completionRate: clampPercent((item.completes / Math.max(item.starts, 1)) * 100),
       failRate: clampPercent((item.fails / Math.max(item.starts, 1)) * 100)
     }));
+    const levelDiagnostics = getLevelDiagnostics({
+      levelFunnel: levelRows,
+      levelRetryRanking: summary.levelRetryRanking ?? [],
+      microflowByLevel: summary.microflowByLevel ?? []
+    });
     const mainValues =
       levelRows.length > 0
         ? levelRows.map((item) => item.completionRate)
@@ -1188,11 +1272,12 @@ export async function getAnalyticsCategoryData(
       compareInsight: compareSummaryText,
       levelRows,
       microflowRows: summary.microflowRows ?? [],
-      levelFunnel: summary.levelFunnel ?? levelRows,
+      levelFunnel: levelRows,
       compareLevelFunnel: compareSummary.levelFunnel ?? compareLevelRows,
       levelFailReasonDistribution: summary.levelFailReasonDistribution ?? summary.failReasons ?? [],
-      levelRetryRanking: summary.levelRetryRanking ?? [],
-      microflowByLevel: summary.microflowByLevel ?? []
+      levelRetryRanking: levelDiagnostics.levelRetryHot,
+      microflowByLevel: summary.microflowByLevel ?? [],
+      levelDiagnostics
     };
   }
 
@@ -1245,12 +1330,12 @@ export async function getAnalyticsCategoryData(
   }
 
   if (category === "ads") {
-    const trigger = summary.adPlacementBreakdown?.reduce((sum, item) => sum + item.requests, 0) ?? getMetric("ad_trigger_rate");
-    const compareTrigger = compareSummary.adPlacementBreakdown?.reduce((sum, item) => sum + item.requests, 0) ?? (compareImport ? getCompareMetric("ad_trigger_rate") : null);
-    const completion = summary.adPlacementBreakdown?.reduce((sum, item) => sum + item.plays, 0) ?? getMetric("ad_completion_rate");
-    const compareCompletion = compareSummary.adPlacementBreakdown?.reduce((sum, item) => sum + item.plays, 0) ?? (compareImport ? getCompareMetric("ad_completion_rate") : null);
-    const reward = summary.adPlacementBreakdown?.reduce((sum, item) => sum + item.clicks, 0) ?? getMetric("ad_reward_rate");
-    const compareReward = compareSummary.adPlacementBreakdown?.reduce((sum, item) => sum + item.clicks, 0) ?? (compareImport ? getCompareMetric("ad_reward_rate") : null);
+    const trigger = sumAdBreakdownCount(summary.adPlacementBreakdown, "requests") ?? sumAdFlowCount(summary.adPlacementFlow, "requests");
+    const compareTrigger = sumAdBreakdownCount(compareSummary.adPlacementBreakdown, "requests") ?? sumAdFlowCount(compareSummary.adPlacementFlow, "requests");
+    const completion = sumAdBreakdownCount(summary.adPlacementBreakdown, "plays") ?? sumAdFlowCount(summary.adPlacementFlow, "plays");
+    const compareCompletion = sumAdBreakdownCount(compareSummary.adPlacementBreakdown, "plays") ?? sumAdFlowCount(compareSummary.adPlacementFlow, "plays");
+    const reward = sumAdBreakdownCount(summary.adPlacementBreakdown, "clicks") ?? sumAdFlowCount(summary.adPlacementFlow, "clicks");
+    const compareReward = sumAdBreakdownCount(compareSummary.adPlacementBreakdown, "clicks") ?? sumAdFlowCount(compareSummary.adPlacementFlow, "clicks");
     const rewardCompletion = summary.adPlacementBreakdown?.length
       ? clampPercent(
           (summary.adPlacementBreakdown.reduce((sum, item) => sum + item.rewards, 0) /
@@ -1269,9 +1354,9 @@ export async function getAnalyticsCategoryData(
     return {
       ...base,
       metrics: [
-        metricCard("请求数", trigger.toFixed(0), compareTrigger !== null ? compareTrigger.toFixed(0) : null),
-        metricCard("播放数", completion.toFixed(0), compareCompletion !== null ? compareCompletion.toFixed(0) : null),
-        metricCard("点击数", reward.toFixed(0), compareReward !== null ? compareReward.toFixed(0) : null),
+        countMetricCard("请求数", trigger, compareTrigger),
+        countMetricCard("播放数", completion, compareCompletion),
+        countMetricCard("点击数", reward, compareReward),
         metricCard("发奖完成率", formatMetric(rewardCompletion), compareRewardCompletion !== null ? formatMetric(compareRewardCompletion) : null)
       ],
       main: normalizeSeries((summary.adPlacementFlow ?? []).map((item) => item.plays)),
@@ -1290,7 +1375,7 @@ export async function getAnalyticsCategoryData(
           ? buildAdRows(summary, compareSummary)
           : buildDetailRows(category, categorySummary, compareCategorySummary, compareImport?.version),
       insight:
-        compareImport && compareCompletion !== null
+        compareImport && completion !== null && compareCompletion !== null && reward !== null && compareReward !== null
           ? `${categorySummary.insight} 与 ${compareImport.version} 相比，广告播放数 ${versionDelta(completion, compareCompletion, "")}，点击数 ${versionDelta(reward, compareReward, "")}。`
           : categorySummary.insight,
       compareInsight: compareSummaryText,
