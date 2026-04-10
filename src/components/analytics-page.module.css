@@ -112,31 +112,39 @@
   position: absolute;
   inset: 0;
   border-radius: 14px;
-  z-index: 1;
+  z-index: 3;
 }
 
 .qualityLabel {
   position: relative;
-  z-index: 2;
+  z-index: 1;
   color: var(--muted);
   font-size: 12px;
+  pointer-events: none;
 }
 
 .qualityValue {
   position: relative;
-  z-index: 2;
+  z-index: 1;
   margin-top: 8px;
   font-family: var(--font-number);
   font-size: 24px;
   font-weight: 700;
+  pointer-events: none;
 }
 
 .qualityMeta {
   position: relative;
-  z-index: 2;
+  z-index: 1;
   margin-top: 6px;
   color: var(--muted);
   font-size: 12px;
+  pointer-events: none;
+}
+
+.qualityCardLink:focus-visible {
+  outline: 2px solid rgba(31, 154, 133, 0.65);
+  outline-offset: -2px;
 }
 
 .qualityHint {
@@ -487,6 +495,151 @@
   line-height: 1.7;
 }
 
+.moduleSection {
+  display: grid;
+  gap: 14px;
+}
+
+.moduleHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.moduleGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.moduleChartGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(320px, 0.88fr);
+  gap: 12px;
+}
+
+.moduleCard {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(31, 154, 133, 0.14);
+  background:
+    radial-gradient(circle at top right, rgba(31, 154, 133, 0.12), transparent 36%),
+    linear-gradient(180deg, #ffffff 0%, #fbfcfb 100%);
+  box-shadow: var(--shadow-soft);
+}
+
+.moduleCardLabel {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.moduleCardValue {
+  font-family: var(--font-number);
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.moduleCardMeta {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.moduleNarrative {
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(31, 154, 133, 0.14);
+  background: linear-gradient(180deg, rgba(31, 154, 133, 0.08) 0%, rgba(31, 154, 133, 0.03) 100%);
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+.moduleSignalGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.moduleSignalCard {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(31, 154, 133, 0.2);
+  background:
+    linear-gradient(135deg, rgba(31, 154, 133, 0.14) 0%, rgba(255, 255, 255, 0.94) 46%),
+    #ffffff;
+  box-shadow: var(--shadow-soft);
+}
+
+.moduleSignalLabel {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.moduleSignalTitle {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.moduleSignalMeta {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.moduleDetailTable {
+  display: grid;
+  gap: 8px;
+}
+
+.moduleDetailTableRow {
+  display: grid;
+  grid-template-columns: 1.4fr repeat(6, minmax(0, 0.72fr));
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: #fcfcfb;
+  font-size: 13px;
+}
+
+.moduleDetailTableHead {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.moduleDetailPrimary {
+  display: grid;
+  gap: 4px;
+}
+
+.moduleDetailPrimary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.moduleDetailStrong {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.moduleEmptyState {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px dashed var(--border);
+  background: #fcfcfb;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .detailTableHeader {
   display: flex;
   justify-content: space-between;
@@ -645,6 +798,7 @@
 @media (max-width: 1280px) {
   .compareSummary,
   .chartGrid,
+  .moduleChartGrid,
   .detailGrid,
   .levelGrid,
   .funnelCompareGrid,
@@ -652,7 +806,8 @@
     grid-template-columns: 1fr;
   }
 
-  .detailTableRow {
+  .detailTableRow,
+  .moduleDetailTableRow {
     grid-template-columns: 1fr;
   }
 
@@ -670,6 +825,10 @@
   .metricGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .moduleSignalGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 560px) {
@@ -677,7 +836,8 @@
     grid-template-columns: 1fr;
   }
 
-  .deepDiveGrid {
+  .deepDiveGrid,
+  .moduleGrid {
     grid-template-columns: 1fr;
   }
 }

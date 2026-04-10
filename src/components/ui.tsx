@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { CSSProperties, ReactNode } from "react";
 
+import { deriveOnboardingTrendCompareSeries } from "@/lib/analytics-ui";
+
 import chartStyles from "./charts.module.css";
 
 export function HeaderActions({ children }: { children: ReactNode }) {
@@ -636,47 +638,53 @@ export function OnboardingFunnelCard({
           </>
         ) : null}
       </div>
-      <div className={chartStyles.funnelWrap}>
-        {steps.map((step) => {
-          const key = step.stepId || step.stepName;
-          const compare = compareMap.get(key);
-          const arrivalPct = Math.max(4, (step.arrivals / baseline) * 100);
-          const completionPct = Math.max(2, arrivalPct * (step.completionRate / 100));
-          const dropoff = step.dropoffCount ?? Math.max(step.arrivals - step.completions, 0);
-          return (
-            <div key={key} className={chartStyles.funnelRow}>
-              <div className={chartStyles.funnelLabel}>
-                <strong>{step.stepName || step.stepId}</strong>
-                <span className={chartStyles.funnelMeta}>步骤 {step.stepId || "未命名"}</span>
-              </div>
-              <div className={`${chartStyles.funnelTrack} ${dropoff === maxDropoff && maxDropoff > 0 ? chartStyles.funnelHighlight : ""}`}>
-                {compare ? (
+      {steps.length ? (
+        <div className={chartStyles.funnelWrap}>
+          {steps.map((step) => {
+            const key = step.stepId || step.stepName;
+            const compare = compareMap.get(key);
+            const arrivalPct = Math.max(4, (step.arrivals / baseline) * 100);
+            const completionPct = Math.max(2, arrivalPct * (step.completionRate / 100));
+            const dropoff = step.dropoffCount ?? Math.max(step.arrivals - step.completions, 0);
+            return (
+              <div key={key} className={chartStyles.funnelRow}>
+                <div className={chartStyles.funnelLabel}>
+                  <strong>{step.stepName || step.stepId}</strong>
+                  <span className={chartStyles.funnelMeta}>步骤 {step.stepId || "未命名"}</span>
+                </div>
+                <div className={`${chartStyles.funnelTrack} ${dropoff === maxDropoff && maxDropoff > 0 ? chartStyles.funnelHighlight : ""}`}>
+                  {compare ? (
+                    <div className={chartStyles.funnelBarBase}>
+                      <div
+                        className={`${chartStyles.funnelBarFill} ${chartStyles.funnelBarSecondary}`}
+                        style={{ width: `${Math.max(2, (((compare.arrivals || 0) / Math.max(compareSteps?.[0]?.arrivals || 1, 1)) * 100))}%`, background: "rgba(15, 23, 32, 0.16)" }}
+                      />
+                    </div>
+                  ) : null}
                   <div className={chartStyles.funnelBarBase}>
-                    <div
-                      className={`${chartStyles.funnelBarFill} ${chartStyles.funnelBarSecondary}`}
-                      style={{ width: `${Math.max(2, (((compare.arrivals || 0) / Math.max(compareSteps?.[0]?.arrivals || 1, 1)) * 100))}%`, background: "rgba(15, 23, 32, 0.16)" }}
-                    />
+                    <div className={chartStyles.funnelBarFill} style={{ width: `${arrivalPct}%`, background: `${color}33` }} />
+                    <div className={chartStyles.funnelBarFill} style={{ width: `${completionPct}%`, background: color }} />
                   </div>
-                ) : null}
-                <div className={chartStyles.funnelBarBase}>
-                  <div className={chartStyles.funnelBarFill} style={{ width: `${arrivalPct}%`, background: `${color}33` }} />
-                  <div className={chartStyles.funnelBarFill} style={{ width: `${completionPct}%`, background: color }} />
+                  <div className={chartStyles.funnelStats}>
+                    <span>{step.arrivals} 到达</span>
+                    <span>{step.completions} 完成</span>
+                    <span>流失 {dropoff}</span>
+                    <span>{step.avgDuration.toFixed(1)} 秒</span>
+                  </div>
                 </div>
-                <div className={chartStyles.funnelStats}>
-                  <span>{step.arrivals} 到达</span>
-                  <span>{step.completions} 完成</span>
-                  <span>流失 {dropoff}</span>
-                  <span>{step.avgDuration.toFixed(1)} 秒</span>
+                <div className={chartStyles.funnelDelta}>
+                  <div>{step.completionRate.toFixed(1)}%</div>
+                  {compare ? <div className={chartStyles.funnelMeta}>对比 {(step.completionRate - compare.completionRate > 0 ? "+" : "")}{(step.completionRate - compare.completionRate).toFixed(1)}%</div> : null}
                 </div>
               </div>
-              <div className={chartStyles.funnelDelta}>
-                <div>{step.completionRate.toFixed(1)}%</div>
-                {compare ? <div className={chartStyles.funnelMeta}>对比 {(step.completionRate - compare.completionRate > 0 ? "+" : "")}{(step.completionRate - compare.completionRate).toFixed(1)}%</div> : null}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div style={{ marginTop: 14, padding: 14, borderRadius: 14, border: "1px dashed var(--border)", color: "var(--muted)", fontSize: 13 }}>
+          当前批次还没有可用的 onboarding 步骤数据，页面会在导入 step 日志后继续按专属漏斗结构渲染。
+        </div>
+      )}
       {compareSteps?.length ? (
         <div className={chartStyles.compareLegend}>
           <span className={chartStyles.compareLegendItem}>
@@ -707,14 +715,9 @@ export function OnboardingTrendCard({
   compareSteps?: OnboardingStepRow[];
 }) {
   const values = steps.map((step) => step.completionRate);
-  const compareValues = steps.map((step) => {
-    const match = (compareSteps ?? []).find((item) => (item.stepId || item.stepName) === (step.stepId || step.stepName));
-    return match?.completionRate ?? 0;
-  });
+  const { compareValues, compareLatest, comparePoints } = deriveOnboardingTrendCompareSeries(steps, compareSteps);
   const points = linePath(values);
-  const comparePoints = compareSteps?.length ? linePath(compareValues) : "";
   const latest = values.at(-1) ?? 0;
-  const compareLatest = compareSteps?.length ? compareValues.at(-1) ?? 0 : null;
 
   return (
     <div className={`panel ${chartStyles.chartCard}`}>
@@ -746,43 +749,55 @@ export function OnboardingTrendCard({
           </>
         ) : null}
       </div>
-      <div className={chartStyles.lineWrap}>
-        <div className={chartStyles.grid} />
-        <svg className={chartStyles.svg} viewBox="0 0 100 100" preserveAspectRatio="none">
-          {comparePoints ? (
-            <path d={comparePoints} fill="none" stroke="var(--border-strong)" strokeWidth="2.5" strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />
-          ) : null}
-          <path d={points} fill="none" stroke={color} strokeWidth="3" vectorEffect="non-scaling-stroke" />
-          {compareSteps?.length
-            ? compareValues.map((value, index) => {
-                const x = (index / (compareValues.length - 1 || 1)) * 100;
+      {steps.length ? (
+        <>
+          <div className={chartStyles.lineWrap}>
+            <div className={chartStyles.grid} />
+            <svg className={chartStyles.svg} viewBox="0 0 100 100" preserveAspectRatio="none">
+              {comparePoints ? (
+                <path d={comparePoints} fill="none" stroke="var(--border-strong)" strokeWidth="2.5" strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />
+              ) : null}
+              <path d={points} fill="none" stroke={color} strokeWidth="3" vectorEffect="non-scaling-stroke" />
+              {compareSteps?.length
+                ? compareValues.map((value, index) => {
+                    if (value === null) {
+                      return null;
+                    }
+                    const x = (index / (compareValues.length - 1 || 1)) * 100;
+                    const y = 100 - value;
+                    return (
+                      <circle key={`compare-step-${index}`} cx={x} cy={y} r="2.2" fill="var(--border-strong)">
+                        <title>{`对比完成率 ${value.toFixed(1)}%`}</title>
+                      </circle>
+                    );
+                  })
+                : null}
+              {values.map((value, index) => {
+                const x = (index / (values.length - 1 || 1)) * 100;
                 const y = 100 - value;
+                const compareValue = compareValues[index];
                 return (
-                  <circle key={`compare-step-${index}`} cx={x} cy={y} r="2.2" fill="var(--border-strong)">
-                    <title>{`对比完成率 ${value.toFixed(1)}%`}</title>
+                  <circle key={`step-${index}`} cx={x} cy={y} r="2.5" fill={color}>
+                    <title>{`${steps[index]?.stepName || steps[index]?.stepId}\n当前完成率 ${value.toFixed(1)}%${compareValue !== null ? `\n对比完成率 ${compareValue.toFixed(1)}%` : ""}`}</title>
                   </circle>
                 );
-              })
-            : null}
-          {values.map((value, index) => {
-            const x = (index / (values.length - 1 || 1)) * 100;
-            const y = 100 - value;
-            return (
-              <circle key={`step-${index}`} cx={x} cy={y} r="2.5" fill={color}>
-                <title>{`${steps[index]?.stepName || steps[index]?.stepId}\n当前完成率 ${value.toFixed(1)}%${compareSteps?.length ? `\n对比完成率 ${compareValues[index].toFixed(1)}%` : ""}`}</title>
-              </circle>
-            );
-          })}
-        </svg>
-      </div>
-      <div className={chartStyles.trendFooter}>
-        {steps.map((step, index) => (
-          <div key={`${step.stepId}-${index}`} className={chartStyles.trendStep}>
-            <span className={chartStyles.trendStepLabel}>{step.stepName || step.stepId}</span>
-            <strong className={chartStyles.trendStepValue}>{step.completionRate.toFixed(1)}%</strong>
+              })}
+            </svg>
           </div>
-        ))}
-      </div>
+          <div className={chartStyles.trendFooter}>
+            {steps.map((step, index) => (
+              <div key={`${step.stepId}-${index}`} className={chartStyles.trendStep}>
+                <span className={chartStyles.trendStepLabel}>{step.stepName || step.stepId}</span>
+                <strong className={chartStyles.trendStepValue}>{step.completionRate.toFixed(1)}%</strong>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div style={{ marginTop: 14, padding: 14, borderRadius: 14, border: "1px dashed var(--border)", color: "var(--muted)", fontSize: 13 }}>
+          当前批次还没有足够的步骤完成率样本，趋势曲线会在导入 onboarding 步骤日志后自动出现。
+        </div>
+      )}
     </div>
   );
 }
@@ -805,24 +820,30 @@ export function OnboardingDurationRankingCard({
           <h3 className={chartStyles.chartTitle}>{title}</h3>
           <p className={chartStyles.chartCopy}>{copy}</p>
         </div>
-        <span className="pill">构成</span>
+        <span className="pill">耗时</span>
       </div>
-      <div className={chartStyles.rankingList}>
-        {ranking.map((step) => (
-          <div key={`${step.stepId}-${step.stepName}`} className={chartStyles.rankingItem}>
-            <div>
-              <strong>{step.stepName || step.stepId}</strong>
-              <div className={chartStyles.rankingMeta}>
-                流失 {step.dropoffCount ?? Math.max(step.arrivals - step.completions, 0)} / 完成率 {step.completionRate.toFixed(1)}%
+      {ranking.length ? (
+        <div className={chartStyles.rankingList}>
+          {ranking.map((step) => (
+            <div key={`${step.stepId}-${step.stepName}`} className={chartStyles.rankingItem}>
+              <div>
+                <strong>{step.stepName || step.stepId}</strong>
+                <div className={chartStyles.rankingMeta}>
+                  流失 {step.dropoffCount ?? Math.max(step.arrivals - step.completions, 0)} / 完成率 {step.completionRate.toFixed(1)}%
+                </div>
+              </div>
+              <div className={chartStyles.rankingValue}>
+                {step.avgDuration.toFixed(1)}s
+                <div className={chartStyles.rankingMeta}>{maxDuration > 0 ? `${((step.avgDuration / maxDuration) * 100).toFixed(0)}% 相对耗时` : "—"}</div>
               </div>
             </div>
-            <div className={chartStyles.rankingValue}>
-              {step.avgDuration.toFixed(1)}s
-              <div className={chartStyles.rankingMeta}>{maxDuration > 0 ? `${((step.avgDuration / maxDuration) * 100).toFixed(0)}% 相对耗时` : "—"}</div>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ marginTop: 14, padding: 14, borderRadius: 14, border: "1px dashed var(--border)", color: "var(--muted)", fontSize: 13 }}>
+          当前批次还没有可排序的步骤耗时数据，耗时排行会在步骤样本就绪后自动补齐。
+        </div>
+      )}
     </div>
   );
 }

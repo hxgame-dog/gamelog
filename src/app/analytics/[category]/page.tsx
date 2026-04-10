@@ -25,6 +25,17 @@ import { getProjectsForUser } from "@/lib/server/projects";
 
 const validCategories = new Set(["system", "onboarding", "level", "monetization", "ads", "custom"]);
 
+// Keep onboarding in this dedicated funnel-analysis sequence instead of the shared analytics chart ordering.
+const onboardingSections = [
+  "数据质量卡",
+  "关键结论卡",
+  "最大流失步骤信号",
+  "步骤漏斗图",
+  "步骤完成率曲线",
+  "步骤耗时排行",
+  "步骤明细表"
+] as const;
+
 export default async function AnalyticsCategoryPage({
   params,
   searchParams
@@ -187,6 +198,23 @@ export default async function AnalyticsCategoryPage({
           importId: config.currentImportId
         }).toString()}`
       : null;
+  const onboardingChecklist = onboardingSections.join(" / ");
+  const onboardingRows = category === "onboarding" ? config.onboardingFunnel ?? [] : [];
+  const compareOnboardingRows = category === "onboarding" ? config.compareOnboardingFunnel ?? [] : [];
+  const onboardingTrendRows = category === "onboarding" ? config.onboardingStepTrend ?? onboardingRows : [];
+  const onboardingCompareMap = new Map(compareOnboardingRows.map((row) => [row.stepId || row.stepName, row]));
+  const onboardingLargestDrop = onboardingRows.slice().sort((a, b) => b.dropoffCount - a.dropoffCount)[0] ?? null;
+  const onboardingSlowestStep = onboardingRows.slice().sort((a, b) => b.avgDuration - a.avgDuration)[0] ?? null;
+  const onboardingLastStep = onboardingRows.at(-1) ?? null;
+  const onboardingAverageCompletion = onboardingRows.length
+    ? onboardingRows.reduce((sum, row) => sum + row.completionRate, 0) / onboardingRows.length
+    : 0;
+  const compareOnboardingAverageCompletion = compareOnboardingRows.length
+    ? compareOnboardingRows.reduce((sum, row) => sum + row.completionRate, 0) / compareOnboardingRows.length
+    : null;
+  const onboardingAverageDuration = onboardingRows.length
+    ? onboardingRows.reduce((sum, row) => sum + row.avgDuration, 0) / onboardingRows.length
+    : 0;
 
   return (
     <AppShell currentPath="/analytics">
@@ -351,147 +379,300 @@ export default async function AnalyticsCategoryPage({
           </div>
         </section>
 
-        <section className={`panel ${styles.chartSection}`}>
-          <div className={styles.sectionTop}>
-            <div>
-              <h2 className="section-title" style={{ fontSize: 18 }}>
-                关键图表
-              </h2>
-              <p className={styles.sectionCopy}>先看主图确认当前版本结论，再用趋势和构成图验证问题是否持续、是否集中。</p>
-            </div>
-            <span className="pill">{config.compareVersionLabel ? "双版本分析" : "单版本分析"}</span>
-          </div>
-          <div className={styles.chartGrid}>
-            <div className={styles.primaryChart}>
-              {category === "onboarding" && config.onboardingFunnel?.length ? (
-                <OnboardingFunnelCard
-                  title={chartTitle}
-                  copy={
-                    config.compareVersionLabel
-                      ? `按步骤展示到达、完成与流失，优先看掉队最多的环节；同时对比 ${config.compareVersionLabel} 的完成率变化。`
-                      : chartCopy
-                  }
-                  steps={config.onboardingFunnel}
-                  compareSteps={config.compareOnboardingFunnel}
-                  color={config.color}
-                />
-              ) : category === "level" && config.levelFunnel?.length ? (
-                <LevelProgressCard
-                  title={chartTitle}
-                  copy={
-                    config.compareVersionLabel
-                      ? `按关卡展示开始、完成、失败与重试，并对比 ${config.compareVersionLabel} 的通关率变化。`
-                      : chartCopy
-                  }
-                  rows={config.levelFunnel}
-                  compareRows={config.compareLevelFunnel}
-                />
-              ) : category === "monetization" && config.monetizationStoreFunnel?.length ? (
-                <MonetizationDualFunnelCard
-                  title={chartTitle}
-                  copy="双漏斗同时展示商店/礼包曝光链路和支付请求链路，优先判断转化损耗发生在哪一层。"
-                  storeFunnel={config.monetizationStoreFunnel}
-                  paymentFunnel={config.monetizationPaymentFunnel ?? []}
-                />
-              ) : category === "ads" && config.adPlacementBreakdown?.length ? (
-                <AdPlacementFlowCard
-                  title={chartTitle}
-                  copy="按广告位展示请求、播放、点击与发奖，优先识别表现最弱的 placement。"
-                  placements={config.adPlacementBreakdown}
-                />
-              ) : (
-                <BarChartCard
-                  title={chartTitle}
-                  copy={config.compareVersionLabel ? `深色柱为 ${config.versionLabel}，浅色柱为 ${config.compareVersionLabel}。${chartCopy}` : chartCopy}
-                  values={config.main}
-                  color={config.color}
-                  compareValues={config.compareMain}
-                />
-              )}
-            </div>
-            <div className={styles.secondaryCharts}>
-              {category === "onboarding" && config.onboardingStepTrend?.length ? (
-                <>
-                  <OnboardingTrendCard
-                    title={trendTitle}
-                    copy={
-                      config.compareVersionLabel
-                        ? `按步骤查看完成率曲线，实线为 ${config.versionLabel}，虚线为 ${config.compareVersionLabel}。`
-                        : "按步骤查看完成率曲线，判断是某一步骤突然陡降，还是整体理解成本持续升高。"
-                    }
-                    steps={config.onboardingStepTrend}
-                    compareSteps={config.compareOnboardingStepTrend}
-                    color={config.color}
-                  />
-                  <OnboardingDurationRankingCard title={auxTitle} copy={auxCopy} steps={config.onboardingFunnel ?? config.onboardingStepTrend} />
-                </>
-              ) : (
-                <>
-                  <LineChartCard
-                    title={trendTitle}
-                    copy={config.compareVersionLabel ? `实线为 ${config.versionLabel}，虚线为 ${config.compareVersionLabel}。` : "观察最近导入或模拟批次的变化，判断问题是偶发波动还是持续趋势。"}
-                    values={config.trend}
-                    color={config.color}
-                    compareValues={config.compareTrend}
-                  />
-                  <DonutChartCard
-                    title={auxTitle}
-                    copy={auxCopy}
-                    values={config.aux}
-                    labels={config.auxLabels}
-                    colors={[config.color, "var(--blue)", "var(--violet)", "var(--teal)", "var(--red)", "var(--gold)"].slice(
-                      0,
-                      config.aux.length
-                    )}
-                  />
-                </>
-              )}
-            </div>
-          </div>
-        </section>
+        {category === "onboarding" ? (
+          <>
+            <section className={styles.moduleSection} data-onboarding-checklist={onboardingChecklist}>
+              <div className={styles.moduleHeader}>
+                <div>
+                  <h2 className="section-title" style={{ fontSize: 18 }}>
+                    {onboardingSections[0]}
+                  </h2>
+                  <p className={styles.sectionCopy}>先确认导入质量与版本上下文，再进入步骤漏斗判断，避免把口径问题误当成体验问题。</p>
+                </div>
+                <span className="pill">{config.compareVersionLabel ? "带版本对比" : "当前批次"}</span>
+              </div>
+              <div className={styles.moduleGrid}>
+                <article className={styles.moduleCard}>
+                  <div className={styles.moduleCardLabel}>技术通过率</div>
+                  <div className={styles.moduleCardValue}>{config.technicalSuccessRate?.toFixed(1) ?? "0.0"}%</div>
+                  <div className={styles.moduleCardMeta}>
+                    {config.compareTechnicalSuccessRate !== null && config.compareTechnicalSuccessRate !== undefined
+                      ? `对比 ${config.compareVersionLabel}: ${config.compareTechnicalSuccessRate.toFixed(1)}%`
+                      : "导入质量稳定时，这一页的漏斗结论才更可信。"}
+                  </div>
+                </article>
+                <article className={styles.moduleCard}>
+                  <div className={styles.moduleCardLabel}>技术异常</div>
+                  <div className={styles.moduleCardValue}>{config.technicalErrorCount ?? 0}</div>
+                  <div className={styles.moduleCardMeta}>
+                    {config.compareTechnicalErrorCount !== null && config.compareTechnicalErrorCount !== undefined
+                      ? `对比 ${config.compareVersionLabel}: ${config.compareTechnicalErrorCount}`
+                      : "优先排除埋点缺失、字段错位和批次导入异常。"}
+                  </div>
+                </article>
+                <article className={styles.moduleCard}>
+                  <div className={styles.moduleCardLabel}>业务失败事件</div>
+                  <div className={styles.moduleCardValue}>{config.businessFailureCount ?? 0}</div>
+                  <div className={styles.moduleCardMeta}>
+                    {config.compareBusinessFailureCount !== null && config.compareBusinessFailureCount !== undefined
+                      ? `对比 ${config.compareVersionLabel}: ${config.compareBusinessFailureCount}`
+                      : "如果业务失败事件同步增多，先复核是否存在流程阻断。"}
+                  </div>
+                </article>
+                <article className={styles.moduleCard}>
+                  <div className={styles.moduleCardLabel}>模块覆盖率</div>
+                  <div className={styles.moduleCardValue}>{config.moduleCoverage?.toFixed(1) ?? "0.0"}%</div>
+                  <div className={styles.moduleCardMeta}>{qualityNote}</div>
+                </article>
+              </div>
+            </section>
 
-        {category === "onboarding" && config.onboardingFunnel?.length ? (
-          <section className={`panel ${styles.deepDiveSection}`}>
+            <section className={styles.moduleSection}>
+              <div className={styles.moduleHeader}>
+                <div>
+                  <h2 className="section-title" style={{ fontSize: 18 }}>
+                    {onboardingSections[1]}
+                  </h2>
+                  <p className={styles.sectionCopy}>这一段只总结 onboarding 主链路结论，不和其他模块复用通用排行榜结构。</p>
+                </div>
+                <span className="pill">{onboardingRows.length ? `${onboardingRows.length} 个步骤` : "等待步骤数据"}</span>
+              </div>
+              <div className={styles.moduleGrid}>
+                <article className={styles.moduleCard}>
+                  <div className={styles.moduleCardLabel}>引导完成率</div>
+                  <div className={styles.moduleCardValue}>{config.metrics[1]?.value ?? "0.0%"}</div>
+                  <div className={styles.moduleCardMeta}>
+                    {config.metrics[1]?.compareValue
+                      ? `对比 ${config.compareVersionLabel}: ${config.metrics[1].compareValue}`
+                      : "对应整条 onboarding 链路的最终完成表现。"}
+                  </div>
+                </article>
+                <article className={styles.moduleCard}>
+                  <div className={styles.moduleCardLabel}>步骤平均完成率</div>
+                  <div className={styles.moduleCardValue}>{onboardingAverageCompletion.toFixed(1)}%</div>
+                  <div className={styles.moduleCardMeta}>
+                    {compareOnboardingAverageCompletion !== null
+                      ? `对比均值 ${(onboardingAverageCompletion - compareOnboardingAverageCompletion > 0 ? "+" : "")}${(
+                          onboardingAverageCompletion - compareOnboardingAverageCompletion
+                        ).toFixed(1)}%`
+                      : "按步骤均值看当前链路是否整体吃力。"}
+                  </div>
+                </article>
+                <article className={styles.moduleCard}>
+                  <div className={styles.moduleCardLabel}>尾步完成情况</div>
+                  <div className={styles.moduleCardValue}>{onboardingLastStep ? `${onboardingLastStep.completionRate.toFixed(1)}%` : "—"}</div>
+                  <div className={styles.moduleCardMeta}>
+                    {onboardingLastStep
+                      ? `${onboardingLastStep.stepName || onboardingLastStep.stepId} · ${onboardingLastStep.completions}/${onboardingLastStep.arrivals}`
+                      : "当前批次还没有足够的步骤明细。"}
+                  </div>
+                </article>
+              </div>
+              <div className={styles.moduleNarrative}>{config.compareInsight ?? config.insight}</div>
+            </section>
+
+            <section id="onboarding-signal" className={styles.moduleSection}>
+              <div className={styles.moduleHeader}>
+                <div>
+                  <h2 className="section-title" style={{ fontSize: 18 }}>
+                    {onboardingSections[2]}
+                  </h2>
+                  <p className={styles.sectionCopy}>把最大流失步骤单独抬出来，避免它淹没在通用图表和杂项说明里。</p>
+                </div>
+                <span className="pill">优先处理</span>
+              </div>
+              <div className={styles.moduleSignalGrid}>
+                <article className={styles.moduleSignalCard}>
+                  <div className={styles.moduleSignalLabel}>最大流失步骤</div>
+                  <div className={styles.moduleSignalTitle}>
+                    {onboardingLargestDrop ? onboardingLargestDrop.stepName || onboardingLargestDrop.stepId : "暂无明显流失步骤"}
+                  </div>
+                  <div className={styles.moduleSignalMeta}>
+                    {onboardingLargestDrop
+                      ? `${onboardingLargestDrop.arrivals} 到达 / ${onboardingLargestDrop.completions} 完成 / 流失 ${onboardingLargestDrop.dropoffCount}`
+                      : "当前批次缺少足够步骤数据，暂时无法判断最大流失点。"}
+                  </div>
+                </article>
+                <article className={styles.moduleSignalCard}>
+                  <div className={styles.moduleSignalLabel}>伴随耗时信号</div>
+                  <div className={styles.moduleSignalTitle}>
+                    {onboardingSlowestStep ? onboardingSlowestStep.stepName || onboardingSlowestStep.stepId : "暂无耗时热点"}
+                  </div>
+                  <div className={styles.moduleSignalMeta}>
+                    {onboardingSlowestStep
+                      ? `平均耗时 ${onboardingSlowestStep.avgDuration.toFixed(1)} 秒，步骤均值 ${onboardingAverageDuration.toFixed(1)} 秒`
+                      : "当前批次缺少耗时样本，暂时无法判断理解成本是否抬升。"}
+                  </div>
+                </article>
+              </div>
+            </section>
+
+            <section className={styles.moduleSection}>
+              <div className={styles.moduleHeader}>
+                <div>
+                  <h2 className="section-title" style={{ fontSize: 18 }}>
+                    漏斗主图
+                  </h2>
+                  <p className={styles.sectionCopy}>主图永远使用 onboarding 专属漏斗卡；即使没有标准漏斗数组，也会用步骤趋势/步骤明细推导后继续渲染。</p>
+                </div>
+                <span className="pill">{onboardingSections[3]}</span>
+              </div>
+              <OnboardingFunnelCard
+                title={onboardingSections[3]}
+                copy={
+                  config.compareVersionLabel
+                    ? `按步骤展示到达、完成与流失，优先看掉队最多的环节；同时对比 ${config.compareVersionLabel} 的完成率变化。`
+                    : chartCopy
+                }
+                steps={onboardingRows}
+                compareSteps={compareOnboardingRows}
+                color={config.color}
+              />
+            </section>
+
+            <section className={styles.moduleSection}>
+              <div className={styles.moduleHeader}>
+                <div>
+                  <h2 className="section-title" style={{ fontSize: 18 }}>
+                    趋势 + 耗时排行
+                  </h2>
+                  <p className={styles.sectionCopy}>完成率曲线回答“哪一步骤开始掉”，耗时排行回答“为什么玩家会在这里犹豫”。</p>
+                </div>
+                <span className="pill">双视角复核</span>
+              </div>
+              <div className={styles.moduleChartGrid}>
+                <OnboardingTrendCard
+                  title={onboardingSections[4]}
+                  copy={
+                    config.compareVersionLabel
+                      ? `按步骤查看完成率曲线，实线为 ${config.versionLabel}，虚线为 ${config.compareVersionLabel}。`
+                      : "按步骤查看完成率曲线，判断是某一步骤突然陡降，还是整体理解成本持续升高。"
+                  }
+                  steps={onboardingTrendRows}
+                  compareSteps={config.compareOnboardingStepTrend}
+                  color={config.color}
+                />
+                <OnboardingDurationRankingCard
+                  title={onboardingSections[5]}
+                  copy="查看耗时异常步骤，确认高耗时是否与高流失同时出现。"
+                  steps={onboardingRows}
+                />
+              </div>
+            </section>
+
+            <section className={styles.moduleSection}>
+              <div className={styles.moduleHeader}>
+                <div>
+                  <h2 className="section-title" style={{ fontSize: 18 }}>
+                    {onboardingSections[6]}
+                  </h2>
+                  <p className={styles.sectionCopy}>用步骤级明细直接核对到达、完成、流失、耗时和版本差异，不再走通用结构化明细表。</p>
+                </div>
+                <span className="pill">
+                  {config.compareVersionLabel ? `${config.versionLabel} vs ${config.compareVersionLabel}` : config.versionLabel}
+                </span>
+              </div>
+              <div className={styles.moduleDetailTable}>
+                <div className={styles.moduleDetailTableRow}>
+                  <div className={styles.moduleDetailTableHead}>步骤</div>
+                  <div className={styles.moduleDetailTableHead}>到达</div>
+                  <div className={styles.moduleDetailTableHead}>完成</div>
+                  <div className={styles.moduleDetailTableHead}>流失</div>
+                  <div className={styles.moduleDetailTableHead}>完成率</div>
+                  <div className={styles.moduleDetailTableHead}>平均耗时</div>
+                  <div className={styles.moduleDetailTableHead}>对比完成率</div>
+                </div>
+                {onboardingRows.map((row) => {
+                  const compare = onboardingCompareMap.get(row.stepId || row.stepName);
+                  return (
+                    <div key={`${row.stepId}-${row.stepName}`} className={styles.moduleDetailTableRow}>
+                      <div className={styles.moduleDetailPrimary}>
+                        <strong>{row.stepName || row.stepId}</strong>
+                        <span>{row.stepId || "未命名步骤"}</span>
+                      </div>
+                      <div>{row.arrivals}</div>
+                      <div>{row.completions}</div>
+                      <div>{row.dropoffCount}</div>
+                      <div className={styles.moduleDetailStrong}>{row.completionRate.toFixed(1)}%</div>
+                      <div>{row.avgDuration.toFixed(1)} 秒</div>
+                      <div>{compare ? `${compare.completionRate.toFixed(1)}%` : "—"}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              {!onboardingRows.length ? (
+                <div className={styles.moduleEmptyState}>当前批次还没有可展示的 onboarding 步骤明细，漏斗卡会在导入步骤日志后自动补齐。</div>
+              ) : null}
+            </section>
+          </>
+        ) : null}
+
+        {category !== "onboarding" ? (
+          <section className={`panel ${styles.chartSection}`}>
             <div className={styles.sectionTop}>
               <div>
                 <h2 className="section-title" style={{ fontSize: 18 }}>
-                  分步骤漏斗
+                  关键图表
                 </h2>
-                <p className={styles.sectionCopy}>基于真实日志中的 step_id / step_name 统计每一步的到达、完成与平均耗时。</p>
+                <p className={styles.sectionCopy}>先看主图确认当前版本结论，再用趋势和构成图验证问题是否持续、是否集中。</p>
               </div>
-              <span className="pill">{config.onboardingFunnel.length} 个步骤</span>
+              <span className="pill">{config.compareVersionLabel ? "双版本分析" : "单版本分析"}</span>
             </div>
-            <div className={styles.highlightStrip}>
-              <div>
-                <div className={styles.highlightLabel}>最大流失步骤</div>
-                <div className={styles.highlightTitle}>
-                  {config.onboardingFunnel
-                    .slice()
-                    .sort((a, b) => b.dropoffCount - a.dropoffCount)[0]?.stepName ?? "暂无明显流失"}
-                </div>
+            <div className={styles.chartGrid}>
+              <div className={styles.primaryChart}>
+                {category === "level" && config.levelFunnel?.length ? (
+                  <LevelProgressCard
+                    title={chartTitle}
+                    copy={
+                      config.compareVersionLabel
+                        ? `按关卡展示开始、完成、失败与重试，并对比 ${config.compareVersionLabel} 的通关率变化。`
+                        : chartCopy
+                    }
+                    rows={config.levelFunnel}
+                    compareRows={config.compareLevelFunnel}
+                  />
+                ) : category === "monetization" && config.monetizationStoreFunnel?.length ? (
+                  <MonetizationDualFunnelCard
+                    title={chartTitle}
+                    copy="双漏斗同时展示商店/礼包曝光链路和支付请求链路，优先判断转化损耗发生在哪一层。"
+                    storeFunnel={config.monetizationStoreFunnel}
+                    paymentFunnel={config.monetizationPaymentFunnel ?? []}
+                  />
+                ) : category === "ads" && config.adPlacementBreakdown?.length ? (
+                  <AdPlacementFlowCard
+                    title={chartTitle}
+                    copy="按广告位展示请求、播放、点击与发奖，优先识别表现最弱的 placement。"
+                    placements={config.adPlacementBreakdown}
+                  />
+                ) : (
+                  <BarChartCard
+                    title={chartTitle}
+                    copy={config.compareVersionLabel ? `深色柱为 ${config.versionLabel}，浅色柱为 ${config.compareVersionLabel}。${chartCopy}` : chartCopy}
+                    values={config.main}
+                    color={config.color}
+                    compareValues={config.compareMain}
+                  />
+                )}
               </div>
-              <div className={styles.highlightMeta}>
-                流失{" "}
-                {config.onboardingFunnel
-                  .slice()
-                  .sort((a, b) => b.dropoffCount - a.dropoffCount)[0]?.dropoffCount ?? 0}{" "}
-                人
+              <div className={styles.secondaryCharts}>
+                <LineChartCard
+                  title={trendTitle}
+                  copy={config.compareVersionLabel ? `实线为 ${config.versionLabel}，虚线为 ${config.compareVersionLabel}。` : "观察最近导入或模拟批次的变化，判断问题是偶发波动还是持续趋势。"}
+                  values={config.trend}
+                  color={config.color}
+                  compareValues={config.compareTrend}
+                />
+                <DonutChartCard
+                  title={auxTitle}
+                  copy={auxCopy}
+                  values={config.aux}
+                  labels={config.auxLabels}
+                  colors={[config.color, "var(--blue)", "var(--violet)", "var(--teal)", "var(--red)", "var(--gold)"].slice(
+                    0,
+                    config.aux.length
+                  )}
+                />
               </div>
-            </div>
-            <div className={styles.deepDiveGrid}>
-              {config.onboardingFunnel.map((row) => (
-                <div key={`${row.stepId}-${row.stepName}`} className={styles.deepDiveCard}>
-                  <div className={styles.deepDiveTitle}>{row.stepName || row.stepId}</div>
-                  <div className={styles.deepDiveMeta}>步骤 {row.stepId || "未命名"}</div>
-                  <div className={styles.deepDiveValue}>{row.completionRate.toFixed(1)}%</div>
-                  <div className={styles.deepDiveStats}>
-                    <span>{row.arrivals} 到达</span>
-                    <span>{row.completions} 完成</span>
-                    <span>流失 {row.dropoffCount}</span>
-                    <span>{row.avgDuration.toFixed(1)} 秒</span>
-                  </div>
-                </div>
-              ))}
             </div>
           </section>
         ) : null}
@@ -762,16 +943,18 @@ export default async function AnalyticsCategoryPage({
           </section>
         ) : null}
 
-        <AnalyticsDetailClient
-          ranking={config.ranking}
-          detailRows={config.detailRows}
-          versionLabel={config.versionLabel}
-          compareVersionLabel={config.compareVersionLabel}
-          insight={config.insight}
-          compareInsight={config.compareInsight}
-          color={config.color}
-          initialFilter={detailFilter ?? "all"}
-        />
+        {category !== "onboarding" ? (
+          <AnalyticsDetailClient
+            ranking={config.ranking}
+            detailRows={config.detailRows}
+            versionLabel={config.versionLabel}
+            compareVersionLabel={config.compareVersionLabel}
+            insight={config.insight}
+            compareInsight={config.compareInsight}
+            color={config.color}
+            initialFilter={detailFilter ?? "all"}
+          />
+        ) : null}
       </div>
     </AppShell>
   );

@@ -128,6 +128,32 @@ type ImportSummary = {
   };
 };
 
+type OperationsModuleKey = "onboarding" | "level" | "monetization" | "ads";
+
+export type OperationsOverviewData = {
+  projectId: string | null;
+  sourceLabel: string;
+  versionLabel: string;
+  compareVersionLabel: string | null;
+  currentImportId: string | null;
+  technicalSuccessRate: number;
+  technicalErrorCount: number;
+  businessFailureCount: number;
+  moduleCoverage: number;
+  hasInference: boolean;
+  moduleCards: Array<{
+    key: OperationsModuleKey;
+    label: string;
+    summary: string;
+    primaryMetric: string;
+    anomaly: string;
+    href: string;
+  }>;
+  anomalyShortcuts: Array<{ label: string; href: string }>;
+  importOptions: Array<{ id: string; label: string; source?: string | null }>;
+  versionOptions: string[];
+};
+
 const fallbackConfig = {
   system: {
     title: "公共事件运营分析",
@@ -350,8 +376,8 @@ function versionDelta(current: number, compare: number | null | undefined, suffi
 }
 
 function buildOnboardingStepRows(summary: ImportSummary, compareSummary?: ImportSummary) {
-  const currentRows = deriveOnboardingFunnel(summary.onboardingFunnel ?? summary.onboardingSteps ?? []);
-  const compareRows = deriveOnboardingFunnel(compareSummary?.onboardingFunnel ?? compareSummary?.onboardingSteps ?? []);
+  const currentRows = resolveOnboardingFunnelRows(summary);
+  const compareRows = resolveOnboardingFunnelRows(compareSummary);
 
   return currentRows.map((step) => {
     const compare = compareRows.find((item) => item.stepId === step.stepId);
@@ -366,7 +392,7 @@ function buildOnboardingStepRows(summary: ImportSummary, compareSummary?: Import
   });
 }
 
-function deriveOnboardingFunnel(
+export function deriveOnboardingFunnel(
   rows: Array<{
     stepId: string;
     stepName: string;
@@ -384,6 +410,12 @@ function deriveOnboardingFunnel(
       dropoffCount: row.dropoffCount ?? Math.max(0, row.arrivals - nextArrivals)
     };
   });
+}
+
+export function resolveOnboardingFunnelRows(
+  summary?: Pick<ImportSummary, "onboardingFunnel" | "onboardingStepTrend" | "onboardingSteps">
+) {
+  return deriveOnboardingFunnel(summary?.onboardingFunnel ?? summary?.onboardingStepTrend ?? summary?.onboardingSteps ?? []);
 }
 
 function buildLevelRows(summary: ImportSummary, compareSummary?: ImportSummary) {
@@ -448,7 +480,7 @@ function buildAdRows(summary: ImportSummary, compareSummary?: ImportSummary) {
 }
 
 function biggestOnboardingDrop(summary: ImportSummary) {
-  const biggest = (summary.onboardingFunnel ?? []).slice().sort((a, b) => b.dropoffCount - a.dropoffCount)[0];
+  const biggest = resolveOnboardingFunnelRows(summary).slice().sort((a, b) => b.dropoffCount - a.dropoffCount)[0];
   if (!biggest) {
     return "暂无显著流失步骤";
   }
@@ -471,8 +503,8 @@ function buildOnboardingCompareInsight(summary: ImportSummary, compareSummary?: 
   if (!compareSummary || !compareVersion) {
     return `当前漏斗中流失最明显的是 ${biggest}。`;
   }
-  const currentDrop = (summary.onboardingFunnel ?? []).reduce((max, item) => Math.max(max, item.dropoffCount), 0);
-  const compareDrop = (compareSummary.onboardingFunnel ?? []).reduce((max, item) => Math.max(max, item.dropoffCount), 0);
+  const currentDrop = resolveOnboardingFunnelRows(summary).reduce((max, item) => Math.max(max, item.dropoffCount), 0);
+  const compareDrop = resolveOnboardingFunnelRows(compareSummary).reduce((max, item) => Math.max(max, item.dropoffCount), 0);
   return `当前漏斗中流失最明显的是 ${biggest}，相较 ${compareVersion} 的最大步骤流失 ${(currentDrop - compareDrop > 0 ? "+" : "")}${currentDrop - compareDrop}。`;
 }
 
@@ -482,6 +514,9 @@ function resolveCompareImport(
   compareVersion?: string | null
 ) {
   if (compareVersion) {
+    if (compareVersion === currentVersion) {
+      return null;
+    }
     return imports.find((item) => item.version === compareVersion) ?? null;
   }
 
@@ -501,6 +536,182 @@ function resolveCurrentImport(
 
 function emptyCompareSeries(values: number[]) {
   return values.map(() => 0);
+}
+
+function buildAnalyticsHref(
+  category: OperationsModuleKey,
+  options: {
+    projectId?: string | null;
+    compareVersion?: string | null;
+    currentImportId?: string | null;
+    detailFilter?: "all" | "abnormal" | "delta";
+  }
+) {
+  const params = new URLSearchParams();
+
+  if (options.projectId) {
+    params.set("projectId", options.projectId);
+  }
+  if (options.compareVersion) {
+    params.set("compareVersion", options.compareVersion);
+  }
+  if (options.currentImportId) {
+    params.set("importId", options.currentImportId);
+  }
+  if (options.detailFilter) {
+    params.set("detailFilter", options.detailFilter);
+  }
+
+  const query = params.toString();
+  return `/analytics/${category}${query ? `?${query}` : ""}`;
+}
+
+function formatOverviewPercent(value: number | null | undefined) {
+  return `${(value ?? 0).toFixed(1)}%`;
+}
+
+function getOverviewMetric(
+  summary: ImportSummary,
+  category: OperationsModuleKey,
+  metricKey: string
+) {
+  return summary.categories?.[category]?.metrics?.[metricKey] ?? null;
+}
+
+function biggestStoreLoss(summary: ImportSummary) {
+  const stages = summary.monetizationStoreFunnel ?? [];
+
+  if (stages.length < 2) {
+    return "暂无明显转化损耗点";
+  }
+
+  const worstStage = stages
+    .slice(1)
+    .map((stage, index) => {
+      const previous = stages[index];
+      return {
+        label: `${previous?.label ?? "上一阶段"} -> ${stage.label}`,
+        drop: Math.max((previous?.count ?? 0) - stage.count, 0)
+      };
+    })
+    .sort((a, b) => b.drop - a.drop)[0];
+
+  if (!worstStage || worstStage.drop <= 0) {
+    return "暂无明显转化损耗点";
+  }
+
+  return `${worstStage.label} 流失 ${worstStage.drop}`;
+}
+
+function biggestLevelProblem(summary: ImportSummary) {
+  const worstLevel = levelFunnelRanking(summary)
+    .slice()
+    .sort((a, b) => b.failRate - a.failRate)[0];
+
+  if (!worstLevel) {
+    return "暂无高失败关卡";
+  }
+
+  const label = worstLevel.levelType ? `${worstLevel.levelId} (${worstLevel.levelType})` : worstLevel.levelId;
+  return `${label} 失败率 ${worstLevel.failRate.toFixed(1)}%`;
+}
+
+function weakestAdPlacement(summary: ImportSummary) {
+  const weakest = (summary.adPlacementBreakdown ?? [])
+    .slice()
+    .sort((a, b) => a.clickRate - b.clickRate)[0];
+
+  if (!weakest) {
+    return "暂无异常广告位";
+  }
+
+  return `${weakest.placement} 点击率 ${weakest.clickRate.toFixed(1)}%`;
+}
+
+function hasInferredData(summary: ImportSummary) {
+  return Boolean(summary.monetizationStoreFunnel?.some((item) => item.inferred))
+    || Boolean(summary.monetizationPaymentFunnel?.some((item) => item.inferred))
+    || Boolean(summary.giftPackDistribution?.some((item) => item.inferred))
+    || Boolean(summary.adPlacementBreakdown?.some((item) => item.inferred));
+}
+
+function buildOverviewModuleCards(
+  summary: ImportSummary,
+  options: {
+    projectId?: string | null;
+    compareVersion?: string | null;
+    currentImportId?: string | null;
+  }
+): OperationsOverviewData["moduleCards"] {
+  const onboardingCompletion = getOverviewMetric(summary, "onboarding", "completionRate");
+  const levelCompletion = getOverviewMetric(summary, "level", "completionRate");
+  const monetizationSuccess = summary.monetizationPaymentFunnel?.at(-1)?.rate ?? getOverviewMetric(summary, "monetization", "conversionRate");
+  const adRewardRate = getOverviewMetric(summary, "ads", "rewardRate");
+
+  return [
+    {
+      key: "onboarding",
+      label: "新手引导",
+      summary: "查看步骤漏斗、关键流失节点和步骤耗时，优先定位玩家最容易掉队的引导环节。",
+      primaryMetric: onboardingCompletion === null ? "引导完成率待导入" : `引导完成率 ${formatOverviewPercent(onboardingCompletion)}`,
+      anomaly: biggestOnboardingDrop(summary),
+      href: buildAnalyticsHref("onboarding", options)
+    },
+    {
+      key: "level",
+      label: "关卡与局内行为",
+      summary: "查看关卡开始、失败、重试与局内操作热点，判断哪一关最值得优先回看。",
+      primaryMetric: levelCompletion === null ? "平均通关率待导入" : `平均通关率 ${formatOverviewPercent(levelCompletion)}`,
+      anomaly: biggestLevelProblem(summary),
+      href: buildAnalyticsHref("level", options)
+    },
+    {
+      key: "monetization",
+      label: "商业化",
+      summary: "查看商店到支付成功的主链路与礼包表现，快速锁定最大转化损耗点。",
+      primaryMetric: monetizationSuccess === null ? "支付成功率待导入" : `支付成功率 ${formatOverviewPercent(monetizationSuccess)}`,
+      anomaly: biggestStoreLoss(summary),
+      href: buildAnalyticsHref("monetization", options)
+    },
+    {
+      key: "ads",
+      label: "广告分析",
+      summary: "查看广告位请求、播放、点击和发奖承接，识别表现最弱的广告位。",
+      primaryMetric: adRewardRate === null ? "奖励领取率待导入" : `奖励领取率 ${formatOverviewPercent(adRewardRate)}`,
+      anomaly: weakestAdPlacement(summary),
+      href: buildAnalyticsHref("ads", options)
+    }
+  ];
+}
+
+function buildOverviewAnomalyShortcuts(
+  summary: ImportSummary,
+  options: {
+    projectId?: string | null;
+    compareVersion?: string | null;
+    currentImportId?: string | null;
+  }
+): OperationsOverviewData["anomalyShortcuts"] {
+  const onboardingHref = `${buildAnalyticsHref("onboarding", options)}#onboarding-signal`;
+
+  return [
+    {
+      label: `最大流失步骤: ${biggestOnboardingDrop(summary)}`,
+      href: onboardingHref
+    },
+    {
+      label: `失败最集中关卡: ${biggestLevelProblem(summary)}`,
+      href: buildAnalyticsHref("level", { ...options, detailFilter: "abnormal" })
+    },
+    {
+      label: `最大转化损耗点: ${biggestStoreLoss(summary)}`,
+      href: buildAnalyticsHref("monetization", { ...options, detailFilter: "delta" })
+    },
+    {
+      label: `最弱广告位: ${weakestAdPlacement(summary)}`,
+      href: buildAnalyticsHref("ads", { ...options, detailFilter: "abnormal" })
+    }
+  ];
 }
 
 function buildDetailRows(
@@ -626,6 +837,89 @@ function buildDetailRows(
   });
 
   return rows;
+}
+
+export async function getOperationsOverviewData(
+  projectId?: string | null,
+  compareVersion?: string | null,
+  currentImportId?: string | null
+): Promise<OperationsOverviewData> {
+  if (!projectId) {
+    const emptySummary = {} as ImportSummary;
+
+    return {
+      projectId: null,
+      sourceLabel: "演示数据",
+      versionLabel: "未导入",
+      compareVersionLabel: null,
+      currentImportId: null,
+      technicalSuccessRate: 0,
+      technicalErrorCount: 0,
+      businessFailureCount: 0,
+      moduleCoverage: 0,
+      hasInference: false,
+      moduleCards: buildOverviewModuleCards(emptySummary, {}),
+      anomalyShortcuts: buildOverviewAnomalyShortcuts(emptySummary, {}),
+      importOptions: [],
+      versionOptions: []
+    };
+  }
+
+  const latestImport = await getLatestImportForProject(projectId);
+
+  if (!latestImport) {
+    const emptySummary = {} as ImportSummary;
+
+    return {
+      projectId,
+      sourceLabel: "演示数据",
+      versionLabel: "未导入",
+      compareVersionLabel: null,
+      currentImportId: null,
+      technicalSuccessRate: 0,
+      technicalErrorCount: 0,
+      businessFailureCount: 0,
+      moduleCoverage: 0,
+      hasInference: false,
+      moduleCards: buildOverviewModuleCards(emptySummary, { projectId }),
+      anomalyShortcuts: buildOverviewAnomalyShortcuts(emptySummary, { projectId }),
+      importOptions: [],
+      versionOptions: []
+    };
+  }
+
+  const allImports = await getImportsForProject(projectId);
+  const currentImport = resolveCurrentImport(allImports, currentImportId) ?? latestImport;
+  const compareImport = resolveCompareImport(allImports, currentImport.version, compareVersion);
+  const versionOptions = [...new Set(allImports.map((item) => item.version))];
+  const importOptions = allImports.map((item) => ({
+    id: item.id,
+    label: `${item.fileName} / v${item.version}`,
+    source: item.source
+  }));
+  const summary = (currentImport.summaryJson ?? {}) as ImportSummary;
+  const cardOptions = {
+    projectId,
+    compareVersion: compareImport?.version ?? null,
+    currentImportId: currentImport.id ?? null
+  };
+
+  return {
+    projectId,
+    sourceLabel: sourceLabel(currentImport.source),
+    versionLabel: currentImport.version,
+    compareVersionLabel: compareImport?.version ?? null,
+    currentImportId: currentImport.id ?? null,
+    technicalSuccessRate: summary.technicalSuccessRate ?? 0,
+    technicalErrorCount: summary.technicalErrorCount ?? 0,
+    businessFailureCount: summary.businessFailureCount ?? 0,
+    moduleCoverage: summary.moduleCoverage ?? 0,
+    hasInference: hasInferredData(summary),
+    moduleCards: buildOverviewModuleCards(summary, cardOptions),
+    anomalyShortcuts: buildOverviewAnomalyShortcuts(summary, cardOptions),
+    importOptions,
+    versionOptions
+  };
 }
 
 export async function getAnalyticsCategoryData(
@@ -763,9 +1057,9 @@ export async function getAnalyticsCategoryData(
     const compareDuration = compareImport ? getCompareMetric("onboarding_avg_duration") : null;
 
     const onboardingTrendRows = summary.onboardingStepTrend ?? summary.onboardingSteps ?? [];
-    const onboardingRows = deriveOnboardingFunnel(summary.onboardingFunnel ?? onboardingTrendRows);
+    const onboardingRows = resolveOnboardingFunnelRows(summary);
     const compareOnboardingTrendRows = compareSummary.onboardingStepTrend ?? compareSummary.onboardingSteps ?? [];
-    const compareOnboardingRows = deriveOnboardingFunnel(compareSummary.onboardingFunnel ?? compareOnboardingTrendRows);
+    const compareOnboardingRows = resolveOnboardingFunnelRows(compareSummary);
     const funnelValues =
       onboardingRows.length > 0
         ? onboardingRows.map((item) => clampPercent((item.arrivals / Math.max(onboardingRows[0]?.arrivals || 1, 1)) * 100))
@@ -820,9 +1114,9 @@ export async function getAnalyticsCategoryData(
           : categorySummary.insight,
       compareInsight: buildOnboardingCompareInsight(summary, compareSummary, compareImport?.version),
       onboardingRows,
-      onboardingFunnel: summary.onboardingFunnel ?? onboardingRows,
+      onboardingFunnel: onboardingRows,
       onboardingStepTrend: onboardingTrendRows,
-      compareOnboardingFunnel: compareSummary.onboardingFunnel ?? compareOnboardingRows,
+      compareOnboardingFunnel: compareOnboardingRows,
       compareOnboardingStepTrend: compareOnboardingTrendRows
     };
   }

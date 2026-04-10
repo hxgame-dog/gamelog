@@ -64,8 +64,12 @@ test("buildImportSummary returns module payloads for onboarding, level, monetiza
   assert.equal(summary.onboardingFunnel?.[0]?.dropoffCount, 4);
   assert.equal(summary.levelFunnel?.[0]?.retries, 1);
   assert.equal(summary.levelFailReasonDistribution?.[0]?.name, "timeout");
+  assert.equal(typeof summary.technicalSuccessRate, "number");
   assert.equal(summary.technicalErrorCount, 0);
   assert.equal(summary.businessFailureCount, 1);
+  assert.equal(typeof summary.businessFailureCount, "number");
+  assert.equal(typeof summary.moduleCoverage, "number");
+  assert.ok(Array.isArray(summary.topEvents));
   assert.ok((summary.monetizationStoreFunnel?.[0]?.count ?? 0) >= 1);
   assert.equal(summary.monetizationPaymentFunnel?.at(-1)?.count, 1);
   assert.equal(packRow?.name, "starter_pack");
