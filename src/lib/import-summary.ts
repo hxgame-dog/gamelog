@@ -20,6 +20,10 @@ export type ImportSummary = {
   recordCount: number;
   successRate: number;
   errorCount: number;
+  technicalSuccessRate?: number;
+  technicalErrorCount?: number;
+  businessFailureCount?: number;
+  moduleCoverage?: number;
   unmatchedEvents: number;
   previewRows: ImportRow[];
   topEvents: RankedItem[];
@@ -290,7 +294,7 @@ function buildInsight(category: CategoryKey, summary: CategorySummary) {
     case "system":
       return summary.metrics.errorRate > 8
         ? "公共事件异常占比偏高，建议先核对 session 和 error 上报口径，再分析具体玩法模块。"
-        : "公共事件层整体稳定，可以继续作为版本对比和其他分类分析的基线。";
+        : "公共事件层整体稳定，可以继续作为版本对比和其他运营分析模块的基线。";
     case "onboarding":
       return summary.metrics.completionRate < 55
         ? "新手引导完成率偏低，建议优先排查中段步骤的提示强度与交互反馈。"
@@ -328,6 +332,7 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
   const rewardMapping = findMapping("reward_type");
 
   let errorCount = 0;
+  let businessFailureCount = 0;
   let unmatchedEvents = 0;
   let sessionStartCount = 0;
   let loginSuccessCount = 0;
@@ -448,7 +453,7 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
     }
 
     if (result === "fail" || result === "failed" || result === "error") {
-      errorCount += 1;
+      businessFailureCount += 1;
     }
 
     const category = classifyRow({
@@ -938,6 +943,12 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
     clicks: item.clicks
   }));
 
+  const moduleCoverage = clampPercent(
+    (["onboarding", "level", "ads", "monetization"] as const).reduce((count, key) => {
+      return count + (perCategory[key].count > 0 ? 1 : 0);
+    }, 0) / 4 * 100
+  );
+
   const healthScore = clampPercent(
     successRate * 45 +
       (categories.onboarding.metrics.completionRate / 100) * 20 +
@@ -951,7 +962,9 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
     { metricKey: "system_event_count", metricLabel: "公共事件量", metricValue: categories.system.metrics.eventCount, dimension: "system" },
     { metricKey: "system_valid_rate", metricLabel: "公共事件有效率", metricValue: categories.system.metrics.validRate, dimension: "system" },
     { metricKey: "system_error_rate", metricLabel: "公共事件异常占比", metricValue: categories.system.metrics.errorRate, dimension: "system" },
-    { metricKey: "import_success_rate", metricLabel: "导入通过率", metricValue: Number((successRate * 100).toFixed(2)), dimension: "overview" },
+    { metricKey: "import_success_rate", metricLabel: "技术通过率", metricValue: Number((successRate * 100).toFixed(2)), dimension: "overview" },
+    { metricKey: "business_failure_count", metricLabel: "业务失败事件数", metricValue: businessFailureCount, dimension: "overview" },
+    { metricKey: "module_coverage", metricLabel: "模块覆盖率", metricValue: moduleCoverage, dimension: "overview" },
     { metricKey: "health_score", metricLabel: "版本健康分", metricValue: healthScore, dimension: "overview" },
     { metricKey: "onboarding_reach_rate", metricLabel: "新手引导到达率", metricValue: categories.onboarding.metrics.reachRate, dimension: "onboarding" },
     { metricKey: "onboarding_completion_rate", metricLabel: "新手引导完成率", metricValue: categories.onboarding.metrics.completionRate, dimension: "onboarding" },
@@ -973,6 +986,10 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
     recordCount,
     successRate,
     errorCount,
+    technicalSuccessRate: successRate,
+    technicalErrorCount: errorCount,
+    businessFailureCount,
+    moduleCoverage,
     unmatchedEvents,
     previewRows,
     topEvents,

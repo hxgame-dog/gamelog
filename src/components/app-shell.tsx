@@ -14,7 +14,7 @@ const navItems: Array<{ href: string; label: string; hint: string; icon: NavIcon
   { href: "/projects", label: "项目管理", hint: "Projects", icon: "projects" },
   { href: "/plans", label: "方案设计", hint: "Planning", icon: "plans" },
   { href: "/imports", label: "数据导入", hint: "Import", icon: "imports" },
-  { href: "/analytics/onboarding", label: "分类分析", hint: "Analytics", icon: "analytics" },
+  { href: "/analytics/onboarding", label: "运营分析", hint: "Analytics", icon: "analytics" },
   { href: "/reports", label: "AI 报告", hint: "Reports", icon: "reports" },
   { href: "/settings/ai", label: "AI 设置", hint: "Settings", icon: "settings" }
 ];

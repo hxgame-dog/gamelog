@@ -405,12 +405,14 @@ function suggestTarget(header: string) {
 export function ImportsClient({
   projects,
   initialProjectId,
+  initialImportId,
   plansByProject,
   latestImportsByProject,
   importsHistoryByProject
 }: {
   projects: Project[];
   initialProjectId: string | null;
+  initialImportId: string | null;
   plansByProject: Record<string, Plan[]>;
   latestImportsByProject: Record<string, ImportPreview | null>;
   importsHistoryByProject: Record<string, ImportPreview[]>;
@@ -435,7 +437,7 @@ export function ImportsClient({
     latestImportsByProject[initialProjectId ?? projects[0]?.id ?? ""]?.id ?? null
   );
   const [selectedHistoryImportId, setSelectedHistoryImportId] = useState(
-    latestImportsByProject[initialProjectId ?? projects[0]?.id ?? ""]?.id ?? null
+    initialImportId ?? latestImportsByProject[initialProjectId ?? projects[0]?.id ?? ""]?.id ?? null
   );
   const [previewFilter, setPreviewFilter] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -792,20 +794,20 @@ export function ImportsClient({
             <>
               <div className={styles.summaryGrid}>
                 <div className={styles.summaryItem}>
-                  <div className={styles.summaryLabel}>导入通过率</div>
-                  <div className={styles.summaryValue}>{displaySummary.successRate.toFixed(1)}%</div>
+                  <div className={styles.summaryLabel}>技术通过率</div>
+                  <div className={styles.summaryValue}>{(displaySummary.technicalSuccessRate ?? displaySummary.successRate).toFixed(1)}%</div>
                 </div>
                 <div className={styles.summaryItem}>
-                  <div className={styles.summaryLabel}>错误记录</div>
-                  <div className={styles.summaryValue}>{displaySummary.errorCount}</div>
+                  <div className={styles.summaryLabel}>技术异常</div>
+                  <div className={styles.summaryValue}>{displaySummary.technicalErrorCount ?? displaySummary.errorCount}</div>
                 </div>
                 <div className={styles.summaryItem}>
-                  <div className={styles.summaryLabel}>未匹配事件</div>
-                  <div className={styles.summaryValue}>{displaySummary.unmatchedEvents}</div>
+                  <div className={styles.summaryLabel}>业务失败事件</div>
+                  <div className={styles.summaryValue}>{displaySummary.businessFailureCount ?? 0}</div>
                 </div>
                 <div className={styles.summaryItem}>
-                  <div className={styles.summaryLabel}>日志总数</div>
-                  <div className={styles.summaryValue}>{displaySummary.recordCount}</div>
+                  <div className={styles.summaryLabel}>模块覆盖率</div>
+                  <div className={styles.summaryValue}>{(displaySummary.moduleCoverage ?? 0).toFixed(1)}%</div>
                 </div>
               </div>
               <div className={styles.ctaRow}>
@@ -830,8 +832,9 @@ export function ImportsClient({
               {compareHistoryImport?.summaryJson ? (
                 <div className={styles.compareStrip}>
                   <span>对比批次：{compareHistoryImport.fileName} / v{compareHistoryImport.version}</span>
-                  <span>通过率 {summaryDelta(displaySummary.successRate, compareHistoryImport.summaryJson.successRate, "%")}</span>
-                  <span>异常数 {summaryDelta(displaySummary.errorCount, compareHistoryImport.summaryJson.errorCount)}</span>
+                  <span>技术通过率 {summaryDelta(displaySummary.technicalSuccessRate ?? displaySummary.successRate, compareHistoryImport.summaryJson.technicalSuccessRate ?? compareHistoryImport.summaryJson.successRate, "%")}</span>
+                  <span>技术异常 {summaryDelta(displaySummary.technicalErrorCount ?? displaySummary.errorCount, compareHistoryImport.summaryJson.technicalErrorCount ?? compareHistoryImport.summaryJson.errorCount)}</span>
+                  <span>业务失败 {summaryDelta(displaySummary.businessFailureCount ?? 0, compareHistoryImport.summaryJson.businessFailureCount ?? 0)}</span>
                   <span>记录数 {summaryDelta(displaySummary.recordCount, compareHistoryImport.summaryJson.recordCount)}</span>
                 </div>
               ) : null}
@@ -911,7 +914,7 @@ export function ImportsClient({
                     </div>
                     <div className={styles.historyMeta}>
                       <span>记录 {itemSummary?.recordCount ?? 0}</span>
-                      <span>通过率 {itemSummary?.successRate?.toFixed(1) ?? "0.0"}%</span>
+                      <span>技术通过率 {(itemSummary?.technicalSuccessRate ?? itemSummary?.successRate ?? 0).toFixed(1)}%</span>
                       <span>{item.uploadedAt ? new Date(item.uploadedAt).toLocaleString("zh-CN") : "刚刚"}</span>
                     </div>
                   </button>
@@ -965,7 +968,7 @@ export function ImportsClient({
               模拟数据说明
             </h2>
             <div className={styles.emptyState}>
-              当前入口会基于已确认的方案结构生成事件日志，并自动触发与真实导入一致的摘要聚合，所以生成完成后你可以直接去分类分析和 AI 报告页查看结果。
+              当前入口会基于已确认的方案结构生成事件日志，并自动触发与真实导入一致的摘要聚合，所以生成完成后你可以直接去运营分析和 AI 报告页查看结果。
             </div>
           </section>
         )}

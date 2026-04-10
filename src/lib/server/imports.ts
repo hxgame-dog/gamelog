@@ -160,7 +160,7 @@ function buildInsight(category: CategoryKey, summary: CategorySummary) {
     case "system":
       return summary.metrics.errorRate > 8
         ? "公共事件异常占比偏高，建议先核对 session 和 error 上报口径，再分析具体玩法模块。"
-        : "公共事件层整体稳定，可以继续作为版本对比和其他分类分析的基线。";
+        : "公共事件层整体稳定，可以继续作为版本对比和其他运营分析模块的基线。";
     case "onboarding":
       return summary.metrics.completionRate < 55
         ? "新手引导完成率偏低，建议优先排查中段步骤的提示强度与交互反馈。"

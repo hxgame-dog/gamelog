@@ -14,6 +14,10 @@ type ImportCategorySummary = {
 };
 
 type ImportSummary = {
+  technicalSuccessRate?: number;
+  technicalErrorCount?: number;
+  businessFailureCount?: number;
+  moduleCoverage?: number;
   previewRows?: Array<Record<string, string | number | boolean | null>>;
   topEvents?: RankedItem[];
   topPlacements?: RankedItem[];
@@ -126,7 +130,7 @@ type ImportSummary = {
 
 const fallbackConfig = {
   system: {
-    title: "公共事件看板",
+    title: "公共事件运营分析",
     color: "var(--blue)",
     metrics: [
       { label: "活跃设备", value: "18.2k" },
@@ -146,7 +150,7 @@ const fallbackConfig = {
     insight: "公共事件层面没有出现新的结构性异常，可以继续作为版本比较的基线，帮助判断问题是否来自具体玩法模块。"
   },
   onboarding: {
-    title: "新手引导看板",
+    title: "新手引导运营分析",
     color: "var(--green)",
     metrics: [
       { label: "首步到达率", value: "94.2%" },
@@ -166,7 +170,7 @@ const fallbackConfig = {
     insight: "引导第 4 步的完成率和耗时同时恶化，更像理解成本变高而不是单点埋点异常，建议优先回看文案与提示位置。"
   },
   level: {
-    title: "关卡事件看板",
+    title: "关卡与局内行为运营分析",
     color: "var(--amber)",
     metrics: [
       { label: "关卡开局率", value: "88.6%" },
@@ -186,7 +190,7 @@ const fallbackConfig = {
     insight: "关卡 12 的失败原因集中在道具误用与短暂停顿，说明玩家并不是不会玩，而是缺少一个更及时的操作引导。"
   },
   monetization: {
-    title: "商业化看板",
+    title: "商业化运营分析",
     color: "var(--gold)",
     metrics: [
       { label: "首日付费转化", value: "8.7%" },
@@ -206,7 +210,7 @@ const fallbackConfig = {
     insight: "当前付费弹窗和广告位没有明显相互挤压，商业化节奏整体健康，适合小幅试探提升曝光而不是大改策略。"
   },
   ads: {
-    title: "广告事件看板",
+    title: "广告运营分析",
     color: "var(--violet)",
     metrics: [
       { label: "广告触发率", value: "42.4%" },
@@ -226,7 +230,7 @@ const fallbackConfig = {
     insight: "广告整体完成率不错，但插屏在关卡结束后的承接略硬，建议先做一次时机 A/B，而不是直接增加频次。"
   },
   custom: {
-    title: "自定义分类看板",
+    title: "自定义运营分析",
     color: "var(--teal)",
     metrics: [
       { label: "自定义事件数", value: "14" },
@@ -346,8 +350,11 @@ function versionDelta(current: number, compare: number | null | undefined, suffi
 }
 
 function buildOnboardingStepRows(summary: ImportSummary, compareSummary?: ImportSummary) {
-  return (summary.onboardingSteps ?? []).map((step) => {
-    const compare = compareSummary?.onboardingSteps?.find((item) => item.stepId === step.stepId);
+  const currentRows = deriveOnboardingFunnel(summary.onboardingFunnel ?? summary.onboardingSteps ?? []);
+  const compareRows = deriveOnboardingFunnel(compareSummary?.onboardingFunnel ?? compareSummary?.onboardingSteps ?? []);
+
+  return currentRows.map((step) => {
+    const compare = compareRows.find((item) => item.stepId === step.stepId);
     return {
       label: step.stepName || step.stepId,
       current: `${step.arrivals} 到达 / ${step.completions} 完成`,
@@ -355,6 +362,26 @@ function buildOnboardingStepRows(summary: ImportSummary, compareSummary?: Import
       delta: versionDelta(step.completionRate, compare?.completionRate ?? null),
       note: `完成率 ${step.completionRate.toFixed(1)}%，平均耗时 ${step.avgDuration.toFixed(1)} 秒`,
       kind: "step" as const
+    };
+  });
+}
+
+function deriveOnboardingFunnel(
+  rows: Array<{
+    stepId: string;
+    stepName: string;
+    arrivals: number;
+    completions: number;
+    completionRate: number;
+    avgDuration: number;
+    dropoffCount?: number;
+  }>
+) {
+  return rows.map((row, index) => {
+    const nextArrivals = rows[index + 1]?.arrivals ?? row.completions;
+    return {
+      ...row,
+      dropoffCount: row.dropoffCount ?? Math.max(0, row.arrivals - nextArrivals)
     };
   });
 }
@@ -676,7 +703,15 @@ export async function getAnalyticsCategoryData(
     compareVersionLabel: compareImport?.version ?? null,
     versionOptions,
     currentImportId: currentImport.id,
-    importOptions
+    importOptions,
+    technicalSuccessRate: summary.technicalSuccessRate ?? 0,
+    technicalErrorCount: summary.technicalErrorCount ?? 0,
+    businessFailureCount: summary.businessFailureCount ?? 0,
+    moduleCoverage: summary.moduleCoverage ?? 0,
+    compareTechnicalSuccessRate: compareSummary.technicalSuccessRate ?? null,
+    compareTechnicalErrorCount: compareSummary.technicalErrorCount ?? null,
+    compareBusinessFailureCount: compareSummary.businessFailureCount ?? null,
+    compareModuleCoverage: compareSummary.moduleCoverage ?? null
   };
 
   const compareSummaryText = compareImport
@@ -727,9 +762,10 @@ export async function getAnalyticsCategoryData(
     const avgDuration = getMetric("onboarding_avg_duration");
     const compareDuration = compareImport ? getCompareMetric("onboarding_avg_duration") : null;
 
-    const onboardingRows = summary.onboardingFunnel ?? [];
     const onboardingTrendRows = summary.onboardingStepTrend ?? summary.onboardingSteps ?? [];
-    const compareOnboardingRows = compareSummary.onboardingFunnel ?? [];
+    const onboardingRows = deriveOnboardingFunnel(summary.onboardingFunnel ?? onboardingTrendRows);
+    const compareOnboardingTrendRows = compareSummary.onboardingStepTrend ?? compareSummary.onboardingSteps ?? [];
+    const compareOnboardingRows = deriveOnboardingFunnel(compareSummary.onboardingFunnel ?? compareOnboardingTrendRows);
     const funnelValues =
       onboardingRows.length > 0
         ? onboardingRows.map((item) => clampPercent((item.arrivals / Math.max(onboardingRows[0]?.arrivals || 1, 1)) * 100))
@@ -785,9 +821,9 @@ export async function getAnalyticsCategoryData(
       compareInsight: buildOnboardingCompareInsight(summary, compareSummary, compareImport?.version),
       onboardingRows,
       onboardingFunnel: summary.onboardingFunnel ?? onboardingRows,
-      onboardingStepTrend: summary.onboardingStepTrend ?? onboardingTrendRows,
+      onboardingStepTrend: onboardingTrendRows,
       compareOnboardingFunnel: compareSummary.onboardingFunnel ?? compareOnboardingRows,
-      compareOnboardingStepTrend: compareSummary.onboardingStepTrend ?? compareSummary.onboardingSteps ?? []
+      compareOnboardingStepTrend: compareOnboardingTrendRows
     };
   }
 

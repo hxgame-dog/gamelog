@@ -83,6 +83,72 @@
   line-height: 1.7;
 }
 
+.qualityGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.qualityCard {
+  position: relative;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: #fcfcfb;
+}
+
+.qualityCardInteractive {
+  transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.qualityCardInteractive:hover {
+  border-color: rgba(31, 154, 133, 0.28);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-soft);
+}
+
+.qualityCardLink {
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  z-index: 1;
+}
+
+.qualityLabel {
+  position: relative;
+  z-index: 2;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.qualityValue {
+  position: relative;
+  z-index: 2;
+  margin-top: 8px;
+  font-family: var(--font-number);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.qualityMeta {
+  position: relative;
+  z-index: 2;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.qualityHint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .metricGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -132,6 +198,38 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-top: 14px;
+}
+
+.signalGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.signalCard {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(31, 154, 133, 0.16);
+  background: linear-gradient(180deg, rgba(31, 154, 133, 0.06) 0%, rgba(31, 154, 133, 0.02) 100%);
+}
+
+.signalLabel {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.signalTitle {
+  margin-top: 8px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.signalMeta {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 .highlightStrip {
@@ -517,6 +615,13 @@
 
 .detailTableCellStrong {
   font-weight: 600;
+}
+
+@media (max-width: 1080px) {
+  .qualityGrid,
+  .signalGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .detailDelta,

@@ -59,7 +59,7 @@ export default async function HomePage() {
           </div>
           <p className={styles.compareSummaryCopy}>
             首页现在会优先汇总最新导入批次和最近一个可对比版本的健康分、异常数与分类快照。
-            如果某个分类出现显著波动，可以直接进入分类分析页继续看主图、趋势和结构化明细。
+            如果某个模块出现显著波动，可以直接进入运营分析页继续看主图、趋势和结构化明细。
           </p>
         </div>
         <div className={styles.metricGrid}>

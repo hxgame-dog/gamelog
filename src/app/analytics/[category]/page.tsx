@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import styles from "@/components/analytics-page.module.css";
@@ -53,6 +54,14 @@ export default async function AnalyticsCategoryPage({
     versionLabel: string;
     currentImportId?: string | null;
     compareVersionLabel?: string | null;
+    technicalSuccessRate?: number;
+    technicalErrorCount?: number;
+    businessFailureCount?: number;
+    moduleCoverage?: number;
+    compareTechnicalSuccessRate?: number | null;
+    compareTechnicalErrorCount?: number | null;
+    compareBusinessFailureCount?: number | null;
+    compareModuleCoverage?: number | null;
     versionOptions?: string[];
     importOptions?: Array<{ id: string; label: string; source?: string | null }>;
     categories: ReadonlyArray<{ key: string; label: string }>;
@@ -119,15 +128,71 @@ export default async function AnalyticsCategoryPage({
         ? "优先看失败原因分布，判断是超时、资源不足还是操作问题。"
         : category === "monetization"
           ? "礼包分布用于判断哪个礼包承担了主要曝光、下单和成功。"
+        : category === "ads"
+          ? "广告位构成用于识别流量主要集中在哪些 placement。"
+          : "查看当前分类中最主要的事件构成、广告位分布或失败原因。";
+  const pageCopy =
+    category === "onboarding"
+      ? "围绕新手引导步骤展示漏斗、流失、耗时和版本差异，帮助团队快速定位最容易掉队的步骤。"
+      : category === "level"
+        ? "围绕关卡开始、完成、失败、重试和局内行为构成，帮助团队判断哪一关卡住、为什么卡住。"
+        : category === "monetization"
+          ? "围绕商店/礼包曝光到支付成功的链路，查看转化损耗点、礼包分布和版本变化。"
           : category === "ads"
-            ? "广告位构成用于识别流量主要集中在哪些 placement。"
-            : "查看当前分类中最主要的事件构成、广告位分布或失败原因。";
+            ? "围绕广告位请求、播放、点击和发奖流转，帮助团队识别表现最弱的广告位和链路断点。"
+          : "围绕当前模块展示版本对比、关键指标、核心结构图和 AI 判断，帮助团队快速确认问题位置与影响范围。";
+
+  const levelWorst = config.levelFunnel?.slice().sort((a, b) => b.failRate - a.failRate)[0] ?? null;
+  const levelRetryHot = config.levelRetryRanking?.slice().sort((a, b) => b.retryRate - a.retryRate)[0] ?? null;
+  const microflowHot =
+    config.microflowByLevel
+      ?.flatMap((group) =>
+        group.actions.map((action) => ({
+          levelId: group.levelId,
+          ...action
+        }))
+      )
+      .slice()
+      .sort((a, b) => b.ratio - a.ratio)[0] ?? null;
+  const storeLossStage =
+    config.monetizationStoreFunnel && config.monetizationStoreFunnel.length > 1
+      ? config.monetizationStoreFunnel
+          .slice(1)
+          .map((stage, index) => {
+            const prev = config.monetizationStoreFunnel?.[index];
+            const drop = Math.max((prev?.count ?? 0) - stage.count, 0);
+            return {
+              label: `${prev?.label ?? "上一阶段"} -> ${stage.label}`,
+              drop
+            };
+          })
+          .sort((a, b) => b.drop - a.drop)[0] ?? null
+      : null;
+  const bestPack = config.giftPackDistribution?.slice().sort((a, b) => b.successRate - a.successRate)[0] ?? null;
+  const weakestPlacement = config.adPlacementBreakdown?.slice().sort((a, b) => a.clickRate - b.clickRate)[0] ?? null;
+  const highestVolumePlacement =
+    config.adPlacementBreakdown?.slice().sort((a, b) => b.requests - a.requests)[0] ?? null;
+  const hasInference =
+    Boolean(config.monetizationStoreFunnel?.some((item) => item.inferred)) ||
+    Boolean(config.monetizationPaymentFunnel?.some((item) => item.inferred)) ||
+    Boolean(config.giftPackDistribution?.some((item) => item.inferred)) ||
+    Boolean(config.adPlacementBreakdown?.some((item) => item.inferred));
+  const qualityNote = hasInference
+    ? "当前页面包含部分推断统计，建议结合导入预览一起核对口径。"
+    : "当前页面主要基于显式日志链路统计，可直接用于版本对比。";
+  const importPreviewHref =
+    activeProjectId && config.currentImportId
+      ? `/imports?${new URLSearchParams({
+          projectId: activeProjectId,
+          importId: config.currentImportId
+        }).toString()}`
+      : null;
 
   return (
     <AppShell currentPath="/analytics">
       <PageHeader
         title={config.title}
-        copy="围绕当前分类展示版本对比、关键指标、核心结构图和 AI 判断，帮助团队快速确认问题位置与影响范围。"
+        copy={pageCopy}
         actions={
           <div className="header-actions">
             <span className="pill">{config.sourceLabel}</span>
@@ -229,6 +294,46 @@ export default async function AnalyticsCategoryPage({
               </div>
             </div>
             <p className={styles.compareSummaryCopy}>{config.compareInsight ?? config.insight}</p>
+          </div>
+
+          <div className={styles.qualityGrid}>
+            <div className={`${styles.qualityCard} ${importPreviewHref ? styles.qualityCardInteractive : ""}`}>
+              {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看当前批次导入预览" /> : null}
+              <div className={styles.qualityLabel}>技术通过率</div>
+              <div className={styles.qualityValue}>{config.technicalSuccessRate?.toFixed(1) ?? "0.0"}%</div>
+              {config.compareTechnicalSuccessRate !== null && config.compareTechnicalSuccessRate !== undefined ? (
+                <div className={styles.qualityMeta}>对比 {config.compareVersionLabel}: {config.compareTechnicalSuccessRate.toFixed(1)}%</div>
+              ) : null}
+            </div>
+            <div className={`${styles.qualityCard} ${importPreviewHref ? styles.qualityCardInteractive : ""}`}>
+              {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看当前批次导入预览" /> : null}
+              <div className={styles.qualityLabel}>技术异常</div>
+              <div className={styles.qualityValue}>{config.technicalErrorCount ?? 0}</div>
+              {config.compareTechnicalErrorCount !== null && config.compareTechnicalErrorCount !== undefined ? (
+                <div className={styles.qualityMeta}>对比 {config.compareVersionLabel}: {config.compareTechnicalErrorCount}</div>
+              ) : null}
+            </div>
+            <div className={`${styles.qualityCard} ${importPreviewHref ? styles.qualityCardInteractive : ""}`}>
+              {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看当前批次导入预览" /> : null}
+              <div className={styles.qualityLabel}>业务失败事件</div>
+              <div className={styles.qualityValue}>{config.businessFailureCount ?? 0}</div>
+              {config.compareBusinessFailureCount !== null && config.compareBusinessFailureCount !== undefined ? (
+                <div className={styles.qualityMeta}>对比 {config.compareVersionLabel}: {config.compareBusinessFailureCount}</div>
+              ) : null}
+            </div>
+            <div className={`${styles.qualityCard} ${importPreviewHref ? styles.qualityCardInteractive : ""}`}>
+              {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看当前批次导入预览" /> : null}
+              <div className={styles.qualityLabel}>模块覆盖率</div>
+              <div className={styles.qualityValue}>{config.moduleCoverage?.toFixed(1) ?? "0.0"}%</div>
+              {config.compareModuleCoverage !== null && config.compareModuleCoverage !== undefined ? (
+                <div className={styles.qualityMeta}>对比 {config.compareVersionLabel}: {config.compareModuleCoverage.toFixed(1)}%</div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className={styles.qualityHint}>
+            <span className="pill">{hasInference ? "含推断统计" : "显式统计优先"}</span>
+            <span>{qualityNote}</span>
           </div>
 
           <div className={styles.metricGrid}>
@@ -402,6 +507,43 @@ export default async function AnalyticsCategoryPage({
               </div>
               <span className="pill">{config.levelFunnel.length} 个关卡</span>
             </div>
+            <div className={styles.signalGrid}>
+              <div className={styles.signalCard}>
+                <div className={styles.signalLabel}>失败最集中关卡</div>
+                <div className={styles.signalTitle}>
+                  {levelWorst ? (levelWorst.levelType ? `${levelWorst.levelId} (${levelWorst.levelType})` : levelWorst.levelId) : "暂无异常"}
+                </div>
+                <div className={styles.signalMeta}>
+                  {levelWorst ? `失败率 ${levelWorst.failRate.toFixed(1)}%，失败 ${levelWorst.fails} 次` : "暂无可识别关卡失败热点"}
+                </div>
+              </div>
+              <div className={styles.signalCard}>
+                <div className={styles.signalLabel}>重试最高关卡</div>
+                <div className={styles.signalTitle}>
+                  {levelRetryHot
+                    ? levelRetryHot.levelType
+                      ? `${levelRetryHot.levelId} (${levelRetryHot.levelType})`
+                      : levelRetryHot.levelId
+                    : "暂无明显重试"}
+                </div>
+                <div className={styles.signalMeta}>
+                  {levelRetryHot
+                    ? `重试率 ${levelRetryHot.retryRate.toFixed(1)}%，累计 ${levelRetryHot.retries} 次`
+                    : "当前批次未识别到显著重试热点"}
+                </div>
+              </div>
+              <div className={styles.signalCard}>
+                <div className={styles.signalLabel}>行为占比异常关卡</div>
+                <div className={styles.signalTitle}>
+                  {microflowHot ? `${microflowHot.levelId} / ${microflowHot.action}` : "暂无异常占比"}
+                </div>
+                <div className={styles.signalMeta}>
+                  {microflowHot
+                    ? `占比 ${microflowHot.ratio.toFixed(1)}%，平均耗时 ${microflowHot.avgDuration.toFixed(1)} 秒`
+                    : "当前批次未识别到高占比行为"}
+                </div>
+              </div>
+            </div>
             <div className={styles.levelGrid}>
               <div className={styles.levelTable}>
                 <div className={styles.levelTableHeader}>
@@ -485,6 +627,31 @@ export default async function AnalyticsCategoryPage({
               </div>
               {config.monetizationNote ? <span className="pill">{config.monetizationNote}</span> : null}
             </div>
+            <div className={styles.signalGrid}>
+              <div className={styles.signalCard}>
+                <div className={styles.signalLabel}>最大转化损耗点</div>
+                <div className={styles.signalTitle}>{storeLossStage?.label ?? "暂无明显损耗"}</div>
+                <div className={styles.signalMeta}>
+                  {storeLossStage ? `流失 ${storeLossStage.drop} 次` : "当前漏斗阶段较短，暂无法识别损耗点"}
+                </div>
+              </div>
+              <div className={styles.signalCard}>
+                <div className={styles.signalLabel}>最佳礼包 / 计费点</div>
+                <div className={styles.signalTitle}>{bestPack?.name ?? "暂无礼包数据"}</div>
+                <div className={styles.signalMeta}>
+                  {bestPack
+                    ? `成功率 ${bestPack.successRate.toFixed(1)}%，成功 ${bestPack.successes} 次`
+                    : "当前批次未识别到可用礼包分布"}
+                </div>
+              </div>
+              <div className={styles.signalCard}>
+                <div className={styles.signalLabel}>统计口径提示</div>
+                <div className={styles.signalTitle}>以可识别链路统计</div>
+                <div className={styles.signalMeta}>
+                  {config.monetizationNote ?? "若缺少支付阶段字段，页面会按当前能识别的曝光、点击、下单、成功链路统计。"}
+                </div>
+              </div>
+            </div>
             <div className={styles.funnelCompareGrid}>
               <div className={styles.funnelCard}>
                 <div className={styles.funnelTitle}>商店 / 礼包漏斗</div>
@@ -544,6 +711,33 @@ export default async function AnalyticsCategoryPage({
                 <p className={styles.sectionCopy}>按广告位比较 request、play、click 和 reward，优先识别表现最弱的 placement。</p>
               </div>
               {config.adsNote ? <span className="pill">{config.adsNote}</span> : null}
+            </div>
+            <div className={styles.signalGrid}>
+              <div className={styles.signalCard}>
+                <div className={styles.signalLabel}>最弱广告位</div>
+                <div className={styles.signalTitle}>{weakestPlacement?.placement ?? "暂无广告位数据"}</div>
+                <div className={styles.signalMeta}>
+                  {weakestPlacement
+                    ? `点击率 ${weakestPlacement.clickRate.toFixed(1)}%，发奖率 ${weakestPlacement.rewardRate.toFixed(1)}%`
+                    : "当前批次未识别到可用广告位链路"}
+                </div>
+              </div>
+              <div className={styles.signalCard}>
+                <div className={styles.signalLabel}>流量最大广告位</div>
+                <div className={styles.signalTitle}>{highestVolumePlacement?.placement ?? "暂无主流量广告位"}</div>
+                <div className={styles.signalMeta}>
+                  {highestVolumePlacement
+                    ? `请求 ${highestVolumePlacement.requests} 次，播放 ${highestVolumePlacement.plays} 次`
+                    : "当前批次未识别到主流量 placement"}
+                </div>
+              </div>
+              <div className={styles.signalCard}>
+                <div className={styles.signalLabel}>统计口径提示</div>
+                <div className={styles.signalTitle}>请求 / 播放存在推断</div>
+                <div className={styles.signalMeta}>
+                  {config.adsNote ?? "若日志没有严格区分 request 与 play，本页会按现有曝光与播放字段进行兼容推断。"}
+                </div>
+              </div>
             </div>
             <div className={styles.distributionTable}>
               <div className={styles.levelTableHeader}>

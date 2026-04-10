@@ -7,9 +7,15 @@ import { getImportsForProject, getLatestImportForProject } from "@/lib/server/im
 import { getPlansForProject } from "@/lib/server/plans";
 import { getProjectsForUser } from "@/lib/server/projects";
 
-export default async function ImportsPage() {
+export default async function ImportsPage({
+  searchParams
+}: {
+  searchParams: Promise<{ projectId?: string; importId?: string }>;
+}) {
   const user = await requireUser();
+  const { projectId, importId } = await searchParams;
   const projects = await getProjectsForUser(user.id);
+  const resolvedProjectId = projectId ?? projects[0]?.id ?? null;
   const plansByProject = Object.fromEntries(
     await Promise.all(
       projects.map(async (project) => [project.id, await getPlansForProject(project.id)])
@@ -39,7 +45,8 @@ export default async function ImportsPage() {
 
       <ImportsClient
         projects={projects as never[]}
-        initialProjectId={projects[0]?.id ?? null}
+        initialProjectId={resolvedProjectId}
+        initialImportId={importId ?? null}
         plansByProject={plansByProject as never}
         latestImportsByProject={latestImportsByProject as never}
         importsHistoryByProject={importsHistoryByProject as never}
