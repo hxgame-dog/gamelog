@@ -529,6 +529,7 @@
 }
 
 .moduleCard {
+  position: relative;
   display: grid;
   gap: 8px;
   padding: 16px;
@@ -540,22 +541,53 @@
   box-shadow: var(--shadow-soft);
 }
 
+.moduleCardInteractive {
+  transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.moduleCardInteractive:hover {
+  border-color: rgba(31, 154, 133, 0.28);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-soft);
+}
+
+.moduleCardLink {
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  z-index: 3;
+}
+
+.moduleCardLink:focus-visible {
+  outline: 2px solid rgba(31, 154, 133, 0.65);
+  outline-offset: -2px;
+}
+
 .moduleCardLabel {
+  position: relative;
+  z-index: 1;
   color: var(--muted);
   font-size: 12px;
+  pointer-events: none;
 }
 
 .moduleCardValue {
+  position: relative;
+  z-index: 1;
   font-family: var(--font-number);
   font-size: 28px;
   font-weight: 700;
   line-height: 1;
+  pointer-events: none;
 }
 
 .moduleCardMeta {
+  position: relative;
+  z-index: 1;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.7;
+  pointer-events: none;
 }
 
 .moduleNarrative {

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
 import * as XLSX from "xlsx";
 
@@ -417,6 +418,7 @@ export function ImportsClient({
   latestImportsByProject: Record<string, ImportPreview | null>;
   importsHistoryByProject: Record<string, ImportPreview[]>;
 }) {
+  const searchParams = useSearchParams();
   const [mode, setMode] = useState<"real" | "synthetic">("real");
   const [selectedProjectId, setSelectedProjectId] = useState(initialProjectId ?? projects[0]?.id ?? "");
   const [selectedPlanId, setSelectedPlanId] = useState(plansByProject[initialProjectId ?? projects[0]?.id ?? ""]?.[0]?.id ?? "");
@@ -466,6 +468,30 @@ export function ImportsClient({
     const delta = current - compare;
     const sign = delta > 0 ? "+" : "";
     return `${sign}${delta.toFixed(1)}${suffix}`;
+  }
+
+  function buildOperationsHref(targetCategory: "onboarding" | "level") {
+    const params = new URLSearchParams();
+
+    if (selectedProjectId) {
+      params.set("projectId", selectedProjectId);
+    }
+    if (selectedHistoryImport?.id) {
+      params.set("importId", selectedHistoryImport.id);
+    }
+
+    const compareVersion = searchParams.get("compareVersion");
+    if (compareVersion) {
+      params.set("compareVersion", compareVersion);
+    }
+
+    const detailFilter = searchParams.get("detailFilter");
+    if (detailFilter) {
+      params.set("detailFilter", detailFilter);
+    }
+
+    const qs = params.toString();
+    return `/analytics/${targetCategory}${qs ? `?${qs}` : ""}`;
   }
 
   async function handleFile(file: File) {
@@ -816,11 +842,11 @@ export function ImportsClient({
                     查看导入预览
                   </Link>
                 ) : null}
-                <Link className="button-secondary" href={`/analytics/onboarding${selectedProjectId ? `?projectId=${selectedProjectId}` : ""}`}>
-                  前往新手引导分析
+                <Link className="button-secondary" href={buildOperationsHref("onboarding")}>
+                  进入新手引导运营分析
                 </Link>
-                <Link className="button-secondary" href={`/analytics/level${selectedProjectId ? `?projectId=${selectedProjectId}` : ""}`}>
-                  前往关卡分析
+                <Link className="button-secondary" href={buildOperationsHref("level")}>
+                  进入关卡与局内行为分析
                 </Link>
               </div>
               {selectedHistoryImport ? (

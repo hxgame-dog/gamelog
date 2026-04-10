@@ -225,12 +225,19 @@ export default async function AnalyticsCategoryPage({
   const qualityNote = hasInference
     ? "当前页面包含部分推断统计，建议结合导入预览一起核对口径。"
     : "当前页面主要基于显式日志链路统计，可直接用于版本对比。";
+  const compareVersionParam = compareVersion ?? config.compareVersionLabel ?? null;
   const importPreviewHref =
     activeProjectId && config.currentImportId
-      ? `/imports?${new URLSearchParams({
-          projectId: activeProjectId,
-          importId: config.currentImportId
-        }).toString()}`
+      ? `/imports?${new URLSearchParams(
+          Object.fromEntries(
+            [
+              ["projectId", activeProjectId],
+              ["importId", config.currentImportId],
+              compareVersionParam ? ["compareVersion", compareVersionParam] : null,
+              detailFilter ? ["detailFilter", detailFilter] : null
+            ].filter(Boolean) as Array<[string, string]>
+          )
+        ).toString()}`
       : null;
   const onboardingChecklist = onboardingSections.join(" / ");
   const levelChecklist = levelSections.join(" / ");
@@ -397,7 +404,7 @@ export default async function AnalyticsCategoryPage({
             <>
               <div className={styles.qualityGrid}>
                 <div className={`${styles.qualityCard} ${importPreviewHref ? styles.qualityCardInteractive : ""}`}>
-                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看当前批次导入预览" /> : null}
+                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看技术通过率对应的当前批次导入预览" /> : null}
                   <div className={styles.qualityLabel}>技术通过率</div>
                   <div className={styles.qualityValue}>{config.technicalSuccessRate?.toFixed(1) ?? "0.0"}%</div>
                   {config.compareTechnicalSuccessRate !== null && config.compareTechnicalSuccessRate !== undefined ? (
@@ -405,7 +412,7 @@ export default async function AnalyticsCategoryPage({
                   ) : null}
                 </div>
                 <div className={`${styles.qualityCard} ${importPreviewHref ? styles.qualityCardInteractive : ""}`}>
-                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看当前批次导入预览" /> : null}
+                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看技术异常对应的当前批次导入预览" /> : null}
                   <div className={styles.qualityLabel}>技术异常</div>
                   <div className={styles.qualityValue}>{config.technicalErrorCount ?? 0}</div>
                   {config.compareTechnicalErrorCount !== null && config.compareTechnicalErrorCount !== undefined ? (
@@ -413,7 +420,7 @@ export default async function AnalyticsCategoryPage({
                   ) : null}
                 </div>
                 <div className={`${styles.qualityCard} ${importPreviewHref ? styles.qualityCardInteractive : ""}`}>
-                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看当前批次导入预览" /> : null}
+                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看业务失败事件对应的当前批次导入预览" /> : null}
                   <div className={styles.qualityLabel}>业务失败事件</div>
                   <div className={styles.qualityValue}>{config.businessFailureCount ?? 0}</div>
                   {config.compareBusinessFailureCount !== null && config.compareBusinessFailureCount !== undefined ? (
@@ -421,7 +428,7 @@ export default async function AnalyticsCategoryPage({
                   ) : null}
                 </div>
                 <div className={`${styles.qualityCard} ${importPreviewHref ? styles.qualityCardInteractive : ""}`}>
-                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看当前批次导入预览" /> : null}
+                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.qualityCardLink} aria-label="查看模块覆盖率对应的当前批次导入预览" /> : null}
                   <div className={styles.qualityLabel}>模块覆盖率</div>
                   <div className={styles.qualityValue}>{config.moduleCoverage?.toFixed(1) ?? "0.0"}%</div>
                   {config.compareModuleCoverage !== null && config.compareModuleCoverage !== undefined ? (
@@ -693,7 +700,8 @@ export default async function AnalyticsCategoryPage({
                 <span className="pill">{config.compareVersionLabel ? "带版本对比" : "当前批次"}</span>
               </div>
               <div className={styles.moduleGrid}>
-                <article className={styles.moduleCard}>
+                <article className={`${styles.moduleCard} ${importPreviewHref ? styles.moduleCardInteractive : ""}`}>
+                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.moduleCardLink} aria-label="查看技术通过率对应的当前批次导入预览" /> : null}
                   <div className={styles.moduleCardLabel}>技术通过率</div>
                   <div className={styles.moduleCardValue}>{config.technicalSuccessRate?.toFixed(1) ?? "0.0"}%</div>
                   <div className={styles.moduleCardMeta}>
@@ -702,7 +710,8 @@ export default async function AnalyticsCategoryPage({
                       : "导入质量稳定时，关卡页的失败和重试结论才有解释力。"}
                   </div>
                 </article>
-                <article className={styles.moduleCard}>
+                <article className={`${styles.moduleCard} ${importPreviewHref ? styles.moduleCardInteractive : ""}`}>
+                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.moduleCardLink} aria-label="查看技术异常对应的当前批次导入预览" /> : null}
                   <div className={styles.moduleCardLabel}>技术异常</div>
                   <div className={styles.moduleCardValue}>{config.technicalErrorCount ?? 0}</div>
                   <div className={styles.moduleCardMeta}>
@@ -711,7 +720,8 @@ export default async function AnalyticsCategoryPage({
                       : "优先排除埋点缺失、level_id 错位或批次导入截断。"}
                   </div>
                 </article>
-                <article className={styles.moduleCard}>
+                <article className={`${styles.moduleCard} ${importPreviewHref ? styles.moduleCardInteractive : ""}`}>
+                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.moduleCardLink} aria-label="查看业务失败事件对应的当前批次导入预览" /> : null}
                   <div className={styles.moduleCardLabel}>业务失败事件</div>
                   <div className={styles.moduleCardValue}>{config.businessFailureCount ?? 0}</div>
                   <div className={styles.moduleCardMeta}>
@@ -720,7 +730,8 @@ export default async function AnalyticsCategoryPage({
                       : "如果失败事件同步抬升，优先结合失败原因分布复核是体验问题还是链路问题。"}
                   </div>
                 </article>
-                <article className={styles.moduleCard}>
+                <article className={`${styles.moduleCard} ${importPreviewHref ? styles.moduleCardInteractive : ""}`}>
+                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.moduleCardLink} aria-label="查看模块覆盖率对应的当前批次导入预览" /> : null}
                   <div className={styles.moduleCardLabel}>模块覆盖率</div>
                   <div className={styles.moduleCardValue}>{config.moduleCoverage?.toFixed(1) ?? "0.0"}%</div>
                   <div className={styles.moduleCardMeta}>{qualityNote}</div>

@@ -222,6 +222,51 @@ test("onboarding signal anchor is attached to the actual signal section", () => 
   assert.match(source, signalSectionPattern);
 });
 
+test("homepage anomaly shortcuts preserve analytics context when linking into rebuilt module pages", () => {
+  const pagePath = path.resolve(process.cwd(), "src/app/page.tsx");
+  const source = readFileSync(pagePath, "utf8");
+
+  assert.match(source, /function mergeHrefWithContext\(href: string, fallback: string\)/);
+  assert.match(source, /const fallbackUrl = new URL\(fallback, "http:\/\/localhost"\)/);
+  assert.match(source, /candidateUrl\.hash \|\| fallbackUrl\.hash/);
+  assert.match(source, /return `\$\{fallbackUrl\.pathname\}\$\{fallbackUrl\.search\}\$\{candidateUrl\.hash \|\| fallbackUrl\.hash\}`/);
+  assert.match(source, /buildAnalyticsCategoryHref\(item\.key, \{\s*compareVersion: compareVersionParam,\s*detailFilter: "abnormal"/);
+});
+
+test("quality cards send imports links with the current compare/filter context", () => {
+  const pagePath = path.resolve(process.cwd(), "src/app/analytics/[category]/page.tsx");
+  const source = readFileSync(pagePath, "utf8");
+
+  assert.match(source, /compareVersionParam \? \["compareVersion", compareVersionParam\] : null/);
+  assert.match(source, /detailFilter \? \["detailFilter", detailFilter\] : null/);
+  assert.match(source, /`\/imports\?\$\{new URLSearchParams\(/);
+  assert.match(source, /aria-label="查看技术通过率对应的当前批次导入预览"/);
+  assert.match(source, /aria-label="查看技术异常对应的当前批次导入预览"/);
+  assert.match(source, /aria-label="查看业务失败事件对应的当前批次导入预览"/);
+  assert.match(source, /aria-label="查看模块覆盖率对应的当前批次导入预览"/);
+});
+
+test("level quality cards also send imports links with the current compare\/filter context", () => {
+  const pagePath = path.resolve(process.cwd(), "src/app/analytics/[category]/page.tsx");
+  const source = readFileSync(pagePath, "utf8");
+
+  assert.match(source, /category === "level"/);
+  assert.match(source, /styles\.moduleCardInteractive/);
+  assert.match(source, /styles\.moduleCardLink/);
+  assert.match(source, /aria-label="查看模块覆盖率对应的当前批次导入预览"/);
+});
+
+test("imports CTAs use operations language and preserve the selected batch when returning to analytics", () => {
+  const pagePath = path.resolve(process.cwd(), "src/components/imports-client.tsx");
+  const source = readFileSync(pagePath, "utf8");
+
+  assert.match(source, /进入新手引导运营分析/);
+  assert.match(source, /进入关卡与局内行为分析/);
+  assert.match(source, /searchParams\.get\("compareVersion"\)/);
+  assert.match(source, /searchParams\.get\("detailFilter"\)/);
+  assert.match(source, /params\.set\("importId", selectedHistoryImport\.id\)/);
+});
+
 test("getLevelDiagnostics sorts worst levels, retry hotspots, and microflow hotspots by first-class severity", () => {
   const diagnostics = getLevelDiagnostics({
     levelFunnel: [
