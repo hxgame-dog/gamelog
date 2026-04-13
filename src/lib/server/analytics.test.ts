@@ -256,6 +256,29 @@ test("level quality cards also send imports links with the current compare\/filt
   assert.match(source, /aria-label="查看模块覆盖率对应的当前批次导入预览"/);
 });
 
+test("operations overview entry page uses the new operations-first IA instead of generic analytics cards", () => {
+  const pagePath = path.resolve(process.cwd(), "src/components/operations-overview-client.tsx");
+  const source = readFileSync(pagePath, "utf8");
+
+  assert.match(source, /当前批次质量总览/);
+  assert.match(source, /四个核心模块/);
+  assert.match(source, /建议阅读顺序/);
+  assert.match(source, /异常优先入口/);
+  assert.match(source, /查看导入预览/);
+  assert.match(source, /aria-label={`查看\$\{card\.label\}对应的导入预览`}/);
+  assert.match(source, /aria-label={`进入\$\{card\.label\}模块`}/);
+  assert.doesNotMatch(source, /按事件分类查看/);
+});
+
+test("projects page links analytics entry to the operations overview instead of onboarding directly", () => {
+  const pagePath = path.resolve(process.cwd(), "src/components/projects-client.tsx");
+  const source = readFileSync(pagePath, "utf8");
+
+  assert.match(source, /href=\{`\/analytics\?projectId=\$\{project\.id\}`\}/);
+  assert.match(source, />\s*运营分析\s*</);
+  assert.doesNotMatch(source, /\/analytics\/onboarding\?projectId=/);
+});
+
 test("imports CTAs use operations language and preserve the selected batch when returning to analytics", () => {
   const pagePath = path.resolve(process.cwd(), "src/components/imports-client.tsx");
   const source = readFileSync(pagePath, "utf8");

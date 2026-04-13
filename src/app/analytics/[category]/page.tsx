@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { ReactNode } from "react";
 
 import styles from "@/components/analytics-page.module.css";
 import { AnalyticsBatchSwitcher } from "@/components/analytics-batch-client";
@@ -73,6 +74,159 @@ const adsSections = [
   "广告位构成",
   "广告明细表"
 ] as const;
+
+function ModuleSectionHeader({
+  title,
+  copy,
+  badge
+}: {
+  title: string;
+  copy: string;
+  badge: string;
+}) {
+  return (
+    <div className={styles.moduleHeader}>
+      <div>
+        <h2 className="section-title" style={{ fontSize: 18 }}>
+          {title}
+        </h2>
+        <p className={styles.sectionCopy}>{copy}</p>
+      </div>
+      <span className="pill">{badge}</span>
+    </div>
+  );
+}
+
+function ModuleQualityCards({
+  importPreviewHref,
+  qualityNote,
+  compareVersionLabel,
+  technicalSuccessRate,
+  technicalErrorCount,
+  businessFailureCount,
+  moduleCoverage,
+  compareTechnicalSuccessRate,
+  compareTechnicalErrorCount,
+  compareBusinessFailureCount,
+  compareModuleCoverage,
+  notes
+}: {
+  importPreviewHref: string | null;
+  qualityNote: string;
+  compareVersionLabel?: string | null;
+  technicalSuccessRate?: number;
+  technicalErrorCount?: number;
+  businessFailureCount?: number;
+  moduleCoverage?: number;
+  compareTechnicalSuccessRate?: number | null;
+  compareTechnicalErrorCount?: number | null;
+  compareBusinessFailureCount?: number | null;
+  compareModuleCoverage?: number | null;
+  notes: {
+    success: string;
+    errors: string;
+    business: string;
+  };
+}) {
+  const cards = [
+    {
+      label: "技术通过率",
+      value: `${technicalSuccessRate?.toFixed(1) ?? "0.0"}%`,
+      compare:
+        compareTechnicalSuccessRate !== null && compareTechnicalSuccessRate !== undefined && compareVersionLabel
+          ? `对比 ${compareVersionLabel}: ${compareTechnicalSuccessRate.toFixed(1)}%`
+          : notes.success
+    },
+    {
+      label: "技术异常",
+      value: `${technicalErrorCount ?? 0}`,
+      compare:
+        compareTechnicalErrorCount !== null && compareTechnicalErrorCount !== undefined && compareVersionLabel
+          ? `对比 ${compareVersionLabel}: ${compareTechnicalErrorCount}`
+          : notes.errors
+    },
+    {
+      label: "业务失败事件",
+      value: `${businessFailureCount ?? 0}`,
+      compare:
+        compareBusinessFailureCount !== null && compareBusinessFailureCount !== undefined && compareVersionLabel
+          ? `对比 ${compareVersionLabel}: ${compareBusinessFailureCount}`
+          : notes.business
+    },
+    {
+      label: "模块覆盖率",
+      value: `${moduleCoverage?.toFixed(1) ?? "0.0"}%`,
+      compare:
+        compareModuleCoverage !== null && compareModuleCoverage !== undefined && compareVersionLabel
+          ? `对比 ${compareVersionLabel}: ${compareModuleCoverage.toFixed(1)}%`
+          : qualityNote
+    }
+  ];
+
+  return (
+    <>
+      <div className={styles.moduleGrid}>
+        {cards.map((card) => (
+          <article key={card.label} className={`${styles.moduleCard} ${importPreviewHref ? styles.moduleCardInteractive : ""}`}>
+            {importPreviewHref ? (
+              <Link
+                href={importPreviewHref}
+                className={styles.moduleCardLink}
+                aria-label={`查看${card.label}对应的当前批次导入预览`}
+              />
+            ) : null}
+            <div className={styles.moduleCardLabel}>{card.label}</div>
+            <div className={styles.moduleCardValue}>{card.value}</div>
+            <div className={styles.moduleCardMeta}>{card.compare}</div>
+          </article>
+        ))}
+      </div>
+      <div className={styles.moduleSubNote}>
+        <span className="pill">质量底座</span>
+        <span>{qualityNote}</span>
+      </div>
+    </>
+  );
+}
+
+function ModuleConclusionCards({
+  metrics,
+  color,
+  compareVersionLabel,
+  emptyLabel,
+  children
+}: {
+  metrics: Array<{ label: string; value: string; compareValue?: string | null }>;
+  color: string;
+  compareVersionLabel?: string | null;
+  emptyLabel: string;
+  children?: ReactNode;
+}) {
+  return (
+    <>
+      <div className={styles.moduleGrid}>
+        {metrics.length ? (
+          metrics.map((metric) => (
+            <article key={metric.label} className={styles.moduleCard}>
+              <div className={styles.moduleCardLabel}>{metric.label}</div>
+              <div className={styles.moduleCardValue} style={{ color }}>
+                {metric.value}
+              </div>
+              <div className={styles.moduleCardMeta}>
+                {metric.compareValue && compareVersionLabel
+                  ? `对比 ${compareVersionLabel}: ${metric.compareValue}`
+                  : emptyLabel}
+              </div>
+            </article>
+          ))
+        ) : (
+          <div className={styles.moduleEmptyState}>当前批次还没有足够的结论指标，导入更多业务样本后会自动补齐。</div>
+        )}
+      </div>
+      {children}
+    </>
+  );
+}
 
 export default async function AnalyticsCategoryPage({
   params,
@@ -260,6 +414,51 @@ export default async function AnalyticsCategoryPage({
           }))
           .sort((a, b) => (b.actions[0]?.ratio ?? 0) - (a.actions[0]?.ratio ?? 0))
       : [];
+  const topLevelFailReason = (config.levelFailReasonDistribution ?? []).slice().sort((a, b) => b.count - a.count)[0] ?? null;
+  const levelActionItems = [
+    levelWorst
+      ? {
+          title: "先处理失败最集中的关卡",
+          detail: `${levelWorst.levelType ? `${levelWorst.levelId} (${levelWorst.levelType})` : levelWorst.levelId} 当前失败率 ${levelWorst.failRate.toFixed(
+            1
+          )}% ，主要失败原因是 ${levelWorst.topFailReason || "未记录"}，建议先回看关卡目标、时间压力和关键阻塞交互。`
+        }
+      : {
+          title: "等待更多关卡失败样本",
+          detail: "当前批次还没有足够的关卡样本，暂时无法判断最该优先修复哪一关。"
+        },
+    levelRetryHot
+      ? {
+          title: "复核最高重试热点",
+          detail: `${levelRetryHot.levelType ? `${levelRetryHot.levelId} (${levelRetryHot.levelType})` : levelRetryHot.levelId} 当前重试率 ${levelRetryHot.retryRate.toFixed(
+            1
+          )}% ，说明玩家愿意反复尝试但仍过不去，适合优先检查失败反馈和复活/道具承接。`
+        }
+      : {
+          title: "等待更多重试样本",
+          detail: "当前批次还没有显著的重试堆积，暂时无法判断哪一关最容易把玩家拖进反复尝试。"
+        },
+    microflowHot
+      ? {
+          title: "排查异常局内行为",
+          detail: `${microflowHot.levelId} 中 ${microflowHot.action} 占比 ${microflowHot.ratio.toFixed(
+            1
+          )}% ，平均耗时 ${microflowHot.avgDuration.toFixed(1)} 秒，建议确认它是不是玩家卡住后的补救动作。`
+        }
+      : {
+          title: "等待更多局内行为样本",
+          detail: "当前批次还没有明显的动作占比异常，暂时无法判断局内是否存在特定补救行为被过度触发。"
+        },
+    topLevelFailReason
+      ? {
+          title: "观察主要失败原因是否扩散",
+          detail: `${topLevelFailReason.name} 当前出现 ${topLevelFailReason.count} 次，如果它同时出现在多个热点关卡，优先按系统性难点处理，而不是逐关微调。`
+        }
+      : {
+          title: "等待失败原因分布",
+          detail: "当前批次还没有足够的失败原因数据，先补齐失败原因埋点再做更细的难度诊断会更稳。"
+        }
+  ];
   const onboardingLargestDrop = onboardingRows.slice().sort((a, b) => b.dropoffCount - a.dropoffCount)[0] ?? null;
   const onboardingSlowestStep = onboardingRows.slice().sort((a, b) => b.avgDuration - a.avgDuration)[0] ?? null;
   const onboardingLastStep = onboardingRows.at(-1) ?? null;
@@ -272,6 +471,46 @@ export default async function AnalyticsCategoryPage({
   const onboardingAverageDuration = onboardingRows.length
     ? onboardingRows.reduce((sum, row) => sum + row.avgDuration, 0) / onboardingRows.length
     : 0;
+  const onboardingDropoffRate = onboardingLargestDrop
+    ? onboardingLargestDrop.arrivals
+      ? (onboardingLargestDrop.dropoffCount / onboardingLargestDrop.arrivals) * 100
+      : 0
+    : 0;
+  const onboardingActionItems = [
+    onboardingLargestDrop
+      ? {
+          title: "优先修复最大流失步骤",
+          detail: `${onboardingLargestDrop.stepName || onboardingLargestDrop.stepId} 当前流失率 ${onboardingDropoffRate.toFixed(
+            1
+          )}% ，建议先检查引导文案、交互反馈和前后步骤衔接。`
+        }
+      : {
+          title: "等待更多流失样本",
+          detail: "当前批次还没有足够的步骤流失样本，建议继续导入新手引导明细后再判断最先修哪里。"
+        },
+    onboardingSlowestStep
+      ? {
+          title: "检查异常耗时步骤",
+          detail: `${onboardingSlowestStep.stepName || onboardingSlowestStep.stepId} 平均耗时 ${onboardingSlowestStep.avgDuration.toFixed(
+            1
+          )} 秒，高于步骤均值 ${onboardingAverageDuration.toFixed(1)} 秒，适合优先排查理解成本和等待时机。`
+        }
+      : {
+          title: "等待更多耗时样本",
+          detail: "当前批次缺少足够的耗时数据，暂时无法判断哪一步骤最容易让玩家犹豫。"
+        },
+    onboardingLastStep
+      ? {
+          title: "复核尾步承接表现",
+          detail: `${onboardingLastStep.stepName || onboardingLastStep.stepId} 完成率 ${onboardingLastStep.completionRate.toFixed(
+            1
+          )}% ，用于确认玩家是否在最后几步被奖励承接或难度陡增挡住。`
+        }
+      : {
+          title: "等待尾步完成样本",
+          detail: "当前批次还没有足够的尾步样本，暂时无法判断最终收口步骤是否存在问题。"
+        }
+  ];
   const monetizationDistributionRows = (config.giftPackDistribution ?? [])
     .slice()
     .sort((a, b) => b.exposures - a.exposures || b.successRate - a.successRate);
@@ -281,6 +520,37 @@ export default async function AnalyticsCategoryPage({
   const monetizationDistributionLabels = monetizationDistributionRows.slice(0, 6).map((item) => item.name);
   const monetizationMethodNote =
     config.monetizationNote ?? "当前批次的商店曝光、下单和支付成功节点都来自显式事件链路，可直接用于版本对比。";
+  const monetizationActionItems = [
+    storeLossStage
+      ? {
+          title: "优先修复最大转化损耗点",
+          detail: `${storeLossStage.funnelLabel} 的 ${storeLossStage.label} 当前流失 ${storeLossStage.drop} 次，建议先检查${
+            storeLossStage.funnel === "payment" ? "支付确认、支付回调和订单状态落地" : "礼包入口文案、点击承接和下单前引导"
+          }。`
+        }
+      : {
+          title: "等待更多损耗链路样本",
+          detail: "当前批次还没有足够的漏斗样本，暂时无法判断最大损耗发生在哪个商业化阶段。"
+        },
+    bestPack
+      ? {
+          title: "放大高转化礼包 / 计费点",
+          detail: `${bestPack.name} 当前成功率 ${bestPack.successRate.toFixed(1)}% ，曝光 ${bestPack.exposures} 次，适合作为下一轮放量或承接优化的优先候选。`
+        }
+      : {
+          title: "等待更多礼包分布样本",
+          detail: "当前批次还没有足够的礼包或计费点分布，暂时无法判断哪一个入口最值得优先放大。"
+        },
+    monetizationDistributionRows[0]
+      ? {
+          title: "检查流量是否过度集中",
+          detail: `${monetizationDistributionRows[0].name} 当前承担了最多曝光，如果它同时也是主要损耗点，优先做入口分流或强化其他礼包承接。`
+        }
+      : {
+          title: "等待更多流量分布样本",
+          detail: "当前批次还没有足够的商业化入口流量分布，暂时无法判断是否存在单点承压。"
+        }
+  ];
   const adsRankingRows = (config.adPlacementBreakdown ?? [])
     .slice()
     .sort((a, b) => b.requests - a.requests || b.clickRate - a.clickRate);
@@ -291,6 +561,37 @@ export default async function AnalyticsCategoryPage({
   const adsMethodGuidance = config.adsNote
     ? "出现 request / play 歧义时，先把它当成埋点排查线索，而不是直接解释为流量损耗。"
     : "当前批次可以直接对比请求、播放、点击与发奖，不需要额外兼容推断。";
+  const adsActionItems = [
+    weakestPlacement
+      ? {
+          title: "优先修复最弱广告位",
+          detail: `${weakestPlacement.placement} 当前点击率 ${weakestPlacement.clickRate.toFixed(
+            1
+          )}% 、发奖率 ${weakestPlacement.rewardRate.toFixed(1)}% ，建议优先检查展示时机、素材质量和回调链路。`
+        }
+      : {
+          title: "等待更多广告位样本",
+          detail: "当前批次还没有足够的广告位数据，暂时无法判断哪一个 placement 最该优先修复。"
+        },
+    highestVolumePlacement
+      ? {
+          title: "确认主流量广告位是否拖累整体体验",
+          detail: `${highestVolumePlacement.placement} 当前请求 ${highestVolumePlacement.requests} 次，是主要流量入口；如果它表现偏弱，会直接拉低整体广告效率。`
+        }
+      : {
+          title: "等待更多流量分布样本",
+          detail: "当前批次还没有足够的广告位流量分布，暂时无法判断是否存在单个 placement 过度承压。"
+        },
+    config.adsNote
+      ? {
+          title: "先排查 request / play 口径歧义",
+          detail: adsMethodGuidance
+        }
+      : {
+          title: "直接按广告位效率做归因",
+          detail: "当前批次 request 与 play 口径清晰，可以直接把表现差异解释为 placement、素材或奖励承接问题。"
+        }
+  ];
 
   return (
     <AppShell currentPath="/analytics">
@@ -400,7 +701,7 @@ export default async function AnalyticsCategoryPage({
             <p className={styles.compareSummaryCopy}>{config.compareInsight ?? config.insight}</p>
           </div>
 
-          {category !== "level" ? (
+          {category === "system" || category === "custom" ? (
             <>
               <div className={styles.qualityGrid}>
                 <div className={`${styles.qualityCard} ${importPreviewHref ? styles.qualityCardInteractive : ""}`}>
@@ -462,61 +763,37 @@ export default async function AnalyticsCategoryPage({
         {category === "onboarding" ? (
           <>
             <section className={styles.moduleSection} data-onboarding-checklist={onboardingChecklist}>
-              <div className={styles.moduleHeader}>
-                <div>
-                  <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {onboardingSections[0]}
-                  </h2>
-                  <p className={styles.sectionCopy}>先确认导入质量与版本上下文，再进入步骤漏斗判断，避免把口径问题误当成体验问题。</p>
-                </div>
-                <span className="pill">{config.compareVersionLabel ? "带版本对比" : "当前批次"}</span>
-              </div>
-              <div className={styles.moduleGrid}>
-                <article className={styles.moduleCard}>
-                  <div className={styles.moduleCardLabel}>技术通过率</div>
-                  <div className={styles.moduleCardValue}>{config.technicalSuccessRate?.toFixed(1) ?? "0.0"}%</div>
-                  <div className={styles.moduleCardMeta}>
-                    {config.compareTechnicalSuccessRate !== null && config.compareTechnicalSuccessRate !== undefined
-                      ? `对比 ${config.compareVersionLabel}: ${config.compareTechnicalSuccessRate.toFixed(1)}%`
-                      : "导入质量稳定时，这一页的漏斗结论才更可信。"}
-                  </div>
-                </article>
-                <article className={styles.moduleCard}>
-                  <div className={styles.moduleCardLabel}>技术异常</div>
-                  <div className={styles.moduleCardValue}>{config.technicalErrorCount ?? 0}</div>
-                  <div className={styles.moduleCardMeta}>
-                    {config.compareTechnicalErrorCount !== null && config.compareTechnicalErrorCount !== undefined
-                      ? `对比 ${config.compareVersionLabel}: ${config.compareTechnicalErrorCount}`
-                      : "优先排除埋点缺失、字段错位和批次导入异常。"}
-                  </div>
-                </article>
-                <article className={styles.moduleCard}>
-                  <div className={styles.moduleCardLabel}>业务失败事件</div>
-                  <div className={styles.moduleCardValue}>{config.businessFailureCount ?? 0}</div>
-                  <div className={styles.moduleCardMeta}>
-                    {config.compareBusinessFailureCount !== null && config.compareBusinessFailureCount !== undefined
-                      ? `对比 ${config.compareVersionLabel}: ${config.compareBusinessFailureCount}`
-                      : "如果业务失败事件同步增多，先复核是否存在流程阻断。"}
-                  </div>
-                </article>
-                <article className={styles.moduleCard}>
-                  <div className={styles.moduleCardLabel}>模块覆盖率</div>
-                  <div className={styles.moduleCardValue}>{config.moduleCoverage?.toFixed(1) ?? "0.0"}%</div>
-                  <div className={styles.moduleCardMeta}>{qualityNote}</div>
-                </article>
-              </div>
+              <ModuleSectionHeader
+                title={onboardingSections[0]}
+                copy="先确认导入质量与版本上下文，再进入步骤漏斗判断，避免把口径问题误当成体验问题。"
+                badge={config.compareVersionLabel ? "带版本对比" : "当前批次"}
+              />
+              <ModuleQualityCards
+                importPreviewHref={importPreviewHref}
+                qualityNote={qualityNote}
+                compareVersionLabel={config.compareVersionLabel}
+                technicalSuccessRate={config.technicalSuccessRate}
+                technicalErrorCount={config.technicalErrorCount}
+                businessFailureCount={config.businessFailureCount}
+                moduleCoverage={config.moduleCoverage}
+                compareTechnicalSuccessRate={config.compareTechnicalSuccessRate}
+                compareTechnicalErrorCount={config.compareTechnicalErrorCount}
+                compareBusinessFailureCount={config.compareBusinessFailureCount}
+                compareModuleCoverage={config.compareModuleCoverage}
+                notes={{
+                  success: "导入质量稳定时，这一页的漏斗结论才更可信。",
+                  errors: "优先排除埋点缺失、字段错位和批次导入异常。",
+                  business: "如果业务失败事件同步增多，先复核是否存在流程阻断。"
+                }}
+              />
             </section>
 
             <section className={styles.moduleSection}>
-              <div className={styles.moduleHeader}>
-                <div>
-                  <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {onboardingSections[1]}
-                  </h2>
-                  <p className={styles.sectionCopy}>这一段只总结 onboarding 主链路结论，不和其他模块复用通用排行榜结构。</p>
-                </div>
-                <span className="pill">{onboardingRows.length ? `${onboardingRows.length} 个步骤` : "等待步骤数据"}</span>
-              </div>
+              <ModuleSectionHeader
+                title={onboardingSections[1]}
+                copy="这一段只总结 onboarding 主链路结论，不和其他模块复用通用排行榜结构。"
+                badge={onboardingRows.length ? `${onboardingRows.length} 个步骤` : "等待步骤数据"}
+              />
               <div className={styles.moduleGrid}>
                 <article className={styles.moduleCard}>
                   <div className={styles.moduleCardLabel}>引导完成率</div>
@@ -552,15 +829,11 @@ export default async function AnalyticsCategoryPage({
             </section>
 
             <section id="onboarding-signal" className={styles.moduleSection}>
-              <div className={styles.moduleHeader}>
-                <div>
-                  <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {onboardingSections[2]}
-                  </h2>
-                  <p className={styles.sectionCopy}>把最大流失步骤单独抬出来，避免它淹没在通用图表和杂项说明里。</p>
-                </div>
-                <span className="pill">优先处理</span>
-              </div>
+              <ModuleSectionHeader
+                title={onboardingSections[2]}
+                copy="把最大流失步骤单独抬出来，避免它淹没在通用图表和杂项说明里。"
+                badge="优先处理"
+              />
               <div className={styles.moduleSignalGrid}>
                 <article className={styles.moduleSignalCard}>
                   <div className={styles.moduleSignalLabel}>最大流失步骤</div>
@@ -584,6 +857,17 @@ export default async function AnalyticsCategoryPage({
                       : "当前批次缺少耗时样本，暂时无法判断理解成本是否抬升。"}
                   </div>
                 </article>
+              </div>
+              <div className={styles.infoPanel}>
+                <div className={styles.infoPanelTitle}>运营建议</div>
+                <div className={styles.infoPanelList}>
+                  {onboardingActionItems.map((item) => (
+                    <div key={item.title} className={styles.infoPanelRowStack}>
+                      <strong>{item.title}</strong>
+                      <span>{item.detail}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </section>
 
@@ -690,93 +974,52 @@ export default async function AnalyticsCategoryPage({
         {category === "level" ? (
           <>
             <section className={styles.moduleSection} data-level-checklist={levelChecklist}>
-              <div className={styles.moduleHeader}>
-                <div>
-                  <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {levelSections[0]}
-                  </h2>
-                  <p className={styles.sectionCopy}>先确认关卡页的数据质量，再判断失败、重试和行为异常，避免把导入口径问题误判为难度问题。</p>
-                </div>
-                <span className="pill">{config.compareVersionLabel ? "带版本对比" : "当前批次"}</span>
-              </div>
-              <div className={styles.moduleGrid}>
-                <article className={`${styles.moduleCard} ${importPreviewHref ? styles.moduleCardInteractive : ""}`}>
-                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.moduleCardLink} aria-label="查看技术通过率对应的当前批次导入预览" /> : null}
-                  <div className={styles.moduleCardLabel}>技术通过率</div>
-                  <div className={styles.moduleCardValue}>{config.technicalSuccessRate?.toFixed(1) ?? "0.0"}%</div>
-                  <div className={styles.moduleCardMeta}>
-                    {config.compareTechnicalSuccessRate !== null && config.compareTechnicalSuccessRate !== undefined
-                      ? `对比 ${config.compareVersionLabel}: ${config.compareTechnicalSuccessRate.toFixed(1)}%`
-                      : "导入质量稳定时，关卡页的失败和重试结论才有解释力。"}
-                  </div>
-                </article>
-                <article className={`${styles.moduleCard} ${importPreviewHref ? styles.moduleCardInteractive : ""}`}>
-                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.moduleCardLink} aria-label="查看技术异常对应的当前批次导入预览" /> : null}
-                  <div className={styles.moduleCardLabel}>技术异常</div>
-                  <div className={styles.moduleCardValue}>{config.technicalErrorCount ?? 0}</div>
-                  <div className={styles.moduleCardMeta}>
-                    {config.compareTechnicalErrorCount !== null && config.compareTechnicalErrorCount !== undefined
-                      ? `对比 ${config.compareVersionLabel}: ${config.compareTechnicalErrorCount}`
-                      : "优先排除埋点缺失、level_id 错位或批次导入截断。"}
-                  </div>
-                </article>
-                <article className={`${styles.moduleCard} ${importPreviewHref ? styles.moduleCardInteractive : ""}`}>
-                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.moduleCardLink} aria-label="查看业务失败事件对应的当前批次导入预览" /> : null}
-                  <div className={styles.moduleCardLabel}>业务失败事件</div>
-                  <div className={styles.moduleCardValue}>{config.businessFailureCount ?? 0}</div>
-                  <div className={styles.moduleCardMeta}>
-                    {config.compareBusinessFailureCount !== null && config.compareBusinessFailureCount !== undefined
-                      ? `对比 ${config.compareVersionLabel}: ${config.compareBusinessFailureCount}`
-                      : "如果失败事件同步抬升，优先结合失败原因分布复核是体验问题还是链路问题。"}
-                  </div>
-                </article>
-                <article className={`${styles.moduleCard} ${importPreviewHref ? styles.moduleCardInteractive : ""}`}>
-                  {importPreviewHref ? <Link href={importPreviewHref} className={styles.moduleCardLink} aria-label="查看模块覆盖率对应的当前批次导入预览" /> : null}
-                  <div className={styles.moduleCardLabel}>模块覆盖率</div>
-                  <div className={styles.moduleCardValue}>{config.moduleCoverage?.toFixed(1) ?? "0.0"}%</div>
-                  <div className={styles.moduleCardMeta}>{qualityNote}</div>
-                </article>
-              </div>
+              <ModuleSectionHeader
+                title={levelSections[0]}
+                copy="先确认关卡页的数据质量，再判断失败、重试和行为异常，避免把导入口径问题误判为难度问题。"
+                badge={config.compareVersionLabel ? "带版本对比" : "当前批次"}
+              />
+              <ModuleQualityCards
+                importPreviewHref={importPreviewHref}
+                qualityNote={qualityNote}
+                compareVersionLabel={config.compareVersionLabel}
+                technicalSuccessRate={config.technicalSuccessRate}
+                technicalErrorCount={config.technicalErrorCount}
+                businessFailureCount={config.businessFailureCount}
+                moduleCoverage={config.moduleCoverage}
+                compareTechnicalSuccessRate={config.compareTechnicalSuccessRate}
+                compareTechnicalErrorCount={config.compareTechnicalErrorCount}
+                compareBusinessFailureCount={config.compareBusinessFailureCount}
+                compareModuleCoverage={config.compareModuleCoverage}
+                notes={{
+                  success: "导入质量稳定时，关卡页的失败和重试结论才有解释力。",
+                  errors: "优先排除埋点缺失、level_id 错位或批次导入截断。",
+                  business: "如果失败事件同步抬升，优先结合失败原因分布复核是体验问题还是链路问题。"
+                }}
+              />
             </section>
 
             <section className={styles.moduleSection}>
-              <div className={styles.moduleHeader}>
-                <div>
-                  <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {levelSections[1]}
-                  </h2>
-                  <p className={styles.sectionCopy}>关键指标只服务关卡诊断叙事，帮助团队先判断是整体难度、失败密度，还是重试黏滞在变坏。</p>
-                </div>
-                <span className="pill">{levelRows.length ? `${levelRows.length} 个关卡` : "等待关卡数据"}</span>
-              </div>
-              <div className={styles.moduleGrid}>
-                {config.metrics.map((metric) => (
-                  <article key={metric.label} className={styles.moduleCard}>
-                    <div className={styles.moduleCardLabel}>{metric.label}</div>
-                    <div className={styles.moduleCardValue} style={{ color: config.color }}>
-                      {metric.value}
-                    </div>
-                    <div className={styles.moduleCardMeta}>
-                      {metric.compareValue
-                        ? `对比 ${config.compareVersionLabel}: ${metric.compareValue}`
-                        : "用于判断当前关卡链路是整体波动还是局部卡点。"}
-                    </div>
-                  </article>
-                ))}
-              </div>
+              <ModuleSectionHeader
+                title={levelSections[1]}
+                copy="关键指标只服务关卡诊断叙事，帮助团队先判断是整体难度、失败密度，还是重试黏滞在变坏。"
+                badge={levelRows.length ? `${levelRows.length} 个关卡` : "等待关卡数据"}
+              />
+              <ModuleConclusionCards
+                metrics={config.metrics}
+                color={config.color}
+                compareVersionLabel={config.compareVersionLabel}
+                emptyLabel="用于判断当前关卡链路是整体波动还是局部卡点。"
+              />
               <div className={styles.moduleNarrative}>{config.compareInsight ?? config.insight}</div>
             </section>
 
             <section id="level-signal" className={styles.moduleSection}>
-              <div className={styles.moduleHeader}>
-                <div>
-                  <h2 className="section-title" style={{ fontSize: 18 }}>
-                    失败 / 重试 / 行为异常信号
-                  </h2>
-                  <p className={styles.sectionCopy}>这里直接使用排序后的一级诊断信号，不再把关卡热点埋在通用排行或附属图表里。</p>
-                </div>
-                <span className="pill">level first signals</span>
-              </div>
+              <ModuleSectionHeader
+                title="失败 / 重试 / 行为异常信号"
+                copy="这里直接使用排序后的一级诊断信号，不再把关卡热点埋在通用排行或附属图表里。"
+                badge="level first signals"
+              />
               <div className={styles.levelSignalGrid}>
                 <article className={styles.moduleSignalCard}>
                   <div className={styles.moduleSignalLabel}>{levelSections[2]}</div>
@@ -815,6 +1058,17 @@ export default async function AnalyticsCategoryPage({
                       : "当前批次未识别到需要单独抬出的局内行为异常。"}
                   </div>
                 </article>
+              </div>
+              <div className={styles.infoPanel}>
+                <div className={styles.infoPanelTitle}>关卡运营建议</div>
+                <div className={styles.infoPanelList}>
+                  {levelActionItems.map((item) => (
+                    <div key={item.title} className={styles.infoPanelRowStack}>
+                      <strong>{item.title}</strong>
+                      <span>{item.detail}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </section>
 
@@ -1063,89 +1317,52 @@ export default async function AnalyticsCategoryPage({
         {category === "monetization" ? (
           <>
             <section className={styles.moduleSection} data-monetization-checklist={monetizationChecklist}>
-              <div className={styles.moduleHeader}>
-                <div>
-                  <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {monetizationSections[0]}
-                  </h2>
-                  <p className={styles.sectionCopy}>先确认导入质量与版本上下文，再判断商业化损耗，不让口径问题混进转化分析。</p>
-                </div>
-                <span className="pill">{config.compareVersionLabel ? "带版本对比" : "当前批次"}</span>
-              </div>
-              <div className={styles.moduleGrid}>
-                <article className={styles.moduleCard}>
-                  <div className={styles.moduleCardLabel}>技术通过率</div>
-                  <div className={styles.moduleCardValue}>{config.technicalSuccessRate?.toFixed(1) ?? "0.0"}%</div>
-                  <div className={styles.moduleCardMeta}>
-                    {config.compareTechnicalSuccessRate !== null && config.compareTechnicalSuccessRate !== undefined
-                      ? `对比 ${config.compareVersionLabel}: ${config.compareTechnicalSuccessRate.toFixed(1)}%`
-                      : "技术通过率稳定时，双漏斗里的损耗结论才值得直接讨论。"}
-                  </div>
-                </article>
-                <article className={styles.moduleCard}>
-                  <div className={styles.moduleCardLabel}>技术异常</div>
-                  <div className={styles.moduleCardValue}>{config.technicalErrorCount ?? 0}</div>
-                  <div className={styles.moduleCardMeta}>
-                    {config.compareTechnicalErrorCount !== null && config.compareTechnicalErrorCount !== undefined
-                      ? `对比 ${config.compareVersionLabel}: ${config.compareTechnicalErrorCount}`
-                      : "优先排除礼包字段缺失、支付阶段漏记和批次截断。"}
-                  </div>
-                </article>
-                <article className={styles.moduleCard}>
-                  <div className={styles.moduleCardLabel}>业务失败事件</div>
-                  <div className={styles.moduleCardValue}>{config.businessFailureCount ?? 0}</div>
-                  <div className={styles.moduleCardMeta}>
-                    {config.compareBusinessFailureCount !== null && config.compareBusinessFailureCount !== undefined
-                      ? `对比 ${config.compareVersionLabel}: ${config.compareBusinessFailureCount}`
-                      : "如果业务失败事件同步抬升，要先确认支付链路是否存在结构性中断。"}
-                  </div>
-                </article>
-                <article className={styles.moduleCard}>
-                  <div className={styles.moduleCardLabel}>模块覆盖率</div>
-                  <div className={styles.moduleCardValue}>{config.moduleCoverage?.toFixed(1) ?? "0.0"}%</div>
-                  <div className={styles.moduleCardMeta}>{qualityNote}</div>
-                </article>
-              </div>
+              <ModuleSectionHeader
+                title={monetizationSections[0]}
+                copy="先确认导入质量与版本上下文，再判断商业化损耗，不让口径问题混进转化分析。"
+                badge={config.compareVersionLabel ? "带版本对比" : "当前批次"}
+              />
+              <ModuleQualityCards
+                importPreviewHref={importPreviewHref}
+                qualityNote={qualityNote}
+                compareVersionLabel={config.compareVersionLabel}
+                technicalSuccessRate={config.technicalSuccessRate}
+                technicalErrorCount={config.technicalErrorCount}
+                businessFailureCount={config.businessFailureCount}
+                moduleCoverage={config.moduleCoverage}
+                compareTechnicalSuccessRate={config.compareTechnicalSuccessRate}
+                compareTechnicalErrorCount={config.compareTechnicalErrorCount}
+                compareBusinessFailureCount={config.compareBusinessFailureCount}
+                compareModuleCoverage={config.compareModuleCoverage}
+                notes={{
+                  success: "技术通过率稳定时，双漏斗里的损耗结论才值得直接讨论。",
+                  errors: "优先排除礼包字段缺失、支付阶段漏记和批次截断。",
+                  business: "如果业务失败事件同步抬升，要先确认支付链路是否存在结构性中断。"
+                }}
+              />
             </section>
 
             <section className={styles.moduleSection}>
-              <div className={styles.moduleHeader}>
-                <div>
-                  <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {monetizationSections[1]}
-                  </h2>
-                  <p className={styles.sectionCopy}>这里先给商业化团队一个能直接复述的版本结论，再往下展开损耗和礼包分布。</p>
-                </div>
-                <span className="pill">{config.metrics.length ? `${config.metrics.length} 个结论指标` : "等待商业化数据"}</span>
-              </div>
-              <div className={styles.moduleGrid}>
-                {config.metrics.map((metric) => (
-                  <article key={metric.label} className={styles.moduleCard}>
-                    <div className={styles.moduleCardLabel}>{metric.label}</div>
-                    <div className={styles.moduleCardValue} style={{ color: config.color }}>
-                      {metric.value}
-                    </div>
-                    <div className={styles.moduleCardMeta}>
-                      {metric.compareValue
-                        ? `对比 ${config.compareVersionLabel}: ${metric.compareValue}`
-                        : "优先用来判断入口规模、点击意愿、下单效率和支付落地是否同步波动。"}
-                    </div>
-                  </article>
-                ))}
-              </div>
+              <ModuleSectionHeader
+                title={monetizationSections[1]}
+                copy="这里先给商业化团队一个能直接复述的版本结论，再往下展开损耗和礼包分布。"
+                badge={config.metrics.length ? `${config.metrics.length} 个结论指标` : "等待商业化数据"}
+              />
+              <ModuleConclusionCards
+                metrics={config.metrics}
+                color={config.color}
+                compareVersionLabel={config.compareVersionLabel}
+                emptyLabel="优先用来判断入口规模、点击意愿、下单效率和支付落地是否同步波动。"
+              />
               <div className={styles.moduleNarrative}>{config.compareInsight ?? config.insight}</div>
             </section>
 
             <section id="monetization-signal" className={styles.moduleSection}>
-              <div className={styles.moduleHeader}>
-                <div>
-                  <h2 className="section-title" style={{ fontSize: 18 }}>
-                    损耗 / 礼包信号
-                  </h2>
-                  <p className={styles.sectionCopy}>把最大损耗点和最优礼包先抬到页面上方，业务团队进入页面就能直接看到最该处理的动作。</p>
-                </div>
-                <span className="pill">signal first</span>
-              </div>
+              <ModuleSectionHeader
+                title="损耗 / 礼包信号"
+                copy="把最大损耗点和最优礼包先抬到页面上方，业务团队进入页面就能直接看到最该处理的动作。"
+                badge="signal first"
+              />
               <div className={styles.moduleSignalGrid}>
                 <article className={styles.moduleSignalCard}>
                   <div className={styles.moduleSignalLabel}>{monetizationSections[2]}</div>
@@ -1167,6 +1384,17 @@ export default async function AnalyticsCategoryPage({
                       : "当前批次还没有足够的礼包或计费点分布，暂时无法判断最佳承接入口。"}
                   </div>
                 </article>
+              </div>
+              <div className={styles.infoPanel}>
+                <div className={styles.infoPanelTitle}>商业化建议</div>
+                <div className={styles.infoPanelList}>
+                  {monetizationActionItems.map((item) => (
+                    <div key={item.title} className={styles.infoPanelRowStack}>
+                      <strong>{item.title}</strong>
+                      <span>{item.detail}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </section>
 
@@ -1314,89 +1542,52 @@ export default async function AnalyticsCategoryPage({
         {category === "ads" ? (
           <>
             <section className={styles.moduleSection} data-ads-checklist={adsChecklist}>
-              <div className={styles.moduleHeader}>
-                <div>
-                  <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {adsSections[0]}
-                  </h2>
-                  <p className={styles.sectionCopy}>先确认广告链路的导入质量，再判断 placement 强弱，避免把 request/play 歧义误判成真实流量损耗。</p>
-                </div>
-                <span className="pill">{config.compareVersionLabel ? "带版本对比" : "当前批次"}</span>
-              </div>
-              <div className={styles.moduleGrid}>
-                <article className={styles.moduleCard}>
-                  <div className={styles.moduleCardLabel}>技术通过率</div>
-                  <div className={styles.moduleCardValue}>{config.technicalSuccessRate?.toFixed(1) ?? "0.0"}%</div>
-                  <div className={styles.moduleCardMeta}>
-                    {config.compareTechnicalSuccessRate !== null && config.compareTechnicalSuccessRate !== undefined
-                      ? `对比 ${config.compareVersionLabel}: ${config.compareTechnicalSuccessRate.toFixed(1)}%`
-                      : "广告位判断之前先确认导入链路没有明显缺口。"}
-                  </div>
-                </article>
-                <article className={styles.moduleCard}>
-                  <div className={styles.moduleCardLabel}>技术异常</div>
-                  <div className={styles.moduleCardValue}>{config.technicalErrorCount ?? 0}</div>
-                  <div className={styles.moduleCardMeta}>
-                    {config.compareTechnicalErrorCount !== null && config.compareTechnicalErrorCount !== undefined
-                      ? `对比 ${config.compareVersionLabel}: ${config.compareTechnicalErrorCount}`
-                      : "优先排除 placement 缺失、request 事件漏记和字段混写。"}
-                  </div>
-                </article>
-                <article className={styles.moduleCard}>
-                  <div className={styles.moduleCardLabel}>业务失败事件</div>
-                  <div className={styles.moduleCardValue}>{config.businessFailureCount ?? 0}</div>
-                  <div className={styles.moduleCardMeta}>
-                    {config.compareBusinessFailureCount !== null && config.compareBusinessFailureCount !== undefined
-                      ? `对比 ${config.compareVersionLabel}: ${config.compareBusinessFailureCount}`
-                      : "如果业务失败事件同步增多，要同时检查广告回调和发奖链路。"}
-                  </div>
-                </article>
-                <article className={styles.moduleCard}>
-                  <div className={styles.moduleCardLabel}>模块覆盖率</div>
-                  <div className={styles.moduleCardValue}>{config.moduleCoverage?.toFixed(1) ?? "0.0"}%</div>
-                  <div className={styles.moduleCardMeta}>{qualityNote}</div>
-                </article>
-              </div>
+              <ModuleSectionHeader
+                title={adsSections[0]}
+                copy="先确认广告链路的导入质量，再判断 placement 强弱，避免把 request/play 歧义误判成真实流量损耗。"
+                badge={config.compareVersionLabel ? "带版本对比" : "当前批次"}
+              />
+              <ModuleQualityCards
+                importPreviewHref={importPreviewHref}
+                qualityNote={qualityNote}
+                compareVersionLabel={config.compareVersionLabel}
+                technicalSuccessRate={config.technicalSuccessRate}
+                technicalErrorCount={config.technicalErrorCount}
+                businessFailureCount={config.businessFailureCount}
+                moduleCoverage={config.moduleCoverage}
+                compareTechnicalSuccessRate={config.compareTechnicalSuccessRate}
+                compareTechnicalErrorCount={config.compareTechnicalErrorCount}
+                compareBusinessFailureCount={config.compareBusinessFailureCount}
+                compareModuleCoverage={config.compareModuleCoverage}
+                notes={{
+                  success: "广告位判断之前先确认导入链路没有明显缺口。",
+                  errors: "优先排除 placement 缺失、request 事件漏记和字段混写。",
+                  business: "如果业务失败事件同步增多，要同时检查广告回调和发奖链路。"
+                }}
+              />
             </section>
 
             <section className={styles.moduleSection}>
-              <div className={styles.moduleHeader}>
-                <div>
-                  <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {adsSections[1]}
-                  </h2>
-                  <p className={styles.sectionCopy}>关键指标只服务广告位经营判断，帮助团队先回答“哪里最弱、哪里最占量、发奖是否稳定”。</p>
-                </div>
-                <span className="pill">{config.metrics.length ? `${config.metrics.length} 个结论指标` : "等待广告位数据"}</span>
-              </div>
-              <div className={styles.moduleGrid}>
-                {config.metrics.map((metric) => (
-                  <article key={metric.label} className={styles.moduleCard}>
-                    <div className={styles.moduleCardLabel}>{metric.label}</div>
-                    <div className={styles.moduleCardValue} style={{ color: config.color }}>
-                      {metric.value}
-                    </div>
-                    <div className={styles.moduleCardMeta}>
-                      {metric.compareValue
-                        ? `对比 ${config.compareVersionLabel}: ${metric.compareValue}`
-                        : "优先用来判断广告位规模、播放承接、点击意愿和发奖完成是否同步变化。"}
-                    </div>
-                  </article>
-                ))}
-              </div>
+              <ModuleSectionHeader
+                title={adsSections[1]}
+                copy="关键指标只服务广告位经营判断，帮助团队先回答“哪里最弱、哪里最占量、发奖是否稳定”。"
+                badge={config.metrics.length ? `${config.metrics.length} 个结论指标` : "等待广告位数据"}
+              />
+              <ModuleConclusionCards
+                metrics={config.metrics}
+                color={config.color}
+                compareVersionLabel={config.compareVersionLabel}
+                emptyLabel="优先用来判断广告位规模、播放承接、点击意愿和发奖完成是否同步变化。"
+              />
               <div className={styles.moduleNarrative}>{config.compareInsight ?? config.insight}</div>
             </section>
 
             <section id="ads-signal" className={styles.moduleSection}>
-              <div className={styles.moduleHeader}>
-                <div>
-                  <h2 className="section-title" style={{ fontSize: 18 }}>
-                    广告位强弱信号
-                  </h2>
-                  <p className={styles.sectionCopy}>把最弱广告位和最大流量广告位顶到主图之前，页面一打开就先看到优先级。</p>
-                </div>
-                <span className="pill">signal first</span>
-              </div>
+              <ModuleSectionHeader
+                title="广告位强弱信号"
+                copy="把最弱广告位和最大流量广告位顶到主图之前，页面一打开就先看到优先级。"
+                badge="signal first"
+              />
               <div className={styles.moduleSignalGrid}>
                 <article className={styles.moduleSignalCard}>
                   <div className={styles.moduleSignalLabel}>{adsSections[2]}</div>
@@ -1416,6 +1607,17 @@ export default async function AnalyticsCategoryPage({
                       : "当前批次还没有足够的广告位样本，暂时无法识别主流量 placement。"}
                   </div>
                 </article>
+              </div>
+              <div className={styles.infoPanel}>
+                <div className={styles.infoPanelTitle}>广告建议</div>
+                <div className={styles.infoPanelList}>
+                  {adsActionItems.map((item) => (
+                    <div key={item.title} className={styles.infoPanelRowStack}>
+                      <strong>{item.title}</strong>
+                      <span>{item.detail}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </section>
 

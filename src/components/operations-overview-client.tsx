@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import styles from "@/components/operations-overview.module.css";
 import type { OperationsOverviewData } from "@/lib/server/analytics";
 
 export function OperationsOverviewClient({
@@ -11,15 +12,32 @@ export function OperationsOverviewClient({
   overview: OperationsOverviewData;
 }) {
   const router = useRouter();
-  const recommendedModules = overview.hasInference
-    ? overview.moduleCards.filter((card) => card.key === "monetization" || card.key === "ads")
-    : overview.moduleCards.slice(0, 2);
   const importVersionById = new Map(
     overview.importOptions.map((item) => {
       const match = item.label.match(/\/ v(.+)$/);
       return [item.id, match?.[1] ?? null] as const;
     })
   );
+
+  const recommendedModules = overview.hasInference
+    ? overview.moduleCards.filter((card) => card.key === "monetization" || card.key === "ads")
+    : overview.moduleCards.slice(0, 4);
+
+  function buildImportPreviewHref() {
+    if (!overview.projectId || !overview.currentImportId) {
+      return null;
+    }
+
+    const params = new URLSearchParams();
+    params.set("projectId", overview.projectId);
+    params.set("importId", overview.currentImportId);
+
+    if (overview.compareVersionLabel) {
+      params.set("compareVersion", overview.compareVersionLabel);
+    }
+
+    return `/imports?${params.toString()}`;
+  }
 
   function buildOverviewHref(overrides?: {
     compareVersion?: string | null;
@@ -30,15 +48,15 @@ export function OperationsOverviewClient({
     if (overview.projectId) {
       params.set("projectId", overview.projectId);
     }
-    const nextCompareVersion = overrides && "compareVersion" in overrides
-      ? overrides.compareVersion
-      : overview.compareVersionLabel;
+
+    const nextCompareVersion =
+      overrides && "compareVersion" in overrides ? overrides.compareVersion : overview.compareVersionLabel;
+    const nextImportId =
+      overrides && "currentImportId" in overrides ? overrides.currentImportId : overview.currentImportId;
+
     if (nextCompareVersion) {
       params.set("compareVersion", nextCompareVersion);
     }
-    const nextImportId = overrides && "currentImportId" in overrides
-      ? overrides.currentImportId
-      : overview.currentImportId;
     if (nextImportId) {
       params.set("importId", nextImportId);
     }
@@ -47,45 +65,50 @@ export function OperationsOverviewClient({
     return `/analytics${query ? `?${query}` : ""}`;
   }
 
+  const qualityCards = [
+    {
+      label: "技术通过率",
+      value: `${overview.technicalSuccessRate.toFixed(1)}%`,
+      note: "用于先判断这批日志能否直接支撑运营分析。"
+    },
+    {
+      label: "技术异常",
+      value: `${overview.technicalErrorCount}`,
+      note: "技术异常偏高时，先回看导入映射、时间字段和事件归一化。"
+    },
+    {
+      label: "业务失败事件",
+      value: `${overview.businessFailureCount}`,
+      note: "这里是业务结果信号，不代表导入失败，适合反推真正的问题模块。"
+    },
+    {
+      label: "模块覆盖率",
+      value: `${overview.moduleCoverage.toFixed(1)}%`,
+      note: "覆盖率越高，越适合做版本差异判断和跨模块联动分析。"
+    }
+  ];
+  const importPreviewHref = buildImportPreviewHref();
+
   return (
-    <div style={{ display: "grid", gap: 20 }}>
-      <section
-        className="panel"
-        style={{
-          padding: 22,
-          display: "grid",
-          gap: 18,
-          background:
-            "linear-gradient(135deg, rgba(91, 140, 255, 0.08) 0%, rgba(31, 154, 133, 0.08) 100%), var(--panel)"
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: 16,
-            flexWrap: "wrap"
-          }}
-        >
-          <div style={{ display: "grid", gap: 10 }}>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+    <div className={styles.page}>
+      <section className={`panel ${styles.hero}`}>
+        <div className={styles.heroTop}>
+          <div className={styles.heroCopy}>
+            <div className={styles.badgeRow}>
               <span className="pill">{overview.sourceLabel}</span>
               <span className="pill">当前版本 {overview.versionLabel}</span>
               {overview.currentImportId ? <span className="pill">按导入批次查看</span> : null}
               {overview.compareVersionLabel ? <span className="pill">对比 {overview.compareVersionLabel}</span> : null}
             </div>
             <div>
-              <h2 className="section-title" style={{ fontSize: 20 }}>
-                当前批次质量总览
-              </h2>
-              <p className="section-copy" style={{ marginTop: 6 }}>
-                先确认技术与业务质量，再决定应该优先阅读哪个业务模块，避免一上来陷入局部图表。
+              <h2 className={styles.heroTitle}>当前批次质量总览</h2>
+              <p className={styles.heroText}>
+                先看导入质量，再进入真正值得优先审查的运营模块。这页不再试图把所有图表都塞在一起，而是先帮你确认这批数据能不能用、该先看哪一块、每个模块最值得优先追的异常是什么。
               </p>
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <div className={styles.controlRow}>
             {overview.importOptions.length ? (
               <select
                 className="button-secondary"
@@ -98,9 +121,7 @@ export function OperationsOverviewClient({
                     ? null
                     : overview.compareVersionLabel === nextVersion
                       ? null
-                      : overview.versionOptions.includes(overview.compareVersionLabel)
-                        ? overview.compareVersionLabel
-                        : null;
+                      : overview.compareVersionLabel;
 
                   router.push(
                     buildOverviewHref({
@@ -124,9 +145,15 @@ export function OperationsOverviewClient({
               </Link>
             ) : null}
 
+            {importPreviewHref ? (
+              <Link className="button-secondary" href={importPreviewHref}>
+                查看导入预览
+              </Link>
+            ) : null}
+
             {overview.versionOptions
               .filter((version) => version !== overview.versionLabel)
-              .slice(0, 4)
+              .slice(0, 3)
               .map((version) => (
                 <Link key={version} className="button-secondary" href={buildOverviewHref({ compareVersion: version })}>
                   对比 {version}
@@ -135,203 +162,114 @@ export function OperationsOverviewClient({
           </div>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: 14
-          }}
-        >
-          {[
-            {
-              label: "技术通过率",
-              value: `${overview.technicalSuccessRate.toFixed(1)}%`,
-              tone: "var(--green)",
-              note: "用于先判断这批日志能否直接支撑分析。"
-            },
-            {
-              label: "技术异常",
-              value: `${overview.technicalErrorCount}`,
-              tone: "var(--red)",
-              note: "技术异常偏高时，先回看导入和底层事件口径。"
-            },
-            {
-              label: "业务失败事件",
-              value: `${overview.businessFailureCount}`,
-              tone: "var(--amber)",
-              note: "业务失败越集中，越适合优先进入业务模块页。"
-            },
-            {
-              label: "模块覆盖率",
-              value: `${overview.moduleCoverage.toFixed(1)}%`,
-              tone: "var(--blue)",
-              note: "覆盖率越高，越适合做版本差异判断。"
-            }
-          ].map((card) => (
-            <div
+        <div className={styles.qualityGrid}>
+          {qualityCards.map((card) => (
+            <article
               key={card.label}
-              className="surface"
-              style={{
-                padding: 16,
-                display: "grid",
-                gap: 8,
-                background: "rgba(252, 252, 251, 0.92)"
-              }}
+              className={`${styles.qualityCard} ${importPreviewHref ? styles.qualityCardInteractive : ""}`}
             >
-              <span className="pill" style={{ width: "fit-content", color: card.tone }}>
-                {card.label}
-              </span>
-              <div
-                style={{
-                  fontFamily: "var(--font-number)",
-                  fontSize: 32,
-                  lineHeight: 1,
-                  fontWeight: 700,
-                  color: "var(--title)"
-                }}
-              >
-                {card.value}
-              </div>
-              <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.6 }}>{card.note}</p>
-            </div>
+              {importPreviewHref ? (
+                <Link
+                  href={importPreviewHref}
+                  className={styles.cardLink}
+                  aria-label={`查看${card.label}对应的导入预览`}
+                />
+              ) : null}
+              <div className={styles.qualityLabel}>{card.label}</div>
+              <div className={styles.qualityValue}>{card.value}</div>
+              <div className={styles.qualityMeta}>{card.note}</div>
+            </article>
           ))}
         </div>
-      </section>
 
-      <section
-        className="panel"
-        style={{
-          padding: 18,
-          display: "grid",
-          gap: 12,
-          borderColor: overview.hasInference ? "rgba(201, 137, 44, 0.35)" : "rgba(31, 154, 133, 0.35)",
-          background: overview.hasInference
-            ? "linear-gradient(135deg, rgba(201, 137, 44, 0.08) 0%, rgba(185, 138, 31, 0.04) 100%), var(--panel)"
-            : "linear-gradient(135deg, rgba(31, 154, 133, 0.08) 0%, rgba(40, 164, 107, 0.04) 100%), var(--panel)"
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            alignItems: "center",
-            flexWrap: "wrap"
-          }}
-        >
-          <div style={{ display: "grid", gap: 6 }}>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <span className="pill">{overview.hasInference ? "含推断统计" : "显式统计优先"}</span>
-              <span className="pill">
-                建议先读: {recommendedModules.map((card) => card.label).join(" / ") || "模块入口"}
-              </span>
-            </div>
-            <h2 className="section-title" style={{ fontSize: 18 }}>
-              数据可信度提示
-            </h2>
+        <section className={styles.tipCard}>
+          <div className={styles.badgeRow}>
+            <span className="pill">{overview.hasInference ? "含推断统计" : "显式统计优先"}</span>
+            <span className="pill">
+              建议先读: {recommendedModules.map((card) => card.label).join(" / ") || "模块入口"}
+            </span>
           </div>
-        </div>
-        <p className="section-copy" style={{ maxWidth: "none", marginTop: 0 }}>
-          {overview.hasInference
-            ? "当前批次包含部分推断统计，优先将结论当作运营信号而不是最终定论，建议结合商业化与广告模块的结构图再做判断。"
-            : "当前批次以显式日志链路为主，适合直接按模块查看异常与版本差异，优先从业务失败或流失最集中的模块开始。"}
-        </p>
+          <h3 className={styles.tipTitle}>数据可信度提示</h3>
+          <p className={styles.tipText}>
+            {overview.hasInference
+              ? "当前批次包含部分推断统计，建议优先把它当成运营线索，再结合商业化和广告模块的结构图交叉确认。"
+              : "当前批次主要基于显式日志链路统计，适合直接进入模块页确认流失、失败、转化和广告位表现。"}
+          </p>
+        </section>
       </section>
 
-      <section style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
-        {overview.moduleCards.map((card, index) => (
-          <Link
-            key={card.key}
-            href={card.href}
-            className="panel"
-            style={{
-              padding: 18,
-              display: "grid",
-              gap: 12,
-              background:
-                index === 0
-                  ? "linear-gradient(180deg, rgba(40, 164, 107, 0.08) 0%, var(--panel) 100%)"
-                  : index === 1
-                    ? "linear-gradient(180deg, rgba(201, 137, 44, 0.08) 0%, var(--panel) 100%)"
-                    : index === 2
-                      ? "linear-gradient(180deg, rgba(185, 138, 31, 0.08) 0%, var(--panel) 100%)"
-                      : "linear-gradient(180deg, rgba(122, 103, 232, 0.08) 0%, var(--panel) 100%)"
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 12,
-                alignItems: "flex-start"
-              }}
-            >
-              <div>
-                <div className="pill" style={{ width: "fit-content", marginBottom: 10 }}>
-                  模块入口
+      <div className={styles.splitGrid}>
+        <section className={`panel ${styles.panelCard}`}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <h3 className={styles.sectionTitle}>四个核心模块</h3>
+              <p className={styles.sectionText}>新手引导、关卡与局内行为、商业化、广告，统一按“先结论、再主图、再明细”的顺序进入。</p>
+            </div>
+            <span className="pill">{overview.moduleCards.length} 个模块</span>
+          </div>
+
+          <div className={styles.moduleGrid}>
+            {overview.moduleCards.map((card) => (
+              <Link key={card.key} href={card.href} className={styles.moduleCard}>
+                <div className={styles.moduleTop}>
+                  <div>
+                    <span className="pill">模块入口</span>
+                    <h4 className={styles.moduleTitle}>{card.label}</h4>
+                  </div>
+                  <span className="pill">进入</span>
                 </div>
-                <h2 className="section-title" style={{ fontSize: 18 }}>
-                  {card.label}
-                </h2>
-              </div>
-              <span style={{ color: "var(--muted)", fontSize: 14 }}>查看详情</span>
-            </div>
-            <p style={{ margin: 0, color: "var(--muted)", fontSize: 14, lineHeight: 1.7 }}>{card.summary}</p>
-            <div
-              className="surface"
-              style={{
-                padding: 14,
-                display: "grid",
-                gap: 8,
-                background: "rgba(252, 252, 251, 0.96)"
-              }}
-            >
-              <strong style={{ fontSize: 15 }}>{card.primaryMetric}</strong>
-              <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.6 }}>
-                当前最值得优先追踪的异常: {card.anomaly}
-              </p>
-            </div>
-          </Link>
-        ))}
-      </section>
+                <p className={styles.moduleSummary}>{card.summary}</p>
+                <div className={styles.metricStrip}>
+                  <div className={styles.metricPrimary}>{card.primaryMetric}</div>
+                  <div className={styles.metricSecondary}>当前最值得先追的异常: {card.anomaly}</div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
 
-      <section className="panel" style={{ padding: 18, display: "grid", gap: 14 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            alignItems: "center",
-            flexWrap: "wrap"
-          }}
-        >
+        <section className={`panel ${styles.panelCard}`}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <h3 className={styles.sectionTitle}>建议阅读顺序</h3>
+              <p className={styles.sectionText}>入口页先帮你排好顺序，避免一上来在多个模块之间来回切换。</p>
+            </div>
+            <span className="pill">{recommendedModules.length || overview.moduleCards.length} 步</span>
+          </div>
+
+          <div className={styles.readingList}>
+            {(recommendedModules.length ? recommendedModules : overview.moduleCards).map((card, index) => (
+              <div key={card.key} className={styles.readingItem}>
+                <Link
+                  href={card.href}
+                  className={styles.cardLink}
+                  aria-label={`进入${card.label}模块`}
+                />
+                <span className={styles.readingIndex}>{String(index + 1).padStart(2, "0")}</span>
+                <div className={styles.readingBody}>
+                  <h4 className={styles.readingTitle}>{card.label}</h4>
+                  <p className={styles.readingText}>{card.anomaly}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <section className={`panel ${styles.panelCard}`}>
+        <div className={styles.sectionHeader}>
           <div>
-            <h2 className="section-title" style={{ fontSize: 18 }}>
-              异常优先入口
-            </h2>
-            <p className="section-copy" style={{ marginTop: 6 }}>
-              不从图表海里找问题，直接从最强异常信号切入对应模块页。
-            </p>
+            <h3 className={styles.sectionTitle}>异常优先入口</h3>
+            <p className={styles.sectionText}>不从图表海里找问题，直接从最强异常信号跳进对应模块页。</p>
           </div>
           <span className="pill">{overview.anomalyShortcuts.length} 条快捷入口</span>
         </div>
 
-        <div style={{ display: "grid", gap: 10 }}>
+        <div className={styles.shortcutList}>
           {overview.anomalyShortcuts.map((shortcut) => (
-            <Link
-              key={shortcut.label}
-              href={shortcut.href}
-              className="surface"
-              style={{
-                padding: "14px 16px",
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 12,
-                alignItems: "center"
-              }}
-            >
-              <span style={{ fontSize: 14, lineHeight: 1.6 }}>{shortcut.label}</span>
-              <span style={{ color: "var(--muted)", whiteSpace: "nowrap" }}>进入模块</span>
+            <Link key={shortcut.label} href={shortcut.href} className={styles.shortcutItem}>
+              <span className={styles.shortcutLabel}>{shortcut.label}</span>
+              <span className={styles.shortcutMeta}>进入模块</span>
             </Link>
           ))}
         </div>
