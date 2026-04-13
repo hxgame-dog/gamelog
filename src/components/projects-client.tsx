@@ -114,8 +114,8 @@ export function ProjectsClient({ initialProjects }: { initialProjects: Project[]
                     <a className="button-secondary" href={`/plans?projectId=${project.id}`}>
                       查看方案
                     </a>
-                    <a className="button-secondary" href={`/analytics/onboarding?projectId=${project.id}`}>
-                      查看看板
+                    <a className="button-secondary" href={`/analytics?projectId=${project.id}`}>
+                      运营分析
                     </a>
                     <button
                       className="button-secondary"

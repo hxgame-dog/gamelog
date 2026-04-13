@@ -17,12 +17,20 @@
   color: var(--muted);
   font-weight: 500;
   font-size: 12px;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease, color 160ms ease;
 }
 
 .active {
   color: var(--text);
   border-color: var(--border);
   background: #ffffff;
+}
+
+.pillButton:focus-visible {
+  outline: 2px solid rgba(31, 154, 133, 0.7);
+  outline-offset: 2px;
+  border-color: rgba(31, 154, 133, 0.45);
+  box-shadow: 0 0 0 4px rgba(31, 154, 133, 0.14);
 }
 
 .hero {
@@ -112,31 +120,39 @@
   position: absolute;
   inset: 0;
   border-radius: 14px;
-  z-index: 1;
+  z-index: 3;
 }
 
 .qualityLabel {
   position: relative;
-  z-index: 2;
+  z-index: 1;
   color: var(--muted);
   font-size: 12px;
+  pointer-events: none;
 }
 
 .qualityValue {
   position: relative;
-  z-index: 2;
+  z-index: 1;
   margin-top: 8px;
   font-family: var(--font-number);
   font-size: 24px;
   font-weight: 700;
+  pointer-events: none;
 }
 
 .qualityMeta {
   position: relative;
-  z-index: 2;
+  z-index: 1;
   margin-top: 6px;
   color: var(--muted);
   font-size: 12px;
+  pointer-events: none;
+}
+
+.qualityCardLink:focus-visible {
+  outline: 2px solid rgba(31, 154, 133, 0.65);
+  outline-offset: -2px;
 }
 
 .qualityHint {
@@ -405,6 +421,21 @@
   font-size: 13px;
 }
 
+.infoPanelRowStack {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+}
+
+.infoPanelRowStack span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
 .funnelCompareGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -487,6 +518,334 @@
   line-height: 1.7;
 }
 
+.moduleSection {
+  display: grid;
+  gap: 14px;
+}
+
+.moduleHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.moduleGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.moduleChartGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(320px, 0.88fr);
+  gap: 12px;
+}
+
+.moduleCard {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(31, 154, 133, 0.14);
+  background:
+    radial-gradient(circle at top right, rgba(31, 154, 133, 0.12), transparent 36%),
+    linear-gradient(180deg, #ffffff 0%, #fbfcfb 100%);
+  box-shadow: var(--shadow-soft);
+}
+
+.moduleCardInteractive {
+  transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.moduleCardInteractive:hover {
+  border-color: rgba(31, 154, 133, 0.28);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-soft);
+}
+
+.moduleCardLink {
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  z-index: 3;
+}
+
+.moduleCardLink:focus-visible {
+  outline: 2px solid rgba(31, 154, 133, 0.65);
+  outline-offset: -2px;
+}
+
+.moduleCardLabel {
+  position: relative;
+  z-index: 1;
+  color: var(--muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.moduleCardValue {
+  position: relative;
+  z-index: 1;
+  font-family: var(--font-number);
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.moduleCardMeta {
+  position: relative;
+  z-index: 1;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+  pointer-events: none;
+}
+
+.moduleNarrative {
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(31, 154, 133, 0.14);
+  background: linear-gradient(180deg, rgba(31, 154, 133, 0.08) 0%, rgba(31, 154, 133, 0.03) 100%);
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+.moduleSubNote {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.moduleSignalGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.levelSignalGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.moduleSignalCard {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(31, 154, 133, 0.2);
+  background:
+    linear-gradient(135deg, rgba(31, 154, 133, 0.14) 0%, rgba(255, 255, 255, 0.94) 46%),
+    #ffffff;
+  box-shadow: var(--shadow-soft);
+}
+
+.moduleSignalLabel {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.moduleSignalTitle {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.moduleSignalMeta {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.moduleDetailTable {
+  display: grid;
+  gap: 8px;
+}
+
+.moduleDetailTableRow {
+  display: grid;
+  grid-template-columns: 1.4fr repeat(6, minmax(0, 0.72fr));
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: #fcfcfb;
+  font-size: 13px;
+}
+
+.moduleDetailTableHead {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.moduleDetailPrimary {
+  display: grid;
+  gap: 4px;
+}
+
+.moduleDetailPrimary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.moduleDetailStrong {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.moduleEmptyState {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px dashed var(--border);
+  background: #fcfcfb;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.levelMicroflowHighlight {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(31, 154, 133, 0.2);
+  background:
+    radial-gradient(circle at top right, rgba(31, 154, 133, 0.16), transparent 38%),
+    linear-gradient(180deg, rgba(31, 154, 133, 0.1) 0%, rgba(255, 255, 255, 0.96) 100%);
+}
+
+.levelMicroflowHighlightStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.levelMicroflowGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.levelMicroflowPanel {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(31, 154, 133, 0.14);
+  background:
+    linear-gradient(180deg, #ffffff 0%, #fbfcfb 100%);
+  box-shadow: var(--shadow-soft);
+}
+
+.levelMicroflowPanelTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.levelMicroflowPanelTitle {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.levelMicroflowList {
+  display: grid;
+  gap: 8px;
+}
+
+.levelMicroflowItem {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+}
+
+.levelMicroflowItemStats {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.levelDetailTables {
+  display: grid;
+  gap: 12px;
+}
+
+.levelDetailBlock {
+  display: grid;
+  gap: 10px;
+}
+
+.levelDetailBlockTitle {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.levelDetailTable,
+.levelFlowTable {
+  display: grid;
+  gap: 8px;
+}
+
+.levelDetailTableRow {
+  display: grid;
+  grid-template-columns: 1.5fr repeat(4, minmax(0, 0.72fr)) 1.2fr 0.9fr;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: #fcfcfb;
+  font-size: 13px;
+}
+
+.levelFlowTableRow {
+  display: grid;
+  grid-template-columns: 1.1fr 1.2fr repeat(3, minmax(0, 0.72fr));
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: #fcfcfb;
+  font-size: 13px;
+}
+
+.levelDetailTableHeaderRow,
+.levelFlowTableHeaderRow {
+  background: #f8f8f6;
+}
+
+.levelDetailPrimary {
+  display: grid;
+  gap: 4px;
+}
+
+.levelDetailPrimary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .detailTableHeader {
   display: flex;
   justify-content: space-between;
@@ -518,12 +877,20 @@
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease, color 160ms ease;
 }
 
 .detailFilterButtonActive {
   border-color: rgba(31, 154, 133, 0.24);
   background: rgba(31, 154, 133, 0.08);
   color: var(--text);
+}
+
+.detailFilterButton:focus-visible {
+  outline: 2px solid rgba(31, 154, 133, 0.7);
+  outline-offset: 2px;
+  border-color: rgba(31, 154, 133, 0.45);
+  box-shadow: 0 0 0 4px rgba(31, 154, 133, 0.14);
 }
 
 .rankList {
@@ -619,7 +986,8 @@
 
 @media (max-width: 1080px) {
   .qualityGrid,
-  .signalGrid {
+  .signalGrid,
+  .levelSignalGrid {
     grid-template-columns: 1fr;
   }
 }
@@ -645,14 +1013,19 @@
 @media (max-width: 1280px) {
   .compareSummary,
   .chartGrid,
+  .moduleChartGrid,
   .detailGrid,
   .levelGrid,
   .funnelCompareGrid,
-  .sideBySidePanels {
+  .sideBySidePanels,
+  .levelMicroflowGrid {
     grid-template-columns: 1fr;
   }
 
-  .detailTableRow {
+  .detailTableRow,
+  .moduleDetailTableRow,
+  .levelDetailTableRow,
+  .levelFlowTableRow {
     grid-template-columns: 1fr;
   }
 
@@ -670,6 +1043,11 @@
   .metricGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .moduleSignalGrid,
+  .levelSignalGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 560px) {
@@ -677,7 +1055,8 @@
     grid-template-columns: 1fr;
   }
 
-  .deepDiveGrid {
+  .deepDiveGrid,
+  .moduleGrid {
     grid-template-columns: 1fr;
   }
 }

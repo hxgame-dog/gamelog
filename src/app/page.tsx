@@ -5,13 +5,70 @@ import { AppShell } from "@/components/app-shell";
 import { CategoryPill, InsightCard, MetricCard, PageHeader } from "@/components/ui";
 import { requireUser } from "@/lib/server/auth";
 import { getDashboardOverview } from "@/lib/server/dashboard";
+import { getLatestImportForProject } from "@/lib/server/imports";
+import { getProjectsForUser } from "@/lib/server/projects";
 
 export default async function HomePage() {
-  await requireUser();
+  const user = await requireUser();
   const overview = await getDashboardOverview();
   const recentImports = "recentImports" in overview ? overview.recentImports ?? [] : [];
   const categorySnapshots = "categorySnapshots" in overview ? overview.categorySnapshots ?? [] : [];
   const priorityAlerts = "priorityAlerts" in overview ? overview.priorityAlerts ?? [] : [];
+  const projects = await getProjectsForUser(user.id);
+  const activeProject = projects.find((project) => project.name === overview.projectName) ?? projects[0] ?? null;
+  const activeProjectId = activeProject?.id ?? null;
+  const latestImport = activeProjectId ? await getLatestImportForProject(activeProjectId) : null;
+  const activeImportId = latestImport?.id ?? null;
+  const compareVersionParam =
+    overview.compareVersion && overview.compareVersion !== "上一版本" && overview.compareVersion !== overview.currentVersion
+      ? overview.compareVersion
+      : null;
+
+  function buildAnalyticsCategoryHref(
+    categoryKey: string,
+    options?: { compareVersion?: string | null; detailFilter?: string | null }
+  ) {
+    const params = new URLSearchParams();
+
+    if (activeProjectId) {
+      params.set("projectId", activeProjectId);
+    }
+    if (activeImportId) {
+      params.set("importId", activeImportId);
+    }
+    if (options?.compareVersion) {
+      params.set("compareVersion", options.compareVersion);
+    }
+    if (options?.detailFilter) {
+      params.set("detailFilter", options.detailFilter);
+    }
+
+    const qs = params.toString();
+    return `/analytics/${categoryKey}${qs ? `?${qs}` : ""}`;
+  }
+
+  function mergeHrefWithContext(href: string, fallback: string) {
+    const fallbackUrl = new URL(fallback, "http://localhost");
+    const candidateUrl = new URL(href?.trim() ? href : fallback, "http://localhost");
+
+    candidateUrl.searchParams.forEach((value, key) => {
+      if (!fallbackUrl.searchParams.get(key)) {
+        fallbackUrl.searchParams.set(key, value);
+      }
+    });
+
+    if (activeProjectId && !fallbackUrl.searchParams.get("projectId")) {
+      fallbackUrl.searchParams.set("projectId", activeProjectId);
+    }
+    if (activeImportId && !fallbackUrl.searchParams.get("importId")) {
+      fallbackUrl.searchParams.set("importId", activeImportId);
+    }
+    if (compareVersionParam && !fallbackUrl.searchParams.get("compareVersion")) {
+      fallbackUrl.searchParams.set("compareVersion", compareVersionParam);
+    }
+
+    return `${fallbackUrl.pathname}${fallbackUrl.search}${candidateUrl.hash || fallbackUrl.hash}`;
+  }
 
   return (
     <AppShell currentPath="/">
@@ -20,7 +77,10 @@ export default async function HomePage() {
         copy="围绕事件分类查看当前版本的数据健康度、导入状态和 AI 洞察，帮助策划、数据和研发在同一视图里对齐问题。"
         actions={
           <div className="header-actions">
-            <Link href="/imports" className="button-primary">
+            <Link
+              href={activeProjectId ? `/imports?${new URLSearchParams({ projectId: activeProjectId }).toString()}` : "/imports"}
+              className="button-primary"
+            >
               上传日志
             </Link>
           </div>
@@ -79,7 +139,7 @@ export default async function HomePage() {
             {overview.categories.map((category) => (
               <Link
                 key={category.key}
-                href={`/analytics/${category.key}`}
+                href={buildAnalyticsCategoryHref(category.key, { compareVersion: compareVersionParam })}
                 className={`surface ${styles.categoryCard}`}
               >
                 <div className={styles.categoryHeader}>
@@ -134,15 +194,23 @@ export default async function HomePage() {
             <span className="pill">直达异常明细</span>
           </div>
           <div className={styles.priorityAlertList}>
-            {priorityAlerts.map((item) => (
-              <Link key={item.key} href={item.href} className={`surface ${styles.priorityAlertItem}`}>
-                <div className={styles.statusRow}>
-                  <strong>{item.title}</strong>
-                  <span className="pill">{item.severity.toFixed(1)}%</span>
-                </div>
-                <p className={styles.taskDetail}>{item.detail}</p>
-              </Link>
-            ))}
+            {priorityAlerts.map((item) => {
+              const fallback = buildAnalyticsCategoryHref(item.key, {
+                compareVersion: compareVersionParam,
+                detailFilter: "abnormal"
+              });
+              const href = mergeHrefWithContext(item.href ?? "", fallback);
+
+              return (
+                <Link key={item.key} href={href} className={`surface ${styles.priorityAlertItem}`}>
+                  <div className={styles.statusRow}>
+                    <strong>{item.title}</strong>
+                    <span className="pill">{item.severity.toFixed(1)}%</span>
+                  </div>
+                  <p className={styles.taskDetail}>{item.detail}</p>
+                </Link>
+              );
+            })}
           </div>
         </section>
 
@@ -201,7 +269,7 @@ export default async function HomePage() {
             {categorySnapshots.map((item) => (
               <Link
                 key={item.key}
-                href={`/analytics/${item.key}${overview.compareVersion ? `?compareVersion=${encodeURIComponent(overview.compareVersion)}` : ""}`}
+                href={buildAnalyticsCategoryHref(item.key, { compareVersion: compareVersionParam })}
                 className={`surface ${styles.snapshotItem}`}
               >
                 <div className={styles.categoryHeader}>

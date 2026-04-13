@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "tsx --test src/lib/import-summary.test.ts src/lib/server/analytics.test.ts",
     "lint": "eslint .",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
@@ -30,6 +31,7 @@
     "eslint": "latest",
     "eslint-config-next": "latest",
     "prisma": "^7.5.0",
+    "tsx": "^4.21.0",
     "typescript": "latest"
   }
 }

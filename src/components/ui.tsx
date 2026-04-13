@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { CSSProperties, ReactNode } from "react";
 
+import { deriveOnboardingTrendCompareSeries } from "@/lib/analytics-ui";
+
 import chartStyles from "./charts.module.css";
 
 export function HeaderActions({ children }: { children: ReactNode }) {
@@ -241,46 +243,64 @@ export function TimelinePanel() {
   );
 }
 
-export function StructuredTableEditor({ rows }: { rows: Array<Record<string, string>> }) {
+export function StructuredTableEditor({ rows }: { rows: Array<Record<string, string | number | null | undefined>> }) {
   const headers = Object.keys(rows[0] ?? {});
+
+  if (!headers.length) {
+    return (
+      <div style={{ marginTop: 16 }}>
+        <div
+          className="surface"
+          role="status"
+          style={{
+            padding: 12,
+            fontSize: 12,
+            color: "var(--muted)"
+          }}
+        >
+          当前还没有可展示的结构化明细。
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ marginTop: 16 }}>
-      <div
+      <table
         style={{
-          display: "grid",
-          gridTemplateColumns: `repeat(${headers.length}, minmax(0, 1fr))`,
-          gap: 8,
-          padding: "0 12px 8px",
-          color: "var(--muted)",
-          fontSize: 11,
-          textTransform: "uppercase",
-          letterSpacing: "0.04em"
+          width: "100%",
+          borderCollapse: "separate",
+          borderSpacing: "0 8px"
         }}
       >
-        {headers.map((header) => (
-          <div key={header}>{header}</div>
-        ))}
-      </div>
-        <div style={{ display: "grid", gap: 8 }}>
-          {rows.map((row, index) => (
-            <div
-              key={index}
-              className="surface"
-              style={{
-                display: "grid",
-                gridTemplateColumns: `repeat(${headers.length}, minmax(0, 1fr))`,
-                gap: 8,
-                padding: 12,
-                fontSize: 12
-              }}
-            >
+        <thead>
+          <tr
+            style={{
+              color: "var(--muted)",
+              fontSize: 11,
+              textTransform: "uppercase",
+              letterSpacing: "0.04em"
+            }}
+          >
             {headers.map((header) => (
-              <div key={header}>{row[header]}</div>
+              <th key={header} scope="col" style={{ padding: "0 12px 8px", textAlign: "left", fontWeight: 500 }}>
+                {header}
+              </th>
             ))}
-          </div>
-        ))}
-      </div>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={index} className="surface" style={{ fontSize: 12 }}>
+              {headers.map((header) => (
+                <td key={header} style={{ padding: 12 }}>
+                  {row[header] ?? "—"}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -513,23 +533,35 @@ export function DonutChartCard({
   copy,
   values,
   colors,
-  labels
+  labels,
+  valueFormat = "percent"
 }: {
   title: string;
   copy: string;
   values: number[];
   colors: readonly string[];
   labels: readonly string[];
+  valueFormat?: "percent" | "count";
 }) {
   const total = values.reduce((sum, value) => sum + value, 0);
   const peakIndex = values.reduce((bestIndex, value, index, all) => (value > (all[bestIndex] ?? -1) ? index : bestIndex), 0);
+  const peakValue = values[peakIndex] ?? 0;
+  const peakShare = total > 0 ? (peakValue / total) * 100 : 0;
   const segments = values.reduce<string[]>((result, value, index) => {
+    if (total <= 0 || value <= 0) {
+      return result;
+    }
+
     const consumed = values.slice(0, index).reduce((sum, current) => sum + current, 0);
     const start = (consumed / total) * 360;
     const end = ((consumed + value) / total) * 360;
     result.push(`${colors[index]} ${start}deg ${end}deg`);
     return result;
   }, []);
+
+  function formatValue(value: number) {
+    return valueFormat === "count" ? value.toFixed(0) : `${value.toFixed(1)}%`;
+  }
 
   return (
     <div className={`panel ${chartStyles.chartCard}`}>
@@ -547,17 +579,19 @@ export function DonutChartCard({
         </div>
         <div className={chartStyles.chartSummaryCard}>
           <span className={chartStyles.chartSummaryLabel}>占比</span>
-          <strong>{values[peakIndex] ?? 0}%</strong>
+          <strong>{peakShare.toFixed(1)}%</strong>
         </div>
         <div className={chartStyles.chartSummaryCard}>
           <span className={chartStyles.chartSummaryLabel}>覆盖总量</span>
-          <strong>{total.toFixed(0)}%</strong>
+          <strong>{formatValue(total)}</strong>
         </div>
       </div>
       <div className={chartStyles.pieWrap}>
         <div
           className={chartStyles.donut}
-          style={{ background: `conic-gradient(${segments.join(", ")})` } as CSSProperties}
+          style={{
+            background: total > 0 && segments.length ? `conic-gradient(${segments.join(", ")})` : "conic-gradient(rgba(15, 23, 32, 0.08) 0deg 360deg)"
+          } as CSSProperties}
         />
         <div className={chartStyles.legend}>
           {labels.map((label, index) => (
@@ -566,7 +600,13 @@ export function DonutChartCard({
                 <span className={chartStyles.dot} style={{ background: colors[index] }} />
                 {label}
               </div>
-              <strong title={`${label} 占比 ${values[index]}%`}>{values[index]}%</strong>
+              <strong
+                title={`${label} ${valueFormat === "count" ? "数量" : "占比"} ${formatValue(values[index] ?? 0)}${valueFormat === "count" ? `，占比 ${(total > 0 ? ((values[index] ?? 0) / total) * 100 : 0).toFixed(1)}%` : ""}`}
+              >
+                {valueFormat === "count"
+                  ? `${formatValue(values[index] ?? 0)} · ${(total > 0 ? ((values[index] ?? 0) / total) * 100 : 0).toFixed(1)}%`
+                  : formatValue(values[index] ?? 0)}
+              </strong>
             </div>
           ))}
         </div>
@@ -636,47 +676,53 @@ export function OnboardingFunnelCard({
           </>
         ) : null}
       </div>
-      <div className={chartStyles.funnelWrap}>
-        {steps.map((step) => {
-          const key = step.stepId || step.stepName;
-          const compare = compareMap.get(key);
-          const arrivalPct = Math.max(4, (step.arrivals / baseline) * 100);
-          const completionPct = Math.max(2, arrivalPct * (step.completionRate / 100));
-          const dropoff = step.dropoffCount ?? Math.max(step.arrivals - step.completions, 0);
-          return (
-            <div key={key} className={chartStyles.funnelRow}>
-              <div className={chartStyles.funnelLabel}>
-                <strong>{step.stepName || step.stepId}</strong>
-                <span className={chartStyles.funnelMeta}>步骤 {step.stepId || "未命名"}</span>
-              </div>
-              <div className={`${chartStyles.funnelTrack} ${dropoff === maxDropoff && maxDropoff > 0 ? chartStyles.funnelHighlight : ""}`}>
-                {compare ? (
+      {steps.length ? (
+        <div className={chartStyles.funnelWrap}>
+          {steps.map((step) => {
+            const key = step.stepId || step.stepName;
+            const compare = compareMap.get(key);
+            const arrivalPct = Math.max(4, (step.arrivals / baseline) * 100);
+            const completionPct = Math.max(2, arrivalPct * (step.completionRate / 100));
+            const dropoff = step.dropoffCount ?? Math.max(step.arrivals - step.completions, 0);
+            return (
+              <div key={key} className={chartStyles.funnelRow}>
+                <div className={chartStyles.funnelLabel}>
+                  <strong>{step.stepName || step.stepId}</strong>
+                  <span className={chartStyles.funnelMeta}>步骤 {step.stepId || "未命名"}</span>
+                </div>
+                <div className={`${chartStyles.funnelTrack} ${dropoff === maxDropoff && maxDropoff > 0 ? chartStyles.funnelHighlight : ""}`}>
+                  {compare ? (
+                    <div className={chartStyles.funnelBarBase}>
+                      <div
+                        className={`${chartStyles.funnelBarFill} ${chartStyles.funnelBarSecondary}`}
+                        style={{ width: `${Math.max(2, (((compare.arrivals || 0) / Math.max(compareSteps?.[0]?.arrivals || 1, 1)) * 100))}%`, background: "rgba(15, 23, 32, 0.16)" }}
+                      />
+                    </div>
+                  ) : null}
                   <div className={chartStyles.funnelBarBase}>
-                    <div
-                      className={`${chartStyles.funnelBarFill} ${chartStyles.funnelBarSecondary}`}
-                      style={{ width: `${Math.max(2, (((compare.arrivals || 0) / Math.max(compareSteps?.[0]?.arrivals || 1, 1)) * 100))}%`, background: "rgba(15, 23, 32, 0.16)" }}
-                    />
+                    <div className={chartStyles.funnelBarFill} style={{ width: `${arrivalPct}%`, background: `${color}33` }} />
+                    <div className={chartStyles.funnelBarFill} style={{ width: `${completionPct}%`, background: color }} />
                   </div>
-                ) : null}
-                <div className={chartStyles.funnelBarBase}>
-                  <div className={chartStyles.funnelBarFill} style={{ width: `${arrivalPct}%`, background: `${color}33` }} />
-                  <div className={chartStyles.funnelBarFill} style={{ width: `${completionPct}%`, background: color }} />
+                  <div className={chartStyles.funnelStats}>
+                    <span>{step.arrivals} 到达</span>
+                    <span>{step.completions} 完成</span>
+                    <span>流失 {dropoff}</span>
+                    <span>{step.avgDuration.toFixed(1)} 秒</span>
+                  </div>
                 </div>
-                <div className={chartStyles.funnelStats}>
-                  <span>{step.arrivals} 到达</span>
-                  <span>{step.completions} 完成</span>
-                  <span>流失 {dropoff}</span>
-                  <span>{step.avgDuration.toFixed(1)} 秒</span>
+                <div className={chartStyles.funnelDelta}>
+                  <div>{step.completionRate.toFixed(1)}%</div>
+                  {compare ? <div className={chartStyles.funnelMeta}>对比 {(step.completionRate - compare.completionRate > 0 ? "+" : "")}{(step.completionRate - compare.completionRate).toFixed(1)}%</div> : null}
                 </div>
               </div>
-              <div className={chartStyles.funnelDelta}>
-                <div>{step.completionRate.toFixed(1)}%</div>
-                {compare ? <div className={chartStyles.funnelMeta}>对比 {(step.completionRate - compare.completionRate > 0 ? "+" : "")}{(step.completionRate - compare.completionRate).toFixed(1)}%</div> : null}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div style={{ marginTop: 14, padding: 14, borderRadius: 14, border: "1px dashed var(--border)", color: "var(--muted)", fontSize: 13 }}>
+          当前批次还没有可用的 onboarding 步骤数据，页面会在导入 step 日志后继续按专属漏斗结构渲染。
+        </div>
+      )}
       {compareSteps?.length ? (
         <div className={chartStyles.compareLegend}>
           <span className={chartStyles.compareLegendItem}>
@@ -707,14 +753,9 @@ export function OnboardingTrendCard({
   compareSteps?: OnboardingStepRow[];
 }) {
   const values = steps.map((step) => step.completionRate);
-  const compareValues = steps.map((step) => {
-    const match = (compareSteps ?? []).find((item) => (item.stepId || item.stepName) === (step.stepId || step.stepName));
-    return match?.completionRate ?? 0;
-  });
+  const { compareValues, compareLatest, comparePoints } = deriveOnboardingTrendCompareSeries(steps, compareSteps);
   const points = linePath(values);
-  const comparePoints = compareSteps?.length ? linePath(compareValues) : "";
   const latest = values.at(-1) ?? 0;
-  const compareLatest = compareSteps?.length ? compareValues.at(-1) ?? 0 : null;
 
   return (
     <div className={`panel ${chartStyles.chartCard}`}>
@@ -746,43 +787,55 @@ export function OnboardingTrendCard({
           </>
         ) : null}
       </div>
-      <div className={chartStyles.lineWrap}>
-        <div className={chartStyles.grid} />
-        <svg className={chartStyles.svg} viewBox="0 0 100 100" preserveAspectRatio="none">
-          {comparePoints ? (
-            <path d={comparePoints} fill="none" stroke="var(--border-strong)" strokeWidth="2.5" strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />
-          ) : null}
-          <path d={points} fill="none" stroke={color} strokeWidth="3" vectorEffect="non-scaling-stroke" />
-          {compareSteps?.length
-            ? compareValues.map((value, index) => {
-                const x = (index / (compareValues.length - 1 || 1)) * 100;
+      {steps.length ? (
+        <>
+          <div className={chartStyles.lineWrap}>
+            <div className={chartStyles.grid} />
+            <svg className={chartStyles.svg} viewBox="0 0 100 100" preserveAspectRatio="none">
+              {comparePoints ? (
+                <path d={comparePoints} fill="none" stroke="var(--border-strong)" strokeWidth="2.5" strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />
+              ) : null}
+              <path d={points} fill="none" stroke={color} strokeWidth="3" vectorEffect="non-scaling-stroke" />
+              {compareSteps?.length
+                ? compareValues.map((value, index) => {
+                    if (value === null) {
+                      return null;
+                    }
+                    const x = (index / (compareValues.length - 1 || 1)) * 100;
+                    const y = 100 - value;
+                    return (
+                      <circle key={`compare-step-${index}`} cx={x} cy={y} r="2.2" fill="var(--border-strong)">
+                        <title>{`对比完成率 ${value.toFixed(1)}%`}</title>
+                      </circle>
+                    );
+                  })
+                : null}
+              {values.map((value, index) => {
+                const x = (index / (values.length - 1 || 1)) * 100;
                 const y = 100 - value;
+                const compareValue = compareValues[index];
                 return (
-                  <circle key={`compare-step-${index}`} cx={x} cy={y} r="2.2" fill="var(--border-strong)">
-                    <title>{`对比完成率 ${value.toFixed(1)}%`}</title>
+                  <circle key={`step-${index}`} cx={x} cy={y} r="2.5" fill={color}>
+                    <title>{`${steps[index]?.stepName || steps[index]?.stepId}\n当前完成率 ${value.toFixed(1)}%${compareValue !== null ? `\n对比完成率 ${compareValue.toFixed(1)}%` : ""}`}</title>
                   </circle>
                 );
-              })
-            : null}
-          {values.map((value, index) => {
-            const x = (index / (values.length - 1 || 1)) * 100;
-            const y = 100 - value;
-            return (
-              <circle key={`step-${index}`} cx={x} cy={y} r="2.5" fill={color}>
-                <title>{`${steps[index]?.stepName || steps[index]?.stepId}\n当前完成率 ${value.toFixed(1)}%${compareSteps?.length ? `\n对比完成率 ${compareValues[index].toFixed(1)}%` : ""}`}</title>
-              </circle>
-            );
-          })}
-        </svg>
-      </div>
-      <div className={chartStyles.trendFooter}>
-        {steps.map((step, index) => (
-          <div key={`${step.stepId}-${index}`} className={chartStyles.trendStep}>
-            <span className={chartStyles.trendStepLabel}>{step.stepName || step.stepId}</span>
-            <strong className={chartStyles.trendStepValue}>{step.completionRate.toFixed(1)}%</strong>
+              })}
+            </svg>
           </div>
-        ))}
-      </div>
+          <div className={chartStyles.trendFooter}>
+            {steps.map((step, index) => (
+              <div key={`${step.stepId}-${index}`} className={chartStyles.trendStep}>
+                <span className={chartStyles.trendStepLabel}>{step.stepName || step.stepId}</span>
+                <strong className={chartStyles.trendStepValue}>{step.completionRate.toFixed(1)}%</strong>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div style={{ marginTop: 14, padding: 14, borderRadius: 14, border: "1px dashed var(--border)", color: "var(--muted)", fontSize: 13 }}>
+          当前批次还没有足够的步骤完成率样本，趋势曲线会在导入 onboarding 步骤日志后自动出现。
+        </div>
+      )}
     </div>
   );
 }
@@ -805,24 +858,30 @@ export function OnboardingDurationRankingCard({
           <h3 className={chartStyles.chartTitle}>{title}</h3>
           <p className={chartStyles.chartCopy}>{copy}</p>
         </div>
-        <span className="pill">构成</span>
+        <span className="pill">耗时</span>
       </div>
-      <div className={chartStyles.rankingList}>
-        {ranking.map((step) => (
-          <div key={`${step.stepId}-${step.stepName}`} className={chartStyles.rankingItem}>
-            <div>
-              <strong>{step.stepName || step.stepId}</strong>
-              <div className={chartStyles.rankingMeta}>
-                流失 {step.dropoffCount ?? Math.max(step.arrivals - step.completions, 0)} / 完成率 {step.completionRate.toFixed(1)}%
+      {ranking.length ? (
+        <div className={chartStyles.rankingList}>
+          {ranking.map((step) => (
+            <div key={`${step.stepId}-${step.stepName}`} className={chartStyles.rankingItem}>
+              <div>
+                <strong>{step.stepName || step.stepId}</strong>
+                <div className={chartStyles.rankingMeta}>
+                  流失 {step.dropoffCount ?? Math.max(step.arrivals - step.completions, 0)} / 完成率 {step.completionRate.toFixed(1)}%
+                </div>
+              </div>
+              <div className={chartStyles.rankingValue}>
+                {step.avgDuration.toFixed(1)}s
+                <div className={chartStyles.rankingMeta}>{maxDuration > 0 ? `${((step.avgDuration / maxDuration) * 100).toFixed(0)}% 相对耗时` : "—"}</div>
               </div>
             </div>
-            <div className={chartStyles.rankingValue}>
-              {step.avgDuration.toFixed(1)}s
-              <div className={chartStyles.rankingMeta}>{maxDuration > 0 ? `${((step.avgDuration / maxDuration) * 100).toFixed(0)}% 相对耗时` : "—"}</div>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ marginTop: 14, padding: 14, borderRadius: 14, border: "1px dashed var(--border)", color: "var(--muted)", fontSize: 13 }}>
+          当前批次还没有可排序的步骤耗时数据，耗时排行会在步骤样本就绪后自动补齐。
+        </div>
+      )}
     </div>
   );
 }
@@ -1024,11 +1083,13 @@ type AdPlacementRow = {
 export function AdPlacementFlowCard({
   title,
   copy,
-  placements
+  placements,
+  note
 }: {
   title: string;
   copy: string;
   placements: AdPlacementRow[];
+  note?: string | null;
 }) {
   const maxRequests = Math.max(...placements.map((row) => row.requests), 1);
   const totalRewardRate = placements.length
@@ -1054,6 +1115,24 @@ export function AdPlacementFlowCard({
           <strong>{totalRewardRate.toFixed(1)}%</strong>
         </div>
       </div>
+      {note ? (
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 10,
+            alignItems: "center",
+            marginBottom: 14,
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid rgba(198, 146, 35, 0.24)",
+            background: "rgba(198, 146, 35, 0.08)"
+          }}
+        >
+          <span className="pill">请求 / 播放口径提示</span>
+          <span style={{ color: "var(--muted)", fontSize: 12, lineHeight: 1.7 }}>{note}</span>
+        </div>
+      ) : null}
       <div className={chartStyles.placementFlowWrap}>
         {placements.map((row) => {
           const requestPct = Math.max(4, (row.requests / maxRequests) * 100);
