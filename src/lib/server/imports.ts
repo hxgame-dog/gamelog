@@ -339,6 +339,8 @@ export async function getImportPreviewById(importId: string) {
       rawHeaders: item.rawHeaders ?? [],
       fieldMappings: item.fieldMappings ?? [],
       previewRows: summary.previewRows ?? [],
+      cleaning: summary.cleaning,
+      diagnostics: summary.diagnostics,
       summary
     };
   }
@@ -361,6 +363,8 @@ export async function getImportPreviewById(importId: string) {
     fieldMappings:
       (item.fieldMappings as Array<{ source: string; target: string }> | null) ?? [],
     previewRows: summary.previewRows ?? [],
+    cleaning: summary.cleaning,
+    diagnostics: summary.diagnostics,
     summary
   };
 }
