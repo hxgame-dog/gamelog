@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildImportSummary } from "./import-summary";
+import { detectAndParseRawTelemetryCsv } from "./raw-telemetry";
 
 const mappings = [
   { source: "event_name", target: "event_name" },
@@ -77,4 +78,75 @@ test("buildImportSummary returns module payloads for onboarding, level, monetiza
   assert.equal(adPlacement?.requests, 1);
   assert.equal(adPlacement?.plays, 1);
   assert.equal(adPlacement?.clicks, 1);
+});
+
+test("detectAndParseRawTelemetryCsv expands raw AppsFlyer payloads and normalizes comma decimals", () => {
+  const fillerHeaders = Array.from({ length: 38 }, (_, index) => `filler_${index + 1}`);
+  const headerRow = [
+    "event_name",
+    "event_time",
+    "customer_user_id",
+    ...fillerHeaders,
+    "event_value",
+    "custom_data",
+    "event_revenue"
+  ]
+    .map((value) => `"${value.replace(/"/g, '""')}"`)
+    .join(";");
+  const dataRow = [
+    "af_purchase",
+    "2026-04-22 10:00:00",
+    "u1",
+    ...fillerHeaders.map(() => ""),
+    '{"af_revenue":"12,99"}',
+    '{"reward_id":"starter_pack","item_name":"starter_pack","trigger_scene":"shop","screw_color":"blue","current_slots":"1,331771"}',
+    "12,99"
+  ]
+    .map((value) => `"${value.replace(/"/g, '""')}"`)
+    .join(";");
+
+  const parsed = detectAndParseRawTelemetryCsv([headerRow, dataRow].join("\n"));
+  if (!parsed) {
+    throw new Error("expected raw AppsFlyer CSV to be detected");
+  }
+
+  assert.equal(parsed.notice, "已识别为分号分隔的原始日志导出，并自动展开 event_value/custom_data。当前映射的是清洗后的业务字段。");
+  assert.deepEqual(parsed.headers.slice(0, 8), [
+    "event_name",
+    "event_time",
+    "user_id",
+    "platform",
+    "app_version",
+    "country_code",
+    "level_id",
+    "level_type"
+  ]);
+  assert.deepEqual(parsed.rows[0], {
+    event_name: "af_purchase",
+    event_time: "2026-04-22 10:00:00",
+    user_id: "u1",
+    platform: "",
+    app_version: "",
+    country_code: "",
+    level_id: "",
+    level_type: "",
+    step_id: "",
+    step_name: "",
+    result: "success",
+    fail_reason: "",
+    duration_sec: null,
+    placement: "",
+    price: 12.99,
+    reward_type: "starter_pack",
+    activity_id: "",
+    activity_type: "",
+    reward_id: "starter_pack",
+    item_name: "starter_pack",
+    gain_source: "",
+    gain_amount: null,
+    resource_type: "",
+    current_slots: 1.331771,
+    screw_color: "blue",
+    trigger_scene: "shop"
+  });
 });
