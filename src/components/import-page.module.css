@@ -120,6 +120,74 @@
   background: rgba(211, 93, 93, 0.08);
 }
 
+.sectionHeading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.sectionCopy {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.statusHero {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: linear-gradient(135deg, rgba(31, 154, 133, 0.08), rgba(252, 252, 251, 0.96));
+}
+
+.statusTitle {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.statusCopy {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.statusPass {
+  color: var(--teal);
+  background: rgba(31, 154, 133, 0.08);
+  border-color: rgba(31, 154, 133, 0.18);
+}
+
+.statusRisk {
+  color: #b46b00;
+  background: rgba(210, 165, 34, 0.1);
+  border-color: rgba(210, 165, 34, 0.18);
+}
+
+.statusSevere,
+.statusMissing {
+  color: var(--red);
+  background: rgba(211, 93, 93, 0.08);
+  border-color: rgba(211, 93, 93, 0.18);
+}
+
 .mappingTable {
   display: grid;
   gap: 10px;
@@ -166,6 +234,23 @@
   font-family: var(--font-number);
   font-size: 24px;
   font-weight: 700;
+}
+
+.cleaningGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.cleaningItem {
+  padding: 14px;
+  border-radius: 12px;
+  background: #fcfcfb;
+  border: 1px solid var(--border);
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
 }
 
 .rankBlock {
@@ -277,6 +362,126 @@
   font-size: 14px;
 }
 
+.moduleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.moduleCard {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: #fcfcfb;
+}
+
+.moduleHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.moduleMeta {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.softNotice {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px dashed var(--border);
+  color: var(--muted);
+  font-size: 13px;
+  background: #fafaf8;
+}
+
+.issueList {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.issueItem {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: #fcfcfb;
+}
+
+.issueSeverity {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.issueError {
+  color: var(--red);
+  background: rgba(211, 93, 93, 0.08);
+  border-color: rgba(211, 93, 93, 0.18);
+}
+
+.issueWarning {
+  color: #b46b00;
+  background: rgba(210, 165, 34, 0.1);
+  border-color: rgba(210, 165, 34, 0.18);
+}
+
+.issueInfo {
+  color: var(--teal);
+  background: rgba(31, 154, 133, 0.08);
+  border-color: rgba(31, 154, 133, 0.18);
+}
+
+.issueBody {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.issueTarget {
+  font-weight: 700;
+}
+
+.issueSuggestion {
+  color: var(--muted);
+}
+
+.actionGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.actionCard {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: #fcfcfb;
+  color: inherit;
+  text-decoration: none;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
 .previewHeader,
 .previewRow {
   display: grid;
@@ -314,7 +519,10 @@
 @media (max-width: 1100px) {
   .layout,
   .importControls,
-  .syntheticGrid {
+  .syntheticGrid,
+  .cleaningGrid,
+  .moduleGrid,
+  .actionGrid {
     grid-template-columns: 1fr;
   }
 
@@ -324,5 +532,9 @@
 
   .previewFilter {
     min-width: 100%;
+  }
+
+  .issueItem {
+    grid-template-columns: 1fr;
   }
 }

@@ -185,6 +185,65 @@ function suggestTarget(header: string) {
   return "property_hint";
 }
 
+const strictModuleKeys = ["global", "onboarding", "level", "ads", "monetization"] as const;
+const softModuleKeys = ["liveops", "economy", "social"] as const;
+
+const moduleLabels: Record<(typeof strictModuleKeys)[number] | (typeof softModuleKeys)[number], string> = {
+  global: "公共属性",
+  onboarding: "新手引导",
+  level: "关卡与局内行为",
+  ads: "广告分析",
+  monetization: "商业化",
+  liveops: "运营活动",
+  economy: "资源产销",
+  social: "社交裂变"
+};
+
+const diagnosticStatusMeta = {
+  PASS: {
+    label: "通过",
+    className: styles.statusPass,
+    copy: "当前批次已经满足主要分析口径，可以直接进入运营分析。"
+  },
+  HIGH_RISK: {
+    label: "高风险",
+    className: styles.statusRisk,
+    copy: "这批日志可以继续分析，但有关键缺口，结论需要带着风险理解。"
+  },
+  SEVERE_GAP: {
+    label: "严重缺口",
+    className: styles.statusSevere,
+    copy: "至少有一个核心模块缺少关键事件或字段，建议先看诊断再看图。"
+  },
+  MISSING: {
+    label: "缺失",
+    className: styles.statusMissing,
+    copy: "当前模块在这批日志中还没有形成可分析结构。"
+  }
+} as const;
+
+const issueSeverityMeta = {
+  error: { label: "错误", className: styles.issueError },
+  warning: { label: "警告", className: styles.issueWarning },
+  info: { label: "提示", className: styles.issueInfo }
+} as const;
+
+function describeModuleCheck(check: NonNullable<ImportSummary["diagnostics"]>["moduleChecks"][keyof NonNullable<ImportSummary["diagnostics"]>["moduleChecks"]]) {
+  const segments = [`命中 ${check.matchedRows} 行`];
+  if (check.missingEvents.length) {
+    segments.push(`缺事件 ${check.missingEvents.length}`);
+  }
+  if (check.missingFields.length) {
+    segments.push(`缺字段 ${check.missingFields.length}`);
+  }
+  segments.push(check.canAnalyze ? "可进入分析" : "建议先补日志");
+  return segments.join(" / ");
+}
+
+function describeIssue(issue: NonNullable<ImportSummary["diagnostics"]>["issues"][number]) {
+  return `${moduleLabels[issue.module]} · ${issue.target}`;
+}
+
 export function ImportsClient({
   projects,
   initialProjectId,
@@ -233,8 +292,11 @@ export function ImportsClient({
   const selectedHistoryImport =
     importHistory.find((item) => item.id === selectedHistoryImportId) ?? latestImport ?? null;
   const displaySummary = summary ?? (selectedHistoryImport?.summaryJson ?? null);
+  const cleaning = displaySummary ? displaySummary.cleaning : null;
+  const diagnostics = displaySummary ? displaySummary.diagnostics : null;
   const compareHistoryImport =
     importHistory.find((item) => item.id !== (selectedHistoryImport?.id ?? "")) ?? null;
+  const compareSummary = compareHistoryImport?.summaryJson ?? null;
   const rowsToShow = displaySummary?.previewRows ?? [];
   const keyword = previewFilter.trim().toLowerCase();
   const previewRows = !keyword
@@ -242,6 +304,26 @@ export function ImportsClient({
     : rowsToShow.filter((row) =>
         Object.values(row).some((value) => String(value ?? "").toLowerCase().includes(keyword))
       );
+  const statusMeta = diagnostics
+    ? diagnosticStatusMeta[diagnostics.overallStatus]
+    : diagnosticStatusMeta.HIGH_RISK;
+  const strictModuleCards = diagnostics
+    ? strictModuleKeys.map((key) => ({
+        key,
+        label: moduleLabels[key],
+        check: diagnostics.moduleChecks[key],
+        statusMeta: diagnosticStatusMeta[diagnostics.moduleChecks[key].status]
+      }))
+    : [];
+  const missingSoftModules = diagnostics
+    ? softModuleKeys.filter((key) => diagnostics.moduleChecks[key].status === "MISSING")
+    : [];
+  const visibleIssues = diagnostics
+    ? [...diagnostics.issues].sort((left, right) => {
+        const weight = { error: 0, warning: 1, info: 2 } as const;
+        return weight[left.severity] - weight[right.severity];
+      })
+    : [];
 
   function summaryDelta(current: number | undefined, compare: number | undefined, suffix = "") {
     if (current === undefined || compare === undefined) {
@@ -252,7 +334,7 @@ export function ImportsClient({
     return `${sign}${delta.toFixed(1)}${suffix}`;
   }
 
-  function buildOperationsHref(targetCategory: "onboarding" | "level") {
+  function buildOperationsHref(targetCategory: "onboarding" | "level" | "ads" | "monetization") {
     const params = new URLSearchParams();
 
     if (selectedProjectId) {
@@ -599,19 +681,49 @@ export function ImportsClient({
 
       <div style={{ display: "grid", gap: 16 }}>
         <section className={`panel ${styles.card}`}>
-          <h2 className="section-title" style={{ fontSize: 18 }}>
-            导入结果摘要
-          </h2>
+          <div className={styles.sectionHeading}>
+            <div>
+              <h2 className="section-title" style={{ fontSize: 18 }}>
+                导入总状态
+              </h2>
+              <div className={styles.sectionCopy}>
+                先确认这批日志的技术通过率、业务失败事件和可分析模块覆盖率，再决定是否继续进入运营分析。
+              </div>
+            </div>
+            {displaySummary ? (
+              <span className={`${styles.statusBadge} ${statusMeta.className}`}>{statusMeta.label}</span>
+            ) : null}
+          </div>
+
           {displaySummary ? (
             <>
+              <div className={styles.statusHero}>
+                <div>
+                  <div className={styles.statusTitle}>当前批次{statusMeta.label}</div>
+                  <div className={styles.statusCopy}>{statusMeta.copy}</div>
+                </div>
+                {selectedHistoryImport ? (
+                  <div className={styles.selectedImportMeta}>
+                    当前查看批次：{selectedHistoryImport.fileName} / v{selectedHistoryImport.version}
+                    {selectedHistoryImport.source
+                      ? ` / ${selectedHistoryImport.source === "SYNTHETIC" ? "模拟数据" : "真实数据"}`
+                      : ""}
+                  </div>
+                ) : null}
+              </div>
+
               <div className={styles.summaryGrid}>
                 <div className={styles.summaryItem}>
                   <div className={styles.summaryLabel}>技术通过率</div>
-                  <div className={styles.summaryValue}>{(displaySummary.technicalSuccessRate ?? displaySummary.successRate).toFixed(1)}%</div>
+                  <div className={styles.summaryValue}>
+                    {(displaySummary.technicalSuccessRate ?? displaySummary.successRate).toFixed(1)}%
+                  </div>
                 </div>
                 <div className={styles.summaryItem}>
                   <div className={styles.summaryLabel}>技术异常</div>
-                  <div className={styles.summaryValue}>{displaySummary.technicalErrorCount ?? displaySummary.errorCount}</div>
+                  <div className={styles.summaryValue}>
+                    {displaySummary.technicalErrorCount ?? displaySummary.errorCount}
+                  </div>
                 </div>
                 <div className={styles.summaryItem}>
                   <div className={styles.summaryLabel}>业务失败事件</div>
@@ -622,46 +734,61 @@ export function ImportsClient({
                   <div className={styles.summaryValue}>{(displaySummary.moduleCoverage ?? 0).toFixed(1)}%</div>
                 </div>
               </div>
-              <div className={styles.ctaRow}>
-                {selectedHistoryImport?.id ? (
-                  <Link className="button-secondary" href={`/api/imports/${selectedHistoryImport.id}/preview`} target="_blank">
-                    查看导入预览
-                  </Link>
-                ) : null}
-                <Link className="button-secondary" href={buildOperationsHref("onboarding")}>
-                  进入新手引导运营分析
-                </Link>
-                <Link className="button-secondary" href={buildOperationsHref("level")}>
-                  进入关卡与局内行为分析
-                </Link>
-              </div>
-              {selectedHistoryImport ? (
-                <div className={styles.selectedImportMeta}>
-                  当前查看批次：{selectedHistoryImport.fileName} / v{selectedHistoryImport.version}
-                  {selectedHistoryImport.source ? ` / ${selectedHistoryImport.source === "SYNTHETIC" ? "模拟数据" : "真实数据"}` : ""}
-                </div>
-              ) : null}
-              {compareHistoryImport?.summaryJson ? (
-                <div className={styles.compareStrip}>
-                  <span>对比批次：{compareHistoryImport.fileName} / v{compareHistoryImport.version}</span>
-                  <span>技术通过率 {summaryDelta(displaySummary.technicalSuccessRate ?? displaySummary.successRate, compareHistoryImport.summaryJson.technicalSuccessRate ?? compareHistoryImport.summaryJson.successRate, "%")}</span>
-                  <span>技术异常 {summaryDelta(displaySummary.technicalErrorCount ?? displaySummary.errorCount, compareHistoryImport.summaryJson.technicalErrorCount ?? compareHistoryImport.summaryJson.errorCount)}</span>
-                  <span>业务失败 {summaryDelta(displaySummary.businessFailureCount ?? 0, compareHistoryImport.summaryJson.businessFailureCount ?? 0)}</span>
-                  <span>记录数 {summaryDelta(displaySummary.recordCount, compareHistoryImport.summaryJson.recordCount)}</span>
-                </div>
-              ) : null}
-              <div className={styles.rankBlock}>
-                <h3 className={styles.stepTitle}>Top 事件</h3>
-                {displaySummary.topEvents.map((item) => (
-                  <div key={item.name} className={styles.rankItem}>
-                    <span>{item.name}</span>
-                    <strong>{item.count}</strong>
+
+              {cleaning ? (
+                <div className={styles.cleaningGrid}>
+                  <div className={styles.cleaningItem}>
+                    <div className={styles.summaryLabel}>来源类型</div>
+                    <strong>{cleaning.sourceKind ?? "标准日志"}</strong>
                   </div>
-                ))}
-              </div>
+                  <div className={styles.cleaningItem}>
+                    <div className={styles.summaryLabel}>编码</div>
+                    <strong>{cleaning.encoding ?? "自动识别"}</strong>
+                  </div>
+                  <div className={styles.cleaningItem}>
+                    <div className={styles.summaryLabel}>分隔符</div>
+                    <strong>{cleaning.delimiter ?? "自动识别"}</strong>
+                  </div>
+                  <div className={styles.cleaningItem}>
+                    <div className={styles.summaryLabel}>已展开字段</div>
+                    <strong>{cleaning.expandedFields?.length ? cleaning.expandedFields.join(" / ") : "无"}</strong>
+                  </div>
+                </div>
+              ) : null}
+
+              {compareSummary ? (
+                <div className={styles.compareStrip}>
+                  <span>对比批次：{compareHistoryImport?.fileName} / v{compareHistoryImport?.version}</span>
+                  <span>
+                    技术通过率{" "}
+                    {summaryDelta(
+                      displaySummary.technicalSuccessRate ?? displaySummary.successRate,
+                      compareSummary.technicalSuccessRate ?? compareSummary.successRate,
+                      "%"
+                    )}
+                  </span>
+                  <span>
+                    技术异常{" "}
+                    {summaryDelta(
+                      displaySummary.technicalErrorCount ?? displaySummary.errorCount,
+                      compareSummary.technicalErrorCount ?? compareSummary.errorCount
+                    )}
+                  </span>
+                  <span>
+                    业务失败{" "}
+                    {summaryDelta(
+                      displaySummary.businessFailureCount ?? 0,
+                      compareSummary.businessFailureCount ?? 0
+                    )}
+                  </span>
+                  <span>记录数 {summaryDelta(displaySummary.recordCount, compareSummary.recordCount)}</span>
+                </div>
+              ) : null}
             </>
           ) : (
-            <div className={styles.emptyState}>导入完成后，这里会显示真实摘要。</div>
+            <div className={styles.emptyState}>
+              先上传日志并完成字段映射。导入完成后，这里会显示总状态、清洗元信息和可分析模块覆盖率。
+            </div>
           )}
 
           <div style={{ marginTop: 18, display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -690,6 +817,160 @@ export function ImportsClient({
                 {isPending ? "正在生成..." : "生成并导入模拟数据"}
               </button>
             )}
+          </div>
+        </section>
+
+        <section className={`panel ${styles.card}`}>
+          <div className={styles.previewTop}>
+            <div>
+              <h2 className="section-title" style={{ fontSize: 18 }}>
+                清洗结果预览
+              </h2>
+              <div className={styles.sectionCopy}>
+                这里展示的是导入后保存下来的标准化字段，方便直接核对原始日志是否被清洗成预期结构。
+              </div>
+            </div>
+            {mode === "real" ? (
+              <input
+                className={styles.previewFilter}
+                placeholder="按事件名 / 步骤 / 关卡筛选"
+                value={previewFilter}
+                onChange={(event) => setPreviewFilter(event.target.value)}
+              />
+            ) : null}
+          </div>
+          {mode === "real" ? (
+            previewRows.length ? (
+              <div className={styles.previewWrap}>
+                <div className={styles.previewHeader}>
+                  {Object.keys(previewRows[0] ?? {}).map((header) => (
+                    <div key={header}>{header}</div>
+                  ))}
+                </div>
+                {previewRows.map((row, index) => (
+                  <div key={`${fileName || latestImport?.fileName || "import"}-${index}`} className={styles.previewRow}>
+                    {Object.keys(previewRows[0] ?? {}).map((header) => (
+                      <div key={header}>{String(row[header] ?? "")}</div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className={styles.emptyState}>
+                {rows.length
+                  ? "当前文件已上传，但还没有完成导入。导入完成后，这里会显示保存下来的清洗后标准字段预览。"
+                  : "导入完成后，这里会保存并展示当前批次的清洗后数据预览。"}
+              </div>
+            )
+          ) : (
+            <div className={styles.emptyState}>
+              当前入口会基于已确认的方案结构生成事件日志，并沿用与真实日志相同的摘要与诊断规则。
+            </div>
+          )}
+        </section>
+
+        <section id="import-diagnostics" className={`panel ${styles.card}`}>
+          <div className={styles.sectionHeading}>
+            <div>
+              <h2 className="section-title" style={{ fontSize: 18 }}>
+                严格诊断结果
+              </h2>
+              <div className={styles.sectionCopy}>
+                公共属性、新手引导、关卡与局内行为、广告分析、商业化会严格校验；其余模块只做缺失提示。
+              </div>
+            </div>
+          </div>
+
+          {diagnostics ? (
+            <>
+              <div className={styles.moduleGrid}>
+                {strictModuleCards.map((item) => (
+                  <div key={item.key} className={styles.moduleCard}>
+                    <div className={styles.moduleHeader}>
+                      <strong>{item.label}</strong>
+                      <span className={`${styles.statusBadge} ${item.statusMeta.className}`}>
+                        {item.statusMeta.label}
+                      </span>
+                    </div>
+                    <div className={styles.moduleMeta}>{describeModuleCheck(item.check)}</div>
+                  </div>
+                ))}
+              </div>
+
+              {missingSoftModules.length ? (
+                <div className={styles.softNotice}>
+                  其他模块暂未命中：{missingSoftModules.map((key) => moduleLabels[key]).join(" / ")}。这不会阻断导入，但会提示后续补日志。
+                </div>
+              ) : null}
+
+              <div className={styles.issueList}>
+                {visibleIssues.length ? (
+                  visibleIssues.slice(0, 10).map((issue, index) => {
+                    const severityMeta = issueSeverityMeta[issue.severity];
+                    return (
+                      <div key={`${issue.code}-${issue.target}-${index}`} className={styles.issueItem}>
+                        <div className={`${styles.issueSeverity} ${severityMeta.className}`}>
+                          {severityMeta.label}
+                        </div>
+                        <div className={styles.issueBody}>
+                          <div className={styles.issueTarget}>{describeIssue(issue)}</div>
+                          <div>{issue.message}</div>
+                          <div className={styles.issueSuggestion}>{issue.suggestion}</div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className={styles.emptyState}>当前批次没有新的严格诊断问题，可以继续进入运营分析。</div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className={styles.emptyState}>
+              导入完成后，这里会按模块显示严格诊断结果，并告诉你哪些缺口会影响后续可视化分析。
+            </div>
+          )}
+        </section>
+
+        <section className={`panel ${styles.card}`}>
+          <div className={styles.sectionHeading}>
+            <div>
+              <h2 className="section-title" style={{ fontSize: 18 }}>
+                后续动作
+              </h2>
+              <div className={styles.sectionCopy}>
+                导入完成后可以先看完整预览和诊断，再按模块进入运营分析，不会因为单个风险直接卡死流程。
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.actionGrid}>
+            {selectedHistoryImport?.id ? (
+              <Link className={styles.actionCard} href={`/api/imports/${selectedHistoryImport.id}/preview`} target="_blank">
+                <strong>查看导入预览</strong>
+                <span>打开当前批次的预览接口，直接查看保存下来的清洗结果。</span>
+              </Link>
+            ) : null}
+            <a className={styles.actionCard} href="#import-diagnostics">
+              <strong>查看完整诊断</strong>
+              <span>回到严格诊断区，优先处理缺事件、缺字段和值异常的问题。</span>
+            </a>
+            <Link className={styles.actionCard} href={buildOperationsHref("onboarding")}>
+              <strong>进入新手引导分析</strong>
+              <span>查看步骤漏斗、最大流失步骤和步骤耗时排行。</span>
+            </Link>
+            <Link className={styles.actionCard} href={buildOperationsHref("level")}>
+              <strong>进入关卡与局内行为分析</strong>
+              <span>查看关卡漏斗、失败原因、重试热点和局内行为占比。</span>
+            </Link>
+            <Link className={styles.actionCard} href={buildOperationsHref("ads")}>
+              <strong>进入广告分析</strong>
+              <span>查看广告位曝光、点击、发奖链路和广告位构成。</span>
+            </Link>
+            <Link className={styles.actionCard} href={buildOperationsHref("monetization")}>
+              <strong>进入商业化分析</strong>
+              <span>查看付费链路、礼包分布和关键转化损耗点。</span>
+            </Link>
           </div>
         </section>
 
@@ -726,7 +1007,9 @@ export function ImportsClient({
                     </div>
                     <div className={styles.historyMeta}>
                       <span>记录 {itemSummary?.recordCount ?? 0}</span>
-                      <span>技术通过率 {(itemSummary?.technicalSuccessRate ?? itemSummary?.successRate ?? 0).toFixed(1)}%</span>
+                      <span>
+                        技术通过率 {(itemSummary?.technicalSuccessRate ?? itemSummary?.successRate ?? 0).toFixed(1)}%
+                      </span>
                       <span>{item.uploadedAt ? new Date(item.uploadedAt).toLocaleString("zh-CN") : "刚刚"}</span>
                     </div>
                   </button>
@@ -737,53 +1020,6 @@ export function ImportsClient({
             <div className={styles.emptyState}>导入完成后，这里会保留最近批次，方便切换预览和重新进入分析。</div>
           )}
         </section>
-
-        {mode === "real" ? (
-          <section className={`panel ${styles.card}`}>
-            <div className={styles.previewTop}>
-              <h2 className="section-title" style={{ fontSize: 18 }}>
-                导入后预览
-              </h2>
-              <input
-                className={styles.previewFilter}
-                placeholder="按事件名 / 步骤 / 关卡筛选"
-                value={previewFilter}
-                onChange={(event) => setPreviewFilter(event.target.value)}
-              />
-            </div>
-            {previewRows.length ? (
-              <div className={styles.previewWrap}>
-                <div className={styles.previewHeader}>
-                  {Object.keys(previewRows[0] ?? {}).map((header) => (
-                    <div key={header}>{header}</div>
-                  ))}
-                </div>
-                {previewRows.map((row, index) => (
-                  <div key={`${fileName || latestImport?.fileName || "import"}-${index}`} className={styles.previewRow}>
-                    {Object.keys(previewRows[0] ?? {}).map((header) => (
-                      <div key={header}>{String(row[header] ?? "")}</div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className={styles.emptyState}>
-                {rows.length
-                  ? "当前文件已上传，但还没有完成导入。导入完成后，这里会显示保存下来的清洗后标准字段预览。"
-                  : "导入完成后，这里会保存并展示当前批次的清洗后数据预览。"}
-              </div>
-            )}
-          </section>
-        ) : (
-          <section className={`panel ${styles.card}`}>
-            <h2 className="section-title" style={{ fontSize: 18 }}>
-              模拟数据说明
-            </h2>
-            <div className={styles.emptyState}>
-              当前入口会基于已确认的方案结构生成事件日志，并自动触发与真实导入一致的摘要聚合，所以生成完成后你可以直接去运营分析和 AI 报告页查看结果。
-            </div>
-          </section>
-        )}
       </div>
     </div>
   );

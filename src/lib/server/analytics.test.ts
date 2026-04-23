@@ -283,8 +283,11 @@ test("imports CTAs use operations language and preserve the selected batch when 
   const pagePath = path.resolve(process.cwd(), "src/components/imports-client.tsx");
   const source = readFileSync(pagePath, "utf8");
 
-  assert.match(source, /进入新手引导运营分析/);
+  assert.match(source, /进入新手引导分析/);
   assert.match(source, /进入关卡与局内行为分析/);
+  assert.match(source, /进入广告分析/);
+  assert.match(source, /进入商业化分析/);
+  assert.match(source, /查看完整诊断/);
   assert.match(source, /searchParams\.get\("compareVersion"\)/);
   assert.match(source, /searchParams\.get\("detailFilter"\)/);
   assert.match(source, /params\.set\("importId", selectedHistoryImport\.id\)/);
