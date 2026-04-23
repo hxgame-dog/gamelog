@@ -242,10 +242,18 @@ function ModuleRiskBanner({
     moduleRisk.status === "PASS"
       ? "下方图表可以直接拿来解释业务变化，如果仍有异常，更像真实体验或策略问题。"
       : moduleRisk.status === "PENDING"
-        ? "下方图表仍会继续展示，但当前更适合把它们当成导入复核和补埋点线索。"
+        ? "下方图表仍会继续展示，但当前更适合把它们当成待补诊断的复核线索，而不是明确风险结论。"
         : moduleRisk.canAnalyze
           ? "下方图表仍会继续展示，但需要把异常结论和诊断缺口一起阅读，避免过度归因。"
           : "下方图表仍会继续展示，但当前缺口会明显削弱解释力，建议先修复导入结构再做定性。";
+  const conclusionLabel =
+    moduleRisk.status === "PENDING"
+      ? "等待诊断"
+      : moduleRisk.status === "PASS"
+        ? "可直接阅读"
+        : moduleRisk.canAnalyze
+          ? "谨慎解读"
+          : "先修结构";
 
   return (
     <section className={`${styles.riskBanner} ${statusMeta.className}`}>
@@ -269,7 +277,7 @@ function ModuleRiskBanner({
         </div>
         <div className={styles.riskBannerStat}>
           <span className={styles.riskBannerStatLabel}>当前结论</span>
-          <strong>{moduleRisk.canAnalyze ? "可继续分析" : "先修结构"}</strong>
+          <strong>{conclusionLabel}</strong>
         </div>
       </div>
 

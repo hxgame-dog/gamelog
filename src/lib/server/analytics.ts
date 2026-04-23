@@ -134,8 +134,8 @@ type ImportSummary = {
     technicalErrorCount: number;
     businessFailureCount: number;
     moduleCoverage: number;
-    moduleChecks: Record<DiagnosticModuleKey, ModuleDiagnosticCheck>;
-    issues: DiagnosticIssue[];
+    moduleChecks?: Partial<Record<DiagnosticModuleKey, ModuleDiagnosticCheck>>;
+    issues?: DiagnosticIssue[];
   };
 };
 
@@ -229,6 +229,23 @@ function buildPendingRiskNote(category: CategoryKey) {
   }
 }
 
+function buildIncompleteRiskNote(category: CategoryKey) {
+  switch (category) {
+    case "onboarding":
+      return "当前批次的新手引导严格诊断结果还不完整，建议重新导入或补跑诊断后再结合图表解读。";
+    case "level":
+      return "当前批次的关卡与局内行为严格诊断结果还不完整，建议重新导入或补跑诊断后再结合图表解读。";
+    case "monetization":
+      return "当前批次的商业化严格诊断结果还不完整，建议重新导入或补跑诊断后再结合图表解读。";
+    case "ads":
+      return "当前批次的广告严格诊断结果还不完整，建议重新导入或补跑诊断后再结合图表解读。";
+    case "system":
+      return "当前批次的公共属性严格诊断结果还不完整，建议重新导入或补跑诊断后再结合图表解读。";
+    default:
+      return "当前批次的严格诊断结果还不完整。";
+  }
+}
+
 function buildRiskNote(
   category: CategoryKey,
   status: "PASS" | "HIGH_RISK" | "SEVERE_GAP" | "MISSING",
@@ -294,27 +311,41 @@ export function getCategoryRiskContext(category: CategoryKey, summary: ImportSum
     };
   }
 
-  const moduleCheck = summary.diagnostics.moduleChecks[diagnosticModule];
+  const moduleCheck = summary.diagnostics.moduleChecks?.[diagnosticModule];
+  if (!moduleCheck) {
+    return {
+      status: "PENDING",
+      canAnalyze: false,
+      issueCount: 0,
+      globalIssueCount: 0,
+      missingEvents: [],
+      missingFields: [],
+      topIssues: [],
+      note: buildIncompleteRiskNote(category)
+    };
+  }
+
   const relatedModules =
     diagnosticModule === "global"
       ? (["global"] as DiagnosticModuleKey[])
       : (["global", diagnosticModule] as DiagnosticModuleKey[]);
-  const relatedIssues = summary.diagnostics.issues.filter((issue) => relatedModules.includes(issue.module));
+  const relatedIssues = (summary.diagnostics.issues ?? []).filter((issue) => relatedModules.includes(issue.module));
   const sortedIssues = [...relatedIssues].sort((left, right) => {
     const weight = { error: 0, warning: 1, info: 2 } as const;
     return weight[left.severity] - weight[right.severity];
   });
   const globalIssueCount = relatedIssues.filter((issue) => issue.module === "global").length;
+  const effectiveStatus = moduleCheck.status === "PASS" && globalIssueCount > 0 ? "HIGH_RISK" : moduleCheck.status;
 
   return {
-    status: moduleCheck.status,
+    status: effectiveStatus,
     canAnalyze: moduleCheck.canAnalyze,
     issueCount: relatedIssues.length,
     globalIssueCount,
     missingEvents: moduleCheck.missingEvents,
     missingFields: moduleCheck.missingFields,
     topIssues: sortedIssues.slice(0, 3),
-    note: buildRiskNote(category, moduleCheck.status, moduleCheck, relatedIssues.length, globalIssueCount)
+    note: buildRiskNote(category, effectiveStatus, moduleCheck, relatedIssues.length, globalIssueCount)
   };
 }
 
@@ -1226,6 +1257,7 @@ export async function getAnalyticsCategoryData(
   const categorySummary = summary.categories?.[category];
   const compareSummary = (compareImport?.summaryJson ?? {}) as ImportSummary;
   const compareCategorySummary = compareSummary.categories?.[category];
+  const moduleRisk = getCategoryRiskContext(category, summary);
 
   if (!currentSnapshots.length || !categorySummary) {
     return {
@@ -1236,11 +1268,10 @@ export async function getAnalyticsCategoryData(
       versionLabel: currentImport.version,
       currentImportId: currentImport.id,
       importOptions,
-      moduleRisk: null
+      moduleRisk
     };
   }
 
-  const moduleRisk = getCategoryRiskContext(category, summary);
   const getMetric = metricLookup(currentSnapshots);
   const getCompareMetric = metricLookup(compareSnapshots);
   const base = {
