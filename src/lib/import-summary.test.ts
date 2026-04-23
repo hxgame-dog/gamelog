@@ -565,6 +565,25 @@ test("buildImportSummary returns module payloads for onboarding, level, monetiza
   assert.equal(adPlacement?.clicks, 1);
 });
 
+test("buildImportSummary keeps business failure events analyzable without lowering technical success", () => {
+  const summary = buildImportSummary(
+    [
+      { event_name: "session_start", user_id: "u1" },
+      { event_name: "level_start", user_id: "u1", level_id: "1", level_type: "normal" },
+      { event_name: "level_fail", user_id: "u1", level_id: "1", level_type: "normal", result: "fail", fail_reason: "timeout" },
+      { event_name: "level_fail", user_id: "u2", level_id: "2", level_type: "normal", result: "fail", fail_reason: "collision" },
+      { event_name: "level_complete", user_id: "u1", level_id: "1", level_type: "normal", result: "success" }
+    ],
+    [...mappings]
+  );
+
+  assert.equal(summary.businessFailureCount, 2);
+  assert.equal(summary.technicalErrorCount, 0);
+  assert.equal(summary.technicalSuccessRate, 1);
+  assert.equal(summary.metrics.find((metric) => metric.metricKey === "import_success_rate")?.metricValue, 100);
+  assert.equal(summary.diagnostics?.moduleChecks.level.canAnalyze, true);
+});
+
 test("detectAndParseRawTelemetryCsv expands raw AppsFlyer payloads and normalizes comma decimals", () => {
   const fillerHeaders = Array.from({ length: 38 }, (_, index) => `filler_${index + 1}`);
   const headerRow = [
