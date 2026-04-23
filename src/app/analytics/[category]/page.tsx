@@ -189,6 +189,127 @@ function ModuleQualityCards({
   );
 }
 
+function ModuleRiskBanner({
+  moduleRisk,
+  importPreviewHref
+}: {
+  moduleRisk?: {
+    status: "PENDING" | "PASS" | "HIGH_RISK" | "SEVERE_GAP" | "MISSING";
+    canAnalyze: boolean;
+    issueCount: number;
+    globalIssueCount: number;
+    missingEvents: string[];
+    missingFields: string[];
+    topIssues: Array<{
+      severity: "error" | "warning" | "info";
+      target: string;
+      message: string;
+      suggestion?: string;
+    }>;
+    note: string;
+  } | null;
+  importPreviewHref: string | null;
+}) {
+  if (!moduleRisk) {
+    return null;
+  }
+
+  const statusMeta =
+    moduleRisk.status === "PASS"
+      ? {
+          title: "严格诊断通过",
+          badge: "PASS",
+          className: styles.riskBannerPass
+        }
+      : moduleRisk.status === "PENDING"
+        ? {
+            title: "严格诊断待生成",
+            badge: "PENDING",
+            className: styles.riskBannerPending
+          }
+        : moduleRisk.status === "SEVERE_GAP"
+          ? {
+              title: "严格诊断发现严重缺口",
+              badge: "SEVERE_GAP",
+              className: styles.riskBannerSevere
+            }
+          : {
+              title: moduleRisk.status === "MISSING" ? "严格诊断提示当前结构缺失" : "严格诊断提示当前存在高风险",
+              badge: moduleRisk.status,
+              className: styles.riskBannerRisk
+            };
+  const summaryCopy =
+    moduleRisk.status === "PASS"
+      ? "下方图表可以直接拿来解释业务变化，如果仍有异常，更像真实体验或策略问题。"
+      : moduleRisk.status === "PENDING"
+        ? "下方图表仍会继续展示，但当前更适合把它们当成待补诊断的复核线索，而不是明确风险结论。"
+        : moduleRisk.canAnalyze
+          ? "下方图表仍会继续展示，但需要把异常结论和诊断缺口一起阅读，避免过度归因。"
+          : "下方图表仍会继续展示，但当前缺口会明显削弱解释力，建议先修复导入结构再做定性。";
+  const conclusionLabel =
+    moduleRisk.status === "PENDING"
+      ? "等待诊断"
+      : moduleRisk.status === "PASS"
+        ? "可直接阅读"
+        : moduleRisk.canAnalyze
+          ? "谨慎解读"
+          : "先修结构";
+
+  return (
+    <section className={`${styles.riskBanner} ${statusMeta.className}`}>
+      <div className={styles.riskBannerHeader}>
+        <div>
+          <div className={styles.riskBannerEyebrow}>模块风险提示</div>
+          <h2 className={styles.riskBannerTitle}>{statusMeta.title}</h2>
+          <p className={styles.riskBannerCopy}>{moduleRisk.note}</p>
+        </div>
+        <span className={`pill ${styles.riskBannerPill}`}>{statusMeta.badge}</span>
+      </div>
+
+      <div className={styles.riskBannerStats}>
+        <div className={styles.riskBannerStat}>
+          <span className={styles.riskBannerStatLabel}>相关问题</span>
+          <strong>{moduleRisk.issueCount}</strong>
+        </div>
+        <div className={styles.riskBannerStat}>
+          <span className={styles.riskBannerStatLabel}>公共属性影响</span>
+          <strong>{moduleRisk.globalIssueCount}</strong>
+        </div>
+        <div className={styles.riskBannerStat}>
+          <span className={styles.riskBannerStatLabel}>当前结论</span>
+          <strong>{conclusionLabel}</strong>
+        </div>
+      </div>
+
+      <p className={styles.riskBannerSupport}>{summaryCopy}</p>
+
+      {moduleRisk.missingEvents.length || moduleRisk.missingFields.length ? (
+        <div className={styles.riskBannerMissing}>
+          {moduleRisk.missingEvents.length ? <span>缺事件：{moduleRisk.missingEvents.join(" / ")}</span> : null}
+          {moduleRisk.missingFields.length ? <span>缺字段：{moduleRisk.missingFields.join(" / ")}</span> : null}
+        </div>
+      ) : null}
+
+      {moduleRisk.topIssues.length ? (
+        <div className={styles.riskBannerIssueList}>
+          {moduleRisk.topIssues.map((issue) => (
+            <div key={`${issue.severity}-${issue.target}`} className={styles.riskBannerIssue}>
+              <strong>{issue.target}</strong>
+              <span>{issue.message}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {importPreviewHref ? (
+        <Link href={importPreviewHref} className={styles.riskBannerLink}>
+          回到当前批次导入预览核对原始字段
+        </Link>
+      ) : null}
+    </section>
+  );
+}
+
 function ModuleConclusionCards({
   metrics,
   color,
@@ -265,6 +386,21 @@ export default async function AnalyticsCategoryPage({
     compareTechnicalErrorCount?: number | null;
     compareBusinessFailureCount?: number | null;
     compareModuleCoverage?: number | null;
+    moduleRisk?: {
+      status: "PENDING" | "PASS" | "HIGH_RISK" | "SEVERE_GAP" | "MISSING";
+      canAnalyze: boolean;
+      issueCount: number;
+      globalIssueCount: number;
+      missingEvents: string[];
+      missingFields: string[];
+      topIssues: Array<{
+        severity: "error" | "warning" | "info";
+        target: string;
+        message: string;
+        suggestion?: string;
+      }>;
+      note: string;
+    } | null;
     versionOptions?: string[];
     importOptions?: Array<{ id: string; label: string; source?: string | null }>;
     categories: ReadonlyArray<{ key: string; label: string }>;
@@ -788,6 +924,8 @@ export default async function AnalyticsCategoryPage({
               />
             </section>
 
+            <ModuleRiskBanner moduleRisk={config.moduleRisk} importPreviewHref={importPreviewHref} />
+
             <section className={styles.moduleSection}>
               <ModuleSectionHeader
                 title={onboardingSections[1]}
@@ -998,6 +1136,8 @@ export default async function AnalyticsCategoryPage({
                 }}
               />
             </section>
+
+            <ModuleRiskBanner moduleRisk={config.moduleRisk} importPreviewHref={importPreviewHref} />
 
             <section className={styles.moduleSection}>
               <ModuleSectionHeader
@@ -1342,6 +1482,8 @@ export default async function AnalyticsCategoryPage({
               />
             </section>
 
+            <ModuleRiskBanner moduleRisk={config.moduleRisk} importPreviewHref={importPreviewHref} />
+
             <section className={styles.moduleSection}>
               <ModuleSectionHeader
                 title={monetizationSections[1]}
@@ -1566,6 +1708,8 @@ export default async function AnalyticsCategoryPage({
                 }}
               />
             </section>
+
+            <ModuleRiskBanner moduleRisk={config.moduleRisk} importPreviewHref={importPreviewHref} />
 
             <section className={styles.moduleSection}>
               <ModuleSectionHeader

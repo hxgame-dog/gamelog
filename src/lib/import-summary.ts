@@ -16,6 +16,51 @@ export type CategorySummary = {
   insight: string;
 };
 
+export type ImportCleaning = {
+  sourceKind?: string;
+  encoding?: string;
+  delimiter?: string;
+  expandedFields?: string[];
+};
+
+export type DiagnosticSeverity = "info" | "warning" | "error";
+export type DiagnosticStatus = "PASS" | "HIGH_RISK" | "SEVERE_GAP";
+export type DiagnosticCode =
+  | "missing_event"
+  | "missing_field"
+  | "invalid_value"
+  | "coverage_gap"
+  | "incomplete_chain"
+  | "alias_only";
+export type DiagnosticIssue = {
+  severity: DiagnosticSeverity;
+  code: DiagnosticCode;
+  module: "global" | "onboarding" | "level" | "ads" | "monetization" | "liveops" | "economy" | "social";
+  target: string;
+  message: string;
+  suggestion: string;
+};
+export type ModuleDiagnosticCheck = {
+  status: DiagnosticStatus | "MISSING";
+  canAnalyze: boolean;
+  matchedRows: number;
+  expectedEvents: string[];
+  missingEvents: string[];
+  missingFields: string[];
+};
+export type ImportDiagnostics = {
+  overallStatus: DiagnosticStatus;
+  technicalSuccessRate: number;
+  technicalErrorCount: number;
+  businessFailureCount: number;
+  moduleCoverage: number;
+  moduleChecks: Record<
+    "global" | "onboarding" | "level" | "ads" | "monetization" | "liveops" | "economy" | "social",
+    ModuleDiagnosticCheck
+  >;
+  issues: DiagnosticIssue[];
+};
+
 export type ImportSummary = {
   recordCount: number;
   successRate: number;
@@ -24,6 +69,8 @@ export type ImportSummary = {
   technicalErrorCount?: number;
   businessFailureCount?: number;
   moduleCoverage?: number;
+  cleaning?: ImportCleaning;
+  diagnostics?: ImportDiagnostics;
   unmatchedEvents: number;
   previewRows: ImportRow[];
   topEvents: RankedItem[];
@@ -146,6 +193,29 @@ function safeNumber(value: unknown) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function readRowValue(row: ImportRow, ...keys: Array<string | undefined>) {
+  for (const key of keys) {
+    if (!key) {
+      continue;
+    }
+    const value = row[key];
+    if (value !== undefined && value !== null && value !== "") {
+      return value;
+    }
+  }
+  return null;
+}
+
+function readRowText(row: ImportRow, ...keys: Array<string | undefined>) {
+  const value = readRowValue(row, ...keys);
+  return value === null ? "" : String(value).trim();
+}
+
+function readRowNumber(row: ImportRow, ...keys: Array<string | undefined>) {
+  const value = readRowValue(row, ...keys);
+  return value === null ? null : safeNumber(value);
+}
+
 function clampPercent(value: number) {
   return Math.max(0, Math.min(100, Number(value.toFixed(2))));
 }
@@ -219,6 +289,10 @@ function normalizeActionLabel(eventName: string) {
     default:
       return normalized;
   }
+}
+
+function isMonetizationTransactionEvent(eventName: string) {
+  return /^(iap_order_create|iap_success)$/i.test(eventName);
 }
 
 function looksRetryEvent(eventName: string) {
@@ -316,20 +390,360 @@ function buildInsight(category: CategoryKey, summary: CategorySummary) {
   }
 }
 
-export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: string; target: string }>): ImportSummary {
+type BuildImportSummaryContext = ImportCleaning;
+
+type ModuleDefinition = {
+  key: keyof ImportDiagnostics["moduleChecks"];
+  kind: "strict" | "soft";
+  anchorEvents?: string[];
+  anchorMode?: "all" | "any";
+  anchorMissingStatus?: DiagnosticStatus;
+  expectedEvents: string[];
+  eventMatchers: Array<(eventName: string) => boolean>;
+  requiredFields: string[];
+};
+
+const MODULE_DEFINITIONS: ModuleDefinition[] = [
+  {
+    key: "global",
+    kind: "strict",
+    anchorEvents: ["session_start"],
+    expectedEvents: ["session_start"],
+    eventMatchers: [
+      (eventName) => /(session_start|app_start|launch|login_success|logout|error|crash|install|heartbeat|settings)/i.test(eventName)
+    ],
+    requiredFields: ["event_name", "event_time", "user_id"]
+  },
+  {
+    key: "onboarding",
+    kind: "strict",
+    anchorEvents: ["tutorial_step"],
+    expectedEvents: ["tutorial_begin", "tutorial_step", "tutorial_complete"],
+    eventMatchers: [(eventName) => /^(tutorial_begin|tutorial_step|tutorial_complete|tutorial_level_start|tutorial_step_complete|tutorial_step_fail)$/i.test(eventName)],
+    requiredFields: ["step_id", "step_name"]
+  },
+  {
+    key: "level",
+    kind: "strict",
+    anchorEvents: ["level_start"],
+    expectedEvents: ["level_start", "level_complete", "level_fail"],
+    eventMatchers: [
+      (eventName) => /^(level_start|level_complete|level_fail|retry|restart|replay)$/i.test(eventName),
+      (eventName) => /^(camera_rotate|screw_interact|item_use|unlock_extra_slot)$/i.test(eventName)
+    ],
+    requiredFields: ["level_id"]
+  },
+  {
+    key: "ads",
+    kind: "strict",
+    anchorEvents: ["ad_impression"],
+    expectedEvents: ["ad_impression", "ad_click", "ad_reward_claim"],
+    eventMatchers: [
+      (eventName) => /^(ad_request|ad_impression|ad_play|ad_click|ad_reward_claim)$/i.test(eventName)
+    ],
+    requiredFields: ["placement"]
+  },
+  {
+    key: "monetization",
+    kind: "strict",
+    anchorEvents: ["iap_order_create", "iap_success"],
+    anchorMode: "any",
+    anchorMissingStatus: "HIGH_RISK",
+    expectedEvents: ["iap_order_create", "iap_success"],
+    eventMatchers: [
+      (eventName) =>
+        /^(store_view|shop_view|paywall_view|gift_pack_view|offer_view|iap_click|purchase_click|pay_click|checkout_click|offer_click|store_click|iap_order_create|iap_success)$/i.test(eventName)
+    ],
+    requiredFields: ["price"]
+  },
+  {
+    key: "liveops",
+    kind: "soft",
+    expectedEvents: ["liveops"],
+    eventMatchers: [(eventName) => /(liveops|event_|activity|quest|season|campaign)/i.test(eventName)],
+    requiredFields: ["event_name"]
+  },
+  {
+    key: "economy",
+    kind: "soft",
+    expectedEvents: ["currency_gain", "currency_spend"],
+    eventMatchers: [(eventName) => /^(currency_gain|currency_spend|resource_gain|resource_spend|economy_adjust|shop_balance_update)$/i.test(eventName)],
+    requiredFields: ["event_name"]
+  },
+  {
+    key: "social",
+    kind: "soft",
+    expectedEvents: ["share", "invite", "friend"],
+    eventMatchers: [(eventName) => /(social|share|invite|friend|guild|chat|follow)/i.test(eventName)],
+    requiredFields: ["event_name"]
+  }
+];
+
+function buildIssue(
+  severity: DiagnosticSeverity,
+  code: DiagnosticCode,
+  module: DiagnosticIssue["module"],
+  target: string,
+  message: string,
+  suggestion: string
+): DiagnosticIssue {
+  return { severity, code, module, target, message, suggestion };
+}
+
+function buildModuleDiagnostic(input: {
+  rows: ImportRow[];
+  definition: ModuleDefinition;
+}) {
+  const { rows, definition } = input;
+  const matchedRows = rows.filter((row) => {
+    const eventName = normalizeImportedEventName(readRowText(row, "event_name"));
+    return definition.eventMatchers.some((matcher) => matcher(eventName));
+  });
+  const matchedEvents = new Set(
+    matchedRows.map((row) => normalizeImportedEventName(readRowText(row, "event_name"))).filter(Boolean)
+  );
+  const anchorEvents = definition.anchorEvents ?? [];
+  const anchorMode = definition.anchorMode ?? "all";
+  const missingAnchorEvents = anchorEvents.filter((eventName) => !matchedEvents.has(eventName));
+  const missingEvents = definition.expectedEvents.filter((eventName) => !matchedEvents.has(eventName));
+
+  const missingFields = new Set<string>();
+  matchedRows.forEach((row) => {
+    const normalizedEventName = normalizeImportedEventName(readRowText(row, "event_name"));
+    definition.requiredFields.forEach((field) => {
+      if (field === "price") {
+        if (!isMonetizationTransactionEvent(normalizedEventName)) {
+          return;
+        }
+        if (readRowValue(row, field) === null) {
+          missingFields.add(field);
+        }
+        return;
+      }
+      if (!readRowText(row, field)) {
+        missingFields.add(field);
+      }
+    });
+  });
+
+  let status: DiagnosticStatus | "MISSING" = "PASS";
+  if (matchedRows.length === 0) {
+    status = definition.kind === "soft" ? "MISSING" : "HIGH_RISK";
+  } else if (
+    definition.kind === "strict" &&
+    anchorEvents.length > 0 &&
+    ((anchorMode === "all" && missingAnchorEvents.length > 0) || (anchorMode === "any" && missingAnchorEvents.length === anchorEvents.length))
+  ) {
+    status = definition.anchorMissingStatus ?? "SEVERE_GAP";
+  } else if (missingFields.size > 0) {
+    status = "SEVERE_GAP";
+  } else if (missingEvents.length > 0) {
+    status = "HIGH_RISK";
+  }
+
+  return {
+    status,
+    canAnalyze: matchedRows.length > 0,
+    matchedRows: matchedRows.length,
+    expectedEvents: definition.expectedEvents,
+    missingEvents,
+    missingFields: [...missingFields]
+  };
+}
+
+function buildDiagnostics(input: {
+  rows: ImportRow[];
+  technicalSuccessRate: number;
+  technicalErrorCount: number;
+  businessFailureCount: number;
+  moduleCoverage: number;
+}) {
+  const { rows, technicalSuccessRate, technicalErrorCount, businessFailureCount, moduleCoverage } = input;
+  const moduleChecks = Object.fromEntries(
+    MODULE_DEFINITIONS.map((definition) => [definition.key, buildModuleDiagnostic({ rows, definition })])
+  ) as ImportDiagnostics["moduleChecks"];
+
+  const issues: DiagnosticIssue[] = [];
+
+  MODULE_DEFINITIONS.forEach((definition) => {
+    const check = moduleChecks[definition.key];
+    if (check.status === "MISSING") {
+      issues.push(
+        buildIssue(
+          "info",
+          "coverage_gap",
+          definition.key,
+          definition.expectedEvents[0] ?? definition.key,
+          `${definition.key} 模块当前批次没有命中可分析数据。`,
+          "如果这是预期外情况，请补传对应模块日志或检查字段映射。"
+        )
+      );
+      return;
+    }
+
+    if (check.missingEvents.length > 0) {
+      check.missingEvents.forEach((missingEvent) => {
+        const isAnchorMissing =
+          definition.kind === "strict" &&
+          (definition.anchorEvents ?? []).includes(missingEvent) &&
+          check.status === "SEVERE_GAP";
+        issues.push(
+          buildIssue(
+            isAnchorMissing
+              ? "error"
+              : definition.kind === "strict"
+                ? "warning"
+                : "info",
+            "missing_event",
+            definition.key,
+            missingEvent,
+            `${definition.key} 模块缺少关键事件 ${missingEvent}。`,
+            "请补齐标准事件埋点，或确认该模块是否被正确映射到清洗字段。"
+          )
+        );
+      });
+    }
+
+    if (check.missingFields.length > 0) {
+      check.missingFields.forEach((missingField) => {
+        issues.push(
+          buildIssue(
+            definition.kind === "strict" ? "error" : "warning",
+            "missing_field",
+            definition.key,
+            missingField,
+            `${definition.key} 模块缺少关键字段 ${missingField}。`,
+            "请确认清洗后的标准字段已经输出到摘要输入中。"
+          )
+        );
+      });
+    }
+
+    const matchedRows = rows.filter((row) => {
+      const eventName = normalizeImportedEventName(readRowText(row, "event_name"));
+      return definition.eventMatchers.some((matcher) => matcher(eventName));
+    });
+    const matchedEvents = new Set(matchedRows.map((row) => normalizeImportedEventName(readRowText(row, "event_name"))));
+    const aliasEvents = new Set(
+      matchedRows
+        .map((row) => {
+          const rawEventName = readRowText(row, "raw_event_name");
+          const cleanedEventName = readRowText(row, "event_name");
+          return rawEventName && rawEventName !== cleanedEventName ? rawEventName : "";
+        })
+        .filter(Boolean)
+    );
+
+    aliasEvents.forEach((rawEventName) => {
+      issues.push(
+        buildIssue(
+          "info",
+          "alias_only",
+          definition.key,
+          rawEventName,
+          `${definition.key} 模块当前通过别名事件 ${rawEventName} 归一化后参与诊断。`,
+          "建议后续尽量统一为标准事件名，降低跨版本诊断歧义。"
+        )
+      );
+    });
+
+    if (
+      definition.key === "ads" &&
+      !matchedEvents.has("ad_request") &&
+      (matchedEvents.has("ad_impression") || matchedEvents.has("ad_click") || matchedEvents.has("ad_reward_claim"))
+    ) {
+      if (check.status === "PASS") {
+        check.status = "HIGH_RISK";
+      }
+      issues.push(
+        buildIssue(
+          "warning",
+          "incomplete_chain",
+          "ads",
+          "ad_request",
+          "广告链路缺少 request 事件，当前只能从曝光/点击/发奖开始分析。",
+          "建议补齐广告请求事件，便于核对广告位从请求到播放的完整流转。"
+        )
+      );
+    }
+
+    if (
+      definition.key === "monetization" &&
+      matchedRows.some((row) => {
+        const eventName = normalizeImportedEventName(readRowText(row, "event_name"));
+        return isMonetizationTransactionEvent(eventName) && readRowValue(row, "price") !== null && (readRowNumber(row, "price") ?? 0) <= 0;
+      })
+    ) {
+      issues.push(
+        buildIssue(
+          "error",
+          "invalid_value",
+          "monetization",
+          "price",
+          "商业化事件存在非法金额值，当前金额口径不可靠。",
+          "请检查 price/event_revenue 的清洗结果，确认金额为大于 0 的合法数值。"
+        )
+      );
+    }
+  });
+
+  const strictStatuses = (["global", "onboarding", "level", "ads", "monetization"] as const).map((key) => moduleChecks[key].status);
+  const hasStrictErrorIssue = issues.some(
+    (issue) =>
+      issue.severity === "error" &&
+      ["global", "onboarding", "level", "ads", "monetization"].includes(issue.module)
+  );
+  const overallStatus: DiagnosticStatus = hasStrictErrorIssue || strictStatuses.includes("SEVERE_GAP")
+    ? "SEVERE_GAP"
+    : strictStatuses.includes("HIGH_RISK")
+      ? "HIGH_RISK"
+      : "PASS";
+
+  return {
+    overallStatus,
+    technicalSuccessRate,
+    technicalErrorCount,
+    businessFailureCount,
+    moduleCoverage,
+    moduleChecks,
+    issues
+  } satisfies ImportDiagnostics;
+}
+
+export function buildImportSummary(
+  rows: ImportRow[],
+  mappings: Array<{ source: string; target: string }>,
+  context?: BuildImportSummaryContext
+): ImportSummary {
   const activeMappings = mappings.filter((item) => item.target !== "ignore");
   const findMapping = (target: string) => activeMappings.find((item) => item.target === target);
 
   const eventMapping = findMapping("event_name");
+  const eventTimeMapping = findMapping("event_time");
   const resultMapping = findMapping("result");
   const levelMapping = findMapping("level_id");
+  const levelTypeMapping = findMapping("level_type");
   const stepMapping = findMapping("step_id");
+  const stepNameMapping = findMapping("step_name");
   const placementMapping = findMapping("placement");
   const priceMapping = findMapping("price");
   const durationMapping = findMapping("duration_sec");
   const userMapping = findMapping("user_id");
+  const platformMapping = findMapping("platform");
+  const appVersionMapping = findMapping("app_version");
+  const countryCodeMapping = findMapping("country_code");
   const reasonMapping = findMapping("fail_reason") ?? findMapping("reason");
   const rewardMapping = findMapping("reward_type");
+  const productIdMapping = findMapping("product_id");
+  const rewardIdMapping = findMapping("reward_id");
+  const itemNameMapping = findMapping("item_name");
+  const triggerSceneMapping = findMapping("trigger_scene");
+  const activityIdMapping = findMapping("activity_id");
+  const activityTypeMapping = findMapping("activity_type");
+  const gainSourceMapping = findMapping("gain_source");
+  const gainAmountMapping = findMapping("gain_amount");
+  const resourceTypeMapping = findMapping("resource_type");
+  const propertyHintMappings = activeMappings.filter((item) => item.target === "property_hint").map((item) => item.source);
 
   let errorCount = 0;
   let businessFailureCount = 0;
@@ -406,26 +820,47 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
     ads: { count: 0, success: 0, reward: 0 },
     custom: { count: 0 }
   };
+  const cleanedDiagnosticRows: ImportRow[] = [];
 
   rows.forEach((row) => {
-    const eventName = eventMapping ? normalizeImportedEventName(String(row[eventMapping.source] ?? "").trim()) : "";
-    const result = resultMapping ? String(row[resultMapping.source] ?? "").trim().toLowerCase() : "";
-    const levelId = levelMapping ? String(row[levelMapping.source] ?? "").trim() : "";
-    const stepId = stepMapping ? String(row[stepMapping.source] ?? "").trim() : "";
-    const placement = placementMapping ? String(row[placementMapping.source] ?? "").trim() : "";
-    const price = priceMapping ? safeNumber(row[priceMapping.source]) : null;
-    const duration = durationMapping ? safeNumber(row[durationMapping.source]) : null;
-    const userId = userMapping ? String(row[userMapping.source] ?? "").trim() : "";
-    const reason = reasonMapping ? String(row[reasonMapping.source] ?? "").trim() : "";
-    const rewardType = rewardMapping ? String(row[rewardMapping.source] ?? "").trim() : "";
-    const stepName = String(row.step_name ?? "").trim();
-    const levelType = String(row.level_type ?? "").trim();
-    const gainSource = String(row.gain_source ?? "").trim();
-    const triggerScene = String(row.trigger_scene ?? "").trim();
+    const rawEventName = readRowText(row, eventMapping?.target, eventMapping?.source, "event_name");
+    const eventName = normalizeImportedEventName(rawEventName);
+    const eventTime = readRowText(row, eventTimeMapping?.target, eventTimeMapping?.source, "event_time");
+    const result = readRowText(row, resultMapping?.target, resultMapping?.source, "result").toLowerCase();
+    const levelId = readRowText(row, levelMapping?.target, levelMapping?.source, "level_id");
+    const stepId = readRowText(row, stepMapping?.target, stepMapping?.source, "step_id");
+    const stepName = readRowText(row, stepNameMapping?.target, stepNameMapping?.source, "step_name");
+    const placement = readRowText(row, placementMapping?.target, placementMapping?.source, "placement");
+    const price = readRowNumber(row, priceMapping?.target, priceMapping?.source, "price");
+    const duration = readRowNumber(row, durationMapping?.target, durationMapping?.source, "duration_sec");
+    const userId = readRowText(row, userMapping?.target, userMapping?.source, "user_id");
+    const reason = readRowText(row, reasonMapping?.target, reasonMapping?.source, "fail_reason", "reason");
+    const rewardType = readRowText(row, rewardMapping?.target, rewardMapping?.source, "reward_type");
+    const levelType = readRowText(row, levelTypeMapping?.target, levelTypeMapping?.source, "level_type");
+    const gainSource = readRowText(row, gainSourceMapping?.target, gainSourceMapping?.source, "gain_source");
+    const propertyHints = propertyHintMappings
+      .map((source) => ({ source, value: readRowText(row, source) }))
+      .filter((entry) => entry.value);
+    const sceneHint =
+      propertyHints.find((entry) => /(scene|trigger|placement|entry|source|from)/i.test(entry.source))?.value ||
+      propertyHints.find((entry) => !/(sku|product|content|item|reward|pack|offer)/i.test(entry.source))?.value ||
+      propertyHints[0]?.value ||
+      "";
+    const contentHint =
+      propertyHints.find((entry) => /(sku|product|content|item|reward|pack|offer)/i.test(entry.source))?.value ||
+      propertyHints.find((entry) => entry.value !== sceneHint)?.value ||
+      propertyHints.at(-1)?.value ||
+      "";
+    const triggerScene =
+      readRowText(row, triggerSceneMapping?.target, triggerSceneMapping?.source, "trigger_scene") ||
+      sceneHint ||
+      "";
     const contentId =
-      String(row.reward_type ?? "").trim()
-      || String(row.product_id ?? "").trim()
-      || String(row.reward_id ?? row.item_name ?? "").trim();
+      rewardType ||
+      readRowText(row, productIdMapping?.target, productIdMapping?.source, "product_id") ||
+      readRowText(row, rewardIdMapping?.target, rewardIdMapping?.source, itemNameMapping?.target, itemNameMapping?.source, "reward_id", "item_name") ||
+      contentHint ||
+      "";
     const isLevelStart = /level_start|tutorial_level_start|begin|enter|start/i.test(eventName);
     const isLevelComplete = result === "success" || result === "complete" || /complete|win|clear|achieved/i.test(eventName);
     const isLevelFail = result === "fail" || result === "failed" || /fail|lose|timeout/i.test(eventName);
@@ -435,6 +870,35 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
       unmatchedEvents += 1;
       return;
     }
+
+    cleanedDiagnosticRows.push({
+      event_name: eventName,
+      raw_event_name: rawEventName,
+      event_time: eventTime,
+      user_id: userId,
+      platform: readRowText(row, platformMapping?.target, platformMapping?.source, "platform", "device_os", "os"),
+      app_version: readRowText(row, appVersionMapping?.target, appVersionMapping?.source, "app_version"),
+      country_code: readRowText(row, countryCodeMapping?.target, countryCodeMapping?.source, "country_code", "country"),
+      level_id: levelId,
+      level_type: levelType,
+      step_id: stepId,
+      step_name: stepName,
+      result,
+      fail_reason: reason,
+      duration_sec: duration,
+      placement,
+      price,
+      reward_type: rewardType,
+      product_id: readRowText(row, productIdMapping?.target, productIdMapping?.source, "product_id"),
+      reward_id: readRowText(row, rewardIdMapping?.target, rewardIdMapping?.source, "reward_id"),
+      item_name: readRowText(row, itemNameMapping?.target, itemNameMapping?.source, "item_name"),
+      trigger_scene: triggerScene,
+      activity_id: readRowText(row, activityIdMapping?.target, activityIdMapping?.source, "activity_id"),
+      activity_type: readRowText(row, activityTypeMapping?.target, activityTypeMapping?.source, "activity_type"),
+      gain_source: gainSource,
+      gain_amount: readRowNumber(row, gainAmountMapping?.target, gainAmountMapping?.source, "gain_amount"),
+      resource_type: readRowText(row, resourceTypeMapping?.target, resourceTypeMapping?.source, "resource_type")
+    });
 
     if (userId) {
       uniqueUsers.add(userId);
@@ -943,12 +1407,6 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
     clicks: item.clicks
   }));
 
-  const moduleCoverage = clampPercent(
-    (["onboarding", "level", "ads", "monetization"] as const).reduce((count, key) => {
-      return count + (perCategory[key].count > 0 ? 1 : 0);
-    }, 0) / 4 * 100
-  );
-
   const healthScore = clampPercent(
     successRate * 45 +
       (categories.onboarding.metrics.completionRate / 100) * 20 +
@@ -956,6 +1414,20 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
       (categories.ads.metrics.completionRate / 100) * 10 +
       (Math.min(categories.monetization.metrics.conversionRate, 15) / 15) * 5
   );
+
+  const diagnostics = buildDiagnostics({
+    rows: cleanedDiagnosticRows,
+    technicalSuccessRate: successRate,
+    technicalErrorCount: errorCount,
+    businessFailureCount,
+    moduleCoverage: 0
+  });
+  const moduleCoverage = clampPercent(
+    (["onboarding", "level", "ads", "monetization"] as const).reduce((count, key) => {
+      return count + (diagnostics.moduleChecks[key].canAnalyze ? 1 : 0);
+    }, 0) / 4 * 100
+  );
+  diagnostics.moduleCoverage = moduleCoverage;
 
   const metrics = [
     { metricKey: "active_users", metricLabel: "活跃用户数", metricValue: categories.system.metrics.activeUsers, dimension: "system" },
@@ -990,6 +1462,8 @@ export function buildImportSummary(rows: ImportRow[], mappings: Array<{ source: 
     technicalErrorCount: errorCount,
     businessFailureCount,
     moduleCoverage,
+    cleaning: context ? { ...context } : undefined,
+    diagnostics,
     unmatchedEvents,
     previewRows,
     topEvents,

@@ -1,8 +1,10 @@
 import { categories, chartSeries } from "@/data/mock-data";
+import type { DiagnosticIssue, ModuleDiagnosticCheck } from "../import-summary";
 
 import { getImportsForProject, getLatestImportForProject, getMetricSnapshotsForProject } from "./imports";
 
 type CategoryKey = "system" | "onboarding" | "level" | "monetization" | "ads" | "custom";
+type DiagnosticModuleKey = "global" | "onboarding" | "level" | "ads" | "monetization" | "liveops" | "economy" | "social";
 type RankedItem = { name: string; count: number; meta?: string };
 type ImportCategorySummary = {
   metrics: Record<string, number>;
@@ -126,6 +128,15 @@ type ImportSummary = {
     keyAnomalyCount?: number;
     monetizationValue?: number;
   };
+  diagnostics?: {
+    overallStatus: "PASS" | "HIGH_RISK" | "SEVERE_GAP";
+    technicalSuccessRate: number;
+    technicalErrorCount: number;
+    businessFailureCount: number;
+    moduleCoverage: number;
+    moduleChecks?: Partial<Record<DiagnosticModuleKey, ModuleDiagnosticCheck>>;
+    issues?: DiagnosticIssue[];
+  };
 };
 
 type OperationsModuleKey = "onboarding" | "level" | "monetization" | "ads";
@@ -172,6 +183,171 @@ export type OperationsOverviewData = {
   importOptions: Array<{ id: string; label: string; source?: string | null }>;
   versionOptions: string[];
 };
+
+export type CategoryRiskContext = {
+  status: "PENDING" | "PASS" | "HIGH_RISK" | "SEVERE_GAP" | "MISSING";
+  canAnalyze: boolean;
+  issueCount: number;
+  globalIssueCount: number;
+  missingEvents: string[];
+  missingFields: string[];
+  topIssues: DiagnosticIssue[];
+  note: string;
+};
+
+function resolveDiagnosticModule(category: CategoryKey): DiagnosticModuleKey | null {
+  switch (category) {
+    case "system":
+      return "global";
+    case "onboarding":
+      return "onboarding";
+    case "level":
+      return "level";
+    case "monetization":
+      return "monetization";
+    case "ads":
+      return "ads";
+    default:
+      return null;
+  }
+}
+
+function buildPendingRiskNote(category: CategoryKey) {
+  switch (category) {
+    case "onboarding":
+      return "当前批次还没有严格诊断结果，建议先完成一次新导入后再解读新手引导结论。";
+    case "level":
+      return "当前批次还没有严格诊断结果，建议先完成一次新导入后再解读关卡与局内行为结论。";
+    case "monetization":
+      return "当前批次还没有严格诊断结果，建议先完成一次新导入后再解读商业化结论。";
+    case "ads":
+      return "当前批次还没有严格诊断结果，建议先完成一次新导入后再解读广告结论。";
+    case "system":
+      return "当前批次还没有严格诊断结果，建议先完成一次新导入后再解读公共属性结论。";
+    default:
+      return "当前批次还没有严格诊断结果。";
+  }
+}
+
+function buildIncompleteRiskNote(category: CategoryKey) {
+  switch (category) {
+    case "onboarding":
+      return "当前批次的新手引导严格诊断结果还不完整，建议重新导入或补跑诊断后再结合图表解读。";
+    case "level":
+      return "当前批次的关卡与局内行为严格诊断结果还不完整，建议重新导入或补跑诊断后再结合图表解读。";
+    case "monetization":
+      return "当前批次的商业化严格诊断结果还不完整，建议重新导入或补跑诊断后再结合图表解读。";
+    case "ads":
+      return "当前批次的广告严格诊断结果还不完整，建议重新导入或补跑诊断后再结合图表解读。";
+    case "system":
+      return "当前批次的公共属性严格诊断结果还不完整，建议重新导入或补跑诊断后再结合图表解读。";
+    default:
+      return "当前批次的严格诊断结果还不完整。";
+  }
+}
+
+function buildRiskNote(
+  category: CategoryKey,
+  status: "PASS" | "HIGH_RISK" | "SEVERE_GAP" | "MISSING",
+  check: ModuleDiagnosticCheck,
+  issueCount: number,
+  globalIssueCount: number
+) {
+  const moduleLabel =
+    category === "system"
+      ? "公共属性"
+      : category === "onboarding"
+        ? "新手引导"
+        : category === "level"
+          ? "关卡与局内行为"
+          : category === "monetization"
+            ? "商业化"
+            : category === "ads"
+              ? "广告分析"
+              : "当前模块";
+
+  if (status === "PASS") {
+    return `${moduleLabel}当前没有明显严格诊断缺口，可以直接解读图表；如果还存在异常，优先从业务本身找原因。`;
+  }
+
+  if (status === "MISSING") {
+    return `${moduleLabel}当前没有形成可分析结构，建议先补齐关键事件和字段，再解读模块图表。`;
+  }
+
+  const parts: string[] = [];
+  if (check.missingEvents.length) {
+    parts.push(`缺事件 ${check.missingEvents.join(" / ")}`);
+  }
+  if (check.missingFields.length) {
+    parts.push(`缺字段 ${check.missingFields.join(" / ")}`);
+  }
+  if (globalIssueCount) {
+    parts.push(`另有 ${globalIssueCount} 个公共属性问题会影响本页结论`);
+  }
+  if (!parts.length && issueCount) {
+    parts.push(`共有 ${issueCount} 条严格诊断问题`);
+  }
+
+  return `${moduleLabel}当前${status === "SEVERE_GAP" ? "存在严重缺口" : "存在高风险项"}，${parts.join("；")}。`;
+}
+
+export function getCategoryRiskContext(category: CategoryKey, summary: ImportSummary): CategoryRiskContext | null {
+  const diagnosticModule = resolveDiagnosticModule(category);
+
+  if (!diagnosticModule) {
+    return null;
+  }
+
+  if (!summary.diagnostics) {
+    return {
+      status: "PENDING",
+      canAnalyze: false,
+      issueCount: 0,
+      globalIssueCount: 0,
+      missingEvents: [],
+      missingFields: [],
+      topIssues: [],
+      note: buildPendingRiskNote(category)
+    };
+  }
+
+  const moduleCheck = summary.diagnostics.moduleChecks?.[diagnosticModule];
+  if (!moduleCheck) {
+    return {
+      status: "PENDING",
+      canAnalyze: false,
+      issueCount: 0,
+      globalIssueCount: 0,
+      missingEvents: [],
+      missingFields: [],
+      topIssues: [],
+      note: buildIncompleteRiskNote(category)
+    };
+  }
+
+  const relatedModules =
+    diagnosticModule === "global"
+      ? (["global"] as DiagnosticModuleKey[])
+      : (["global", diagnosticModule] as DiagnosticModuleKey[]);
+  const relatedIssues = (summary.diagnostics.issues ?? []).filter((issue) => relatedModules.includes(issue.module));
+  const sortedIssues = [...relatedIssues].sort((left, right) => {
+    const weight = { error: 0, warning: 1, info: 2 } as const;
+    return weight[left.severity] - weight[right.severity];
+  });
+  const globalIssueCount = relatedIssues.filter((issue) => issue.module === "global").length;
+  const effectiveStatus = moduleCheck.status === "PASS" && globalIssueCount > 0 ? "HIGH_RISK" : moduleCheck.status;
+
+  return {
+    status: effectiveStatus,
+    canAnalyze: moduleCheck.canAnalyze,
+    issueCount: relatedIssues.length,
+    globalIssueCount,
+    missingEvents: moduleCheck.missingEvents,
+    missingFields: moduleCheck.missingFields,
+    topIssues: sortedIssues.slice(0, 3),
+    note: buildRiskNote(category, effectiveStatus, moduleCheck, relatedIssues.length, globalIssueCount)
+  };
+}
 
 const fallbackConfig = {
   system: {
@@ -1043,7 +1219,8 @@ export async function getAnalyticsCategoryData(
       categories,
       source: "fallback",
       sourceLabel: "演示数据",
-      versionLabel: "未导入"
+      versionLabel: "未导入",
+      moduleRisk: null
     };
   }
 
@@ -1055,7 +1232,8 @@ export async function getAnalyticsCategoryData(
       categories,
       source: "fallback",
       sourceLabel: "演示数据",
-      versionLabel: "未导入"
+      versionLabel: "未导入",
+      moduleRisk: null
     };
   }
 
@@ -1079,6 +1257,7 @@ export async function getAnalyticsCategoryData(
   const categorySummary = summary.categories?.[category];
   const compareSummary = (compareImport?.summaryJson ?? {}) as ImportSummary;
   const compareCategorySummary = compareSummary.categories?.[category];
+  const moduleRisk = getCategoryRiskContext(category, summary);
 
   if (!currentSnapshots.length || !categorySummary) {
     return {
@@ -1088,7 +1267,8 @@ export async function getAnalyticsCategoryData(
       sourceLabel: sourceLabel(currentImport.source),
       versionLabel: currentImport.version,
       currentImportId: currentImport.id,
-      importOptions
+      importOptions,
+      moduleRisk
     };
   }
 
@@ -1109,6 +1289,7 @@ export async function getAnalyticsCategoryData(
     technicalErrorCount: summary.technicalErrorCount ?? 0,
     businessFailureCount: summary.businessFailureCount ?? 0,
     moduleCoverage: summary.moduleCoverage ?? 0,
+    moduleRisk,
     compareTechnicalSuccessRate: compareSummary.technicalSuccessRate ?? null,
     compareTechnicalErrorCount: compareSummary.technicalErrorCount ?? null,
     compareBusinessFailureCount: compareSummary.businessFailureCount ?? null,
