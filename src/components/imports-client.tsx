@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 import * as XLSX from "xlsx";
 
 import { buildImportSummary, type ImportSummary } from "@/lib/import-summary";
+import { deriveImportStatusKey, getVisibleImportIssues, resolveImportWorkspaceState } from "@/lib/imports-workspace";
 import { detectAndParseRawTelemetryCsv, type RawTelemetryCell, type RawTelemetryUpload } from "@/lib/raw-telemetry";
 
 import styles from "./import-page.module.css";
@@ -200,6 +201,11 @@ const moduleLabels: Record<(typeof strictModuleKeys)[number] | (typeof softModul
 };
 
 const diagnosticStatusMeta = {
+  PENDING: {
+    label: "待诊断",
+    className: styles.statusPending,
+    copy: "当前批次只有基础摘要，严格诊断还没有生成，建议先完成一次新导入。"
+  },
   PASS: {
     label: "通过",
     className: styles.statusPass,
@@ -276,6 +282,7 @@ export function ImportsClient({
   const [error, setError] = useState<string | null>(null);
   const [cleaningNote, setCleaningNote] = useState<string | null>(null);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
+  const [hasPendingLocalUpload, setHasPendingLocalUpload] = useState(false);
   const [latestImportId, setLatestImportId] = useState(
     latestImportsByProject[initialProjectId ?? projects[0]?.id ?? ""]?.id ?? null
   );
@@ -289,9 +296,14 @@ export function ImportsClient({
   const selectedPlan = activePlans.find((plan) => plan.id === selectedPlanId) ?? null;
   const latestImport = latestImportsByProject[selectedProjectId] ?? null;
   const importHistory = importsHistoryByProject[selectedProjectId] ?? [];
-  const selectedHistoryImport =
+  const selectedPersistedImport =
     importHistory.find((item) => item.id === selectedHistoryImportId) ?? latestImport ?? null;
-  const displaySummary = summary ?? (selectedHistoryImport?.summaryJson ?? null);
+  const { activeImport: selectedHistoryImport, displaySummary } = resolveImportWorkspaceState({
+    summary,
+    hasPendingLocalUpload,
+    selectedHistoryImport: selectedPersistedImport,
+    latestImport
+  });
   const cleaning = displaySummary ? displaySummary.cleaning : null;
   const diagnostics = displaySummary ? displaySummary.diagnostics : null;
   const compareHistoryImport =
@@ -304,9 +316,7 @@ export function ImportsClient({
     : rowsToShow.filter((row) =>
         Object.values(row).some((value) => String(value ?? "").toLowerCase().includes(keyword))
       );
-  const statusMeta = diagnostics
-    ? diagnosticStatusMeta[diagnostics.overallStatus]
-    : diagnosticStatusMeta.HIGH_RISK;
+  const statusMeta = diagnosticStatusMeta[deriveImportStatusKey(displaySummary)];
   const strictModuleCards = diagnostics
     ? strictModuleKeys.map((key) => ({
         key,
@@ -318,12 +328,10 @@ export function ImportsClient({
   const missingSoftModules = diagnostics
     ? softModuleKeys.filter((key) => diagnostics.moduleChecks[key].status === "MISSING")
     : [];
-  const visibleIssues = diagnostics
-    ? [...diagnostics.issues].sort((left, right) => {
+  const visibleIssues = [...getVisibleImportIssues(displaySummary)].sort((left, right) => {
         const weight = { error: 0, warning: 1, info: 2 } as const;
         return weight[left.severity] - weight[right.severity];
-      })
-    : [];
+      });
 
   function summaryDelta(current: number | undefined, compare: number | undefined, suffix = "") {
     if (current === undefined || compare === undefined) {
@@ -402,12 +410,13 @@ export function ImportsClient({
     setRows(parsed.rows);
     setHeaders(parsed.headers);
     setMappings(parsed.headers.map((header) => ({ source: header, target: suggestTarget(header) })));
-      setCleaningNote(parsed.notice ?? null);
-      setSummary(null);
-      setSelectedHistoryImportId(latestImportId);
-      setMessage(
-        parsed.notice
-          ? `已识别并清洗 ${parsed.rows.length} 行原始日志，下一步请确认清洗后字段映射。`
+    setCleaningNote(parsed.notice ?? null);
+    setSummary(null);
+    setHasPendingLocalUpload(true);
+    setSelectedHistoryImportId(latestImportId);
+    setMessage(
+      parsed.notice
+        ? `已识别并清洗 ${parsed.rows.length} 行原始日志，下一步请确认清洗后字段映射。`
         : `已读取 ${parsed.rows.length} 行日志，下一步请确认字段映射。`
     );
     setError(null);
@@ -487,6 +496,7 @@ export function ImportsClient({
 
       const data = (await response.json()) as { item: { id: string; summary: ImportSummary } };
       setSummary(data.item.summary);
+      setHasPendingLocalUpload(false);
       setLatestImportId(data.item.id);
       setSelectedHistoryImportId(data.item.id);
       setMessage(`日志已导入，已基于 ${compactRows.length} 行清洗结果生成导入摘要并更新聚合指标。`);
@@ -513,6 +523,7 @@ export function ImportsClient({
       return;
     }
     setSummary(data.summary);
+    setHasPendingLocalUpload(false);
     setLatestImportId(data.id ?? null);
     setSelectedHistoryImportId(data.id ?? null);
     setMessage(`已生成并导入模拟数据：${data.generatedUsers} 名玩家，覆盖 ${data.days} 天。`);
@@ -535,6 +546,7 @@ export function ImportsClient({
                   setLatestImportId(latestImportsByProject[nextProjectId]?.id ?? null);
                   setSelectedHistoryImportId(latestImportsByProject[nextProjectId]?.id ?? null);
                   setSummary(null);
+                  setHasPendingLocalUpload(false);
                   setPreviewFilter("");
                 }}
               >
@@ -905,7 +917,7 @@ export function ImportsClient({
 
               <div className={styles.issueList}>
                 {visibleIssues.length ? (
-                  visibleIssues.slice(0, 10).map((issue, index) => {
+                  visibleIssues.map((issue, index) => {
                     const severityMeta = issueSeverityMeta[issue.severity];
                     return (
                       <div key={`${issue.code}-${issue.target}-${index}`} className={styles.issueItem}>
@@ -994,6 +1006,7 @@ export function ImportsClient({
                     onClick={() => {
                       setSelectedHistoryImportId(item.id);
                       setSummary(null);
+                      setHasPendingLocalUpload(false);
                       setPreviewFilter("");
                       setMessage(`已切换到导入批次：${item.fileName}`);
                       setError(null);

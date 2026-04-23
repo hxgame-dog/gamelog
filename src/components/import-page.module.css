@@ -175,6 +175,12 @@
   border-color: rgba(31, 154, 133, 0.18);
 }
 
+.statusPending {
+  color: var(--muted);
+  background: #f4f4f1;
+  border-color: rgba(24, 24, 24, 0.08);
+}
+
 .statusRisk {
   color: #b46b00;
   background: rgba(210, 165, 34, 0.1);
