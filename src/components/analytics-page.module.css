@@ -623,6 +623,148 @@
   font-size: 13px;
 }
 
+.riskBanner {
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(184, 101, 72, 0.18);
+  background:
+    radial-gradient(circle at top right, rgba(184, 101, 72, 0.12), transparent 34%),
+    linear-gradient(180deg, #fffdf9 0%, #fffaf4 100%);
+  box-shadow: var(--shadow-soft);
+}
+
+.riskBannerPass {
+  border-color: rgba(31, 154, 133, 0.18);
+  background:
+    radial-gradient(circle at top right, rgba(31, 154, 133, 0.12), transparent 34%),
+    linear-gradient(180deg, #f9fdfb 0%, #f5fcf8 100%);
+}
+
+.riskBannerPending {
+  border-color: rgba(197, 146, 40, 0.2);
+  background:
+    radial-gradient(circle at top right, rgba(197, 146, 40, 0.12), transparent 34%),
+    linear-gradient(180deg, #fffdf7 0%, #fffaf0 100%);
+}
+
+.riskBannerRisk,
+.riskBannerSevere {
+  border-color: rgba(184, 101, 72, 0.22);
+}
+
+.riskBannerSevere {
+  background:
+    radial-gradient(circle at top right, rgba(184, 101, 72, 0.16), transparent 34%),
+    linear-gradient(180deg, #fff9f7 0%, #fff4ef 100%);
+}
+
+.riskBannerHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.riskBannerEyebrow {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.riskBannerTitle {
+  margin: 6px 0 0;
+  font-size: 22px;
+  line-height: 1.3;
+}
+
+.riskBannerCopy,
+.riskBannerSupport {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.riskBannerPill {
+  align-self: flex-start;
+}
+
+.riskBannerStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.riskBannerStat {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.riskBannerStat strong {
+  font-size: 18px;
+}
+
+.riskBannerStatLabel {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.riskBannerMissing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.riskBannerMissing span {
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(184, 101, 72, 0.14);
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.riskBannerIssueList {
+  display: grid;
+  gap: 8px;
+}
+
+.riskBannerIssue {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(184, 101, 72, 0.14);
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.riskBannerIssue span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.riskBannerLink {
+  width: fit-content;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(184, 101, 72, 0.16);
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.riskBannerLink:hover {
+  border-color: rgba(184, 101, 72, 0.28);
+}
+
 .moduleSignalGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1044,6 +1186,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .riskBannerStats,
   .moduleSignalGrid,
   .levelSignalGrid {
     grid-template-columns: 1fr;

@@ -8,6 +8,7 @@ import { buildImportSummary } from "../import-summary";
 import {
   deriveOnboardingDurationSeries,
   getAnalyticsCategoryData,
+  getCategoryRiskContext,
   getLevelDiagnostics,
   getOperationsOverviewData,
   resolveOnboardingFunnelRows
@@ -599,4 +600,305 @@ test("getAnalyticsCategoryData explicitly calls out request and play ambiguity w
   assert.match(ads.adsNote ?? "", /无法严格区分/);
   assert.match(ads.adsNote ?? "", /请求/);
   assert.match(ads.adsNote ?? "", /播放/);
+});
+
+test("getCategoryRiskContext combines global issues with current module issues", () => {
+  const risk = getCategoryRiskContext("onboarding", {
+    diagnostics: {
+      overallStatus: "HIGH_RISK",
+      technicalSuccessRate: 88,
+      technicalErrorCount: 2,
+      businessFailureCount: 1,
+      moduleCoverage: 64,
+      moduleChecks: {
+        global: {
+          status: "HIGH_RISK",
+          canAnalyze: false,
+          matchedRows: 12,
+          expectedEvents: ["event_time", "user_id"],
+          missingEvents: [],
+          missingFields: ["event_time"]
+        },
+        onboarding: {
+          status: "HIGH_RISK",
+          canAnalyze: true,
+          matchedRows: 8,
+          expectedEvents: ["tutorial_begin", "tutorial_step", "tutorial_complete"],
+          missingEvents: ["tutorial_complete"],
+          missingFields: ["step_name"]
+        },
+        level: { status: "MISSING", canAnalyze: false, matchedRows: 0, expectedEvents: [], missingEvents: [], missingFields: [] },
+        ads: { status: "MISSING", canAnalyze: false, matchedRows: 0, expectedEvents: [], missingEvents: [], missingFields: [] },
+        monetization: { status: "MISSING", canAnalyze: false, matchedRows: 0, expectedEvents: [], missingEvents: [], missingFields: [] },
+        liveops: { status: "MISSING", canAnalyze: false, matchedRows: 0, expectedEvents: [], missingEvents: [], missingFields: [] },
+        economy: { status: "MISSING", canAnalyze: false, matchedRows: 0, expectedEvents: [], missingEvents: [], missingFields: [] },
+        social: { status: "MISSING", canAnalyze: false, matchedRows: 0, expectedEvents: [], missingEvents: [], missingFields: [] }
+      },
+      issues: [
+        {
+          severity: "error",
+          code: "missing_field",
+          module: "global",
+          target: "event_time",
+          message: "公共属性缺少 event_time",
+          suggestion: "补齐事件时间映射"
+        },
+        {
+          severity: "warning",
+          code: "missing_event",
+          module: "onboarding",
+          target: "tutorial_complete",
+          message: "缺少 tutorial_complete",
+          suggestion: "补齐引导完成事件"
+        },
+        {
+          severity: "info",
+          code: "missing_event",
+          module: "ads",
+          target: "ad_request",
+          message: "广告请求未命中",
+          suggestion: "补齐广告请求事件"
+        }
+      ]
+    }
+  } as never);
+
+  assert.ok(risk);
+  assert.equal(risk.status, "HIGH_RISK");
+  assert.equal(risk.issueCount, 2);
+  assert.equal(risk.globalIssueCount, 1);
+  assert.deepEqual(risk.missingEvents, ["tutorial_complete"]);
+  assert.deepEqual(risk.missingFields, ["step_name"]);
+  assert.equal(risk.topIssues[0]?.target, "event_time");
+  assert.equal(risk.topIssues[1]?.target, "tutorial_complete");
+});
+
+test("getCategoryRiskContext marks missing diagnostics as pending instead of risky", () => {
+  const risk = getCategoryRiskContext("ads", {} as never);
+
+  assert.ok(risk);
+  assert.equal(risk.status, "PENDING");
+  assert.equal(risk.issueCount, 0);
+  assert.match(risk.note, /还没有严格诊断结果/);
+});
+
+test("getAnalyticsCategoryData threads diagnostics-backed module risk through all operations modules", async () => {
+  delete process.env.DATABASE_URL;
+  resetMemoryStore();
+
+  const projectId = "project-module-risk";
+  seedImportSummary("import-module-risk", projectId, "8.8.0", 88, {
+    categories: {
+      onboarding: {
+        metrics: { completionRate: 61.2, avgDuration: 14.8 },
+        main: [100, 82, 61],
+        aux: [5.4, 9.1, 14.8],
+        auxLabels: ["步骤 1", "步骤 2", "步骤 3"],
+        ranking: [],
+        insight: "引导结论。"
+      },
+      level: {
+        metrics: { completionRate: 48.2, failRate: 38.4 },
+        main: [64, 58, 43],
+        aux: [42, 28, 20],
+        auxLabels: ["超时", "误触", "退出"],
+        ranking: [],
+        insight: "关卡结论。"
+      },
+      monetization: {
+        metrics: { conversionRate: 7.2, value: 188.6 },
+        main: [100, 44, 19],
+        aux: [61, 39],
+        auxLabels: ["礼包 A", "礼包 B"],
+        ranking: [],
+        insight: "商业化结论。"
+      },
+      ads: {
+        metrics: { completionRate: 74.4, rewardRate: 68.1 },
+        main: [100, 76, 31],
+        aux: [52, 48],
+        auxLabels: ["Rewarded", "Interstitial"],
+        ranking: [],
+        insight: "广告结论。"
+      }
+    },
+    diagnostics: {
+      overallStatus: "HIGH_RISK",
+      technicalSuccessRate: 91.5,
+      technicalErrorCount: 2,
+      businessFailureCount: 1,
+      moduleCoverage: 67,
+      moduleChecks: {
+        global: {
+          status: "HIGH_RISK",
+          canAnalyze: false,
+          matchedRows: 20,
+          expectedEvents: ["event_time"],
+          missingEvents: [],
+          missingFields: ["event_time"]
+        },
+        onboarding: {
+          status: "HIGH_RISK",
+          canAnalyze: true,
+          matchedRows: 16,
+          expectedEvents: ["tutorial_begin", "tutorial_complete"],
+          missingEvents: ["tutorial_complete"],
+          missingFields: ["step_name"]
+        },
+        level: {
+          status: "PASS",
+          canAnalyze: true,
+          matchedRows: 18,
+          expectedEvents: ["level_start", "level_complete"],
+          missingEvents: [],
+          missingFields: []
+        },
+        ads: {
+          status: "HIGH_RISK",
+          canAnalyze: true,
+          matchedRows: 12,
+          expectedEvents: ["ad_request", "ad_reward"],
+          missingEvents: ["ad_request"],
+          missingFields: []
+        },
+        monetization: {
+          status: "SEVERE_GAP",
+          canAnalyze: false,
+          matchedRows: 5,
+          expectedEvents: ["store_exposure", "payment_success"],
+          missingEvents: ["payment_success"],
+          missingFields: ["price"]
+        },
+        liveops: { status: "MISSING", canAnalyze: false, matchedRows: 0, expectedEvents: [], missingEvents: [], missingFields: [] },
+        economy: { status: "MISSING", canAnalyze: false, matchedRows: 0, expectedEvents: [], missingEvents: [], missingFields: [] },
+        social: { status: "MISSING", canAnalyze: false, matchedRows: 0, expectedEvents: [], missingEvents: [], missingFields: [] }
+      },
+      issues: [
+        {
+          severity: "error",
+          code: "missing_field",
+          module: "global",
+          target: "event_time",
+          message: "公共属性缺少 event_time",
+          suggestion: "补齐事件时间映射"
+        },
+        {
+          severity: "warning",
+          code: "missing_event",
+          module: "onboarding",
+          target: "tutorial_complete",
+          message: "缺少 tutorial_complete",
+          suggestion: "补齐引导完成事件"
+        },
+        {
+          severity: "error",
+          code: "missing_event",
+          module: "monetization",
+          target: "payment_success",
+          message: "缺少 payment_success",
+          suggestion: "补齐支付成功事件"
+        },
+        {
+          severity: "warning",
+          code: "missing_event",
+          module: "ads",
+          target: "ad_request",
+          message: "缺少 ad_request",
+          suggestion: "补齐广告请求事件"
+        }
+      ]
+    }
+  });
+  seedMetricSnapshot(projectId, "8.8.0", "import_success_rate", 91.5, "system", 88);
+
+  const onboarding = (await getAnalyticsCategoryData("onboarding", projectId, null, "import-module-risk")) as {
+    moduleRisk?: {
+      status: string;
+      issueCount: number;
+      globalIssueCount: number;
+      missingEvents: string[];
+    } | null;
+  };
+  const level = (await getAnalyticsCategoryData("level", projectId, null, "import-module-risk")) as {
+    moduleRisk?: {
+      status: string;
+      canAnalyze: boolean;
+      note: string;
+    } | null;
+  };
+  const monetization = (await getAnalyticsCategoryData("monetization", projectId, null, "import-module-risk")) as {
+    moduleRisk?: {
+      status: string;
+      canAnalyze: boolean;
+      missingFields: string[];
+    } | null;
+  };
+  const ads = (await getAnalyticsCategoryData("ads", projectId, null, "import-module-risk")) as {
+    moduleRisk?: {
+      status: string;
+      issueCount: number;
+      globalIssueCount: number;
+      note: string;
+    } | null;
+  };
+
+  assert.equal(onboarding.moduleRisk?.status, "HIGH_RISK");
+  assert.equal(onboarding.moduleRisk?.issueCount, 2);
+  assert.deepEqual(onboarding.moduleRisk?.missingEvents, ["tutorial_complete"]);
+
+  assert.equal(level.moduleRisk?.status, "PASS");
+  assert.equal(level.moduleRisk?.canAnalyze, true);
+  assert.match(level.moduleRisk?.note ?? "", /可以直接解读图表/);
+
+  assert.equal(monetization.moduleRisk?.status, "SEVERE_GAP");
+  assert.equal(monetization.moduleRisk?.canAnalyze, false);
+  assert.deepEqual(monetization.moduleRisk?.missingFields, ["price"]);
+
+  assert.equal(ads.moduleRisk?.status, "HIGH_RISK");
+  assert.equal(ads.moduleRisk?.issueCount, 2);
+  assert.equal(ads.moduleRisk?.globalIssueCount, 1);
+  assert.match(ads.moduleRisk?.note ?? "", /公共属性问题/);
+});
+
+test("getAnalyticsCategoryData keeps pending module risk when diagnostics are missing but module data exists", async () => {
+  delete process.env.DATABASE_URL;
+  resetMemoryStore();
+
+  const projectId = "project-module-risk-pending";
+  seedImportSummary("import-module-risk-pending", projectId, "2.7.0", 27, {
+    categories: {
+      ads: {
+        metrics: { completionRate: 66.4, rewardRate: 58.1 },
+        main: [100, 68, 41],
+        aux: [55, 45],
+        auxLabels: ["Rewarded", "Interstitial"],
+        ranking: [],
+        insight: "广告结论。"
+      }
+    }
+  });
+  seedMetricSnapshot(projectId, "2.7.0", "ad_completion_rate", 66.4, "ads", 27);
+
+  const ads = (await getAnalyticsCategoryData("ads", projectId, null, "import-module-risk-pending")) as {
+    moduleRisk?: {
+      status: string;
+      issueCount: number;
+      note: string;
+    } | null;
+  };
+
+  assert.ok(ads.moduleRisk);
+  assert.equal(ads.moduleRisk?.status, "PENDING");
+  assert.equal(ads.moduleRisk?.issueCount, 0);
+  assert.match(ads.moduleRisk?.note ?? "", /还没有严格诊断结果/);
+});
+
+test("analytics module pages render a dedicated risk banner for operations categories", () => {
+  const pagePath = path.resolve(process.cwd(), "src/app/analytics/[category]/page.tsx");
+  const source = readFileSync(pagePath, "utf8");
+
+  assert.match(source, /function ModuleRiskBanner/);
+  assert.match(source, /moduleRisk\?: \{/);
+  assert.match(source, /<ModuleRiskBanner moduleRisk=\{config\.moduleRisk\} importPreviewHref=\{importPreviewHref\} \/>/);
+  assert.match(source, /<ModuleQualityCards[\s\S]*?<ModuleRiskBanner moduleRisk=\{config\.moduleRisk\} importPreviewHref=\{importPreviewHref\} \/>[\s\S]*?<ModuleConclusionCards/);
 });
