@@ -173,6 +173,24 @@ export type ImportSummary = {
     plays: number;
     clicks: number;
   }>;
+  systemDailyUsers: Array<{
+    date: string;
+    activeUsers: number;
+    loginUsers: number;
+    retainedUsers: number;
+  }>;
+  systemCountryUsers: Array<{
+    country: string;
+    activeUsers: number;
+    loginUsers: number;
+    retainedUsers: number;
+  }>;
+  systemDeviceDistribution: Array<{
+    platform: string;
+    users: number;
+    events: number;
+    share: number;
+  }>;
   categories: Record<CategoryKey, CategorySummary>;
   overview: {
     activeUsers: number;
@@ -218,6 +236,44 @@ function readRowNumber(row: ImportRow, ...keys: Array<string | undefined>) {
 
 function clampPercent(value: number) {
   return Math.max(0, Math.min(100, Number(value.toFixed(2))));
+}
+
+function readDateKey(value: string) {
+  const match = value.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (match) {
+    return `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
+  }
+
+  const parsed = Date.parse(value);
+  if (!Number.isNaN(parsed)) {
+    return new Date(parsed).toISOString().slice(0, 10);
+  }
+
+  return "";
+}
+
+function isLoginLikeEvent(eventName: string) {
+  return /(af_login|login_success|sign_in_success|auth_success|app_start|session_start|launch)/i.test(eventName);
+}
+
+function addToSetMap(map: Map<string, Set<string>>, key: string, value: string) {
+  if (!key || !value) {
+    return;
+  }
+  const set = map.get(key) ?? new Set<string>();
+  set.add(value);
+  map.set(key, set);
+}
+
+function addUserDate(map: Map<string, Map<string, Set<string>>>, groupKey: string, userId: string, dateKey: string) {
+  if (!groupKey || !userId || !dateKey) {
+    return;
+  }
+  const group = map.get(groupKey) ?? new Map<string, Set<string>>();
+  const dates = group.get(userId) ?? new Set<string>();
+  dates.add(dateKey);
+  group.set(userId, dates);
+  map.set(groupKey, group);
 }
 
 function toCountRanking(map: Map<string, number>, limit = 5): RankedItem[] {
@@ -754,6 +810,14 @@ export function buildImportSummary(
 
   const uniqueUsers = new Set<string>();
   const monetizationUsers = new Set<string>();
+  const dailyActiveUsers = new Map<string, Set<string>>();
+  const dailyLoginUsers = new Map<string, Set<string>>();
+  const countryActiveUsers = new Map<string, Set<string>>();
+  const countryLoginUsers = new Map<string, Set<string>>();
+  const platformUsers = new Map<string, Set<string>>();
+  const platformEvents = new Map<string, number>();
+  const userActiveDates = new Map<string, Set<string>>();
+  const countryUserDates = new Map<string, Map<string, Set<string>>>();
   const eventCounts = new Map<string, number>();
   const placementCounts = new Map<string, number>();
   const levelCounts = new Map<string, number>();
@@ -838,6 +902,12 @@ export function buildImportSummary(
     const rewardType = readRowText(row, rewardMapping?.target, rewardMapping?.source, "reward_type");
     const levelType = readRowText(row, levelTypeMapping?.target, levelTypeMapping?.source, "level_type");
     const gainSource = readRowText(row, gainSourceMapping?.target, gainSourceMapping?.source, "gain_source");
+    const platform = readRowText(row, platformMapping?.target, platformMapping?.source, "platform", "device_os", "os");
+    const appVersion = readRowText(row, appVersionMapping?.target, appVersionMapping?.source, "app_version");
+    const countryCode = readRowText(row, countryCodeMapping?.target, countryCodeMapping?.source, "country_code", "country");
+    const productId = readRowText(row, productIdMapping?.target, productIdMapping?.source, "product_id");
+    const rewardId = readRowText(row, rewardIdMapping?.target, rewardIdMapping?.source, "reward_id");
+    const itemName = readRowText(row, itemNameMapping?.target, itemNameMapping?.source, "item_name");
     const propertyHints = propertyHintMappings
       .map((source) => ({ source, value: readRowText(row, source) }))
       .filter((entry) => entry.value);
@@ -857,8 +927,9 @@ export function buildImportSummary(
       "";
     const contentId =
       rewardType ||
-      readRowText(row, productIdMapping?.target, productIdMapping?.source, "product_id") ||
-      readRowText(row, rewardIdMapping?.target, rewardIdMapping?.source, itemNameMapping?.target, itemNameMapping?.source, "reward_id", "item_name") ||
+      productId ||
+      rewardId ||
+      itemName ||
       contentHint ||
       "";
     const isLevelStart = /level_start|tutorial_level_start|begin|enter|start/i.test(eventName);
@@ -876,9 +947,9 @@ export function buildImportSummary(
       raw_event_name: rawEventName,
       event_time: eventTime,
       user_id: userId,
-      platform: readRowText(row, platformMapping?.target, platformMapping?.source, "platform", "device_os", "os"),
-      app_version: readRowText(row, appVersionMapping?.target, appVersionMapping?.source, "app_version"),
-      country_code: readRowText(row, countryCodeMapping?.target, countryCodeMapping?.source, "country_code", "country"),
+      platform,
+      app_version: appVersion,
+      country_code: countryCode,
       level_id: levelId,
       level_type: levelType,
       step_id: stepId,
@@ -889,9 +960,9 @@ export function buildImportSummary(
       placement,
       price,
       reward_type: rewardType,
-      product_id: readRowText(row, productIdMapping?.target, productIdMapping?.source, "product_id"),
-      reward_id: readRowText(row, rewardIdMapping?.target, rewardIdMapping?.source, "reward_id"),
-      item_name: readRowText(row, itemNameMapping?.target, itemNameMapping?.source, "item_name"),
+      product_id: productId,
+      reward_id: rewardId,
+      item_name: itemName,
       trigger_scene: triggerScene,
       activity_id: readRowText(row, activityIdMapping?.target, activityIdMapping?.source, "activity_id"),
       activity_type: readRowText(row, activityTypeMapping?.target, activityTypeMapping?.source, "activity_type"),
@@ -902,6 +973,29 @@ export function buildImportSummary(
 
     if (userId) {
       uniqueUsers.add(userId);
+    }
+
+    const dateKey = readDateKey(eventTime);
+    const countryKey = countryCode || "未知国家";
+    const platformKey = platform || "未知设备";
+
+    if (platformKey) {
+      platformEvents.set(platformKey, (platformEvents.get(platformKey) ?? 0) + 1);
+      if (userId) {
+        addToSetMap(platformUsers, platformKey, userId);
+      }
+    }
+
+    if (userId && dateKey) {
+      addToSetMap(dailyActiveUsers, dateKey, userId);
+      addToSetMap(countryActiveUsers, countryKey, userId);
+      addToSetMap(userActiveDates, userId, dateKey);
+      addUserDate(countryUserDates, countryKey, userId, dateKey);
+
+      if (isLoginLikeEvent(eventName)) {
+        addToSetMap(dailyLoginUsers, dateKey, userId);
+        addToSetMap(countryLoginUsers, countryKey, userId);
+      }
     }
 
     eventCounts.set(eventName, (eventCounts.get(eventName) ?? 0) + 1);
@@ -1236,6 +1330,42 @@ export function buildImportSummary(
   const topLevels = levelRanking;
   const failReasons = levelReasonRanking;
   const previewRows = rows.slice(0, 20);
+  const userFirstDate = new Map(
+    [...userActiveDates.entries()].map(([userId, dates]) => [userId, [...dates].sort()[0] ?? ""])
+  );
+  const systemDailyUsers = [...dailyActiveUsers.entries()]
+    .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+    .map(([date, users]) => ({
+      date,
+      activeUsers: users.size,
+      loginUsers: (dailyLoginUsers.get(date) ?? new Set<string>()).size,
+      retainedUsers: [...users].filter((userId) => {
+        const firstDate = userFirstDate.get(userId);
+        return firstDate ? firstDate < date : false;
+      }).length
+    }));
+  const systemCountryUsers = [...countryActiveUsers.entries()]
+    .map(([country, users]) => {
+      const userDates = countryUserDates.get(country) ?? new Map<string, Set<string>>();
+      return {
+        country,
+        activeUsers: users.size,
+        loginUsers: (countryLoginUsers.get(country) ?? new Set<string>()).size,
+        retainedUsers: [...userDates.values()].filter((dates) => dates.size > 1).length
+      };
+    })
+    .sort((a, b) => b.activeUsers - a.activeUsers || b.loginUsers - a.loginUsers)
+    .slice(0, 12);
+  const platformTotalUsers = [...platformUsers.values()].reduce((sum, users) => sum + users.size, 0);
+  const systemDeviceDistribution = [...platformUsers.entries()]
+    .map(([platform, users]) => ({
+      platform,
+      users: users.size,
+      events: platformEvents.get(platform) ?? 0,
+      share: clampPercent(platformTotalUsers ? (users.size / platformTotalUsers) * 100 : 0)
+    }))
+    .sort((a, b) => b.users - a.users || b.events - a.events)
+    .slice(0, 12);
   const onboardingSteps = [...stepStats.values()]
     .sort((a, b) => {
       const aNum = Number(a.stepId);
@@ -1487,6 +1617,9 @@ export function buildImportSummary(
     giftPackDistribution,
     adPlacementBreakdown,
     adPlacementFlow,
+    systemDailyUsers,
+    systemCountryUsers,
+    systemDeviceDistribution,
     categories,
     overview: {
       activeUsers: uniqueUsers.size,

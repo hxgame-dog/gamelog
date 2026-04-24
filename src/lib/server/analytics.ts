@@ -121,6 +121,24 @@ type ImportSummary = {
     plays: number;
     clicks: number;
   }>;
+  systemDailyUsers?: Array<{
+    date: string;
+    activeUsers: number;
+    loginUsers: number;
+    retainedUsers: number;
+  }>;
+  systemCountryUsers?: Array<{
+    country: string;
+    activeUsers: number;
+    loginUsers: number;
+    retainedUsers: number;
+  }>;
+  systemDeviceDistribution?: Array<{
+    platform: string;
+    users: number;
+    events: number;
+    share: number;
+  }>;
   categories?: Partial<Record<CategoryKey, ImportCategorySummary>>;
   overview?: {
     activeUsers?: number;
@@ -1330,7 +1348,10 @@ export async function getAnalyticsCategoryData(
         compareImport && compareValidRate !== null
           ? `${categorySummary.insight} 与 ${compareImport.version} 相比，有效会话率 ${versionDelta(validRate, compareValidRate)}，异常占比 ${versionDelta(errorRate, compareErrorRate)}。`
           : categorySummary.insight,
-      compareInsight: compareSummaryText
+      compareInsight: compareSummaryText,
+      systemDailyUsers: summary.systemDailyUsers ?? [],
+      systemCountryUsers: summary.systemCountryUsers ?? [],
+      systemDeviceDistribution: summary.systemDeviceDistribution ?? []
     };
   }
 

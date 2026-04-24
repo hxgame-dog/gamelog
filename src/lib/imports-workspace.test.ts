@@ -33,6 +33,9 @@ function createSummary(overrides: Partial<ImportSummary> = {}): ImportSummary {
     giftPackDistribution: [],
     adPlacementBreakdown: [],
     adPlacementFlow: [],
+    systemDailyUsers: [],
+    systemCountryUsers: [],
+    systemDeviceDistribution: [],
     metrics: [],
     categories: {
       system: { metrics: {}, main: [], aux: [], auxLabels: [], ranking: [], insight: "" },

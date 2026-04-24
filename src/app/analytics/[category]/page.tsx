@@ -19,6 +19,7 @@ import {
   PageHeader,
   VersionCompareSwitch
 } from "@/components/ui";
+import { formatTutorialStepName } from "@/lib/analytics-ui";
 import { requireUser } from "@/lib/server/auth";
 import { getAnalyticsCategoryData, getLevelDiagnostics, getMonetizationWorstLossStage } from "@/lib/server/analytics";
 import { getProjectsForUser } from "@/lib/server/projects";
@@ -67,6 +68,14 @@ const adsSections = [
   "广告位构成",
   "广告明细表"
 ] as const;
+
+function isMeaningfulLevelType(levelType?: string | null) {
+  return Boolean(levelType && !/^\d+$/.test(levelType) && !/^level$/i.test(levelType));
+}
+
+function formatLevelName(levelId: string, levelType?: string | null) {
+  return isMeaningfulLevelType(levelType) ? `Level ${levelId} (${levelType})` : `Level ${levelId}`;
+}
 
 function ModuleSectionHeader({
   title,
@@ -338,6 +347,9 @@ export default async function AnalyticsCategoryPage({
     adPlacementBreakdown?: Array<{ placement: string; requests: number; plays: number; clicks: number; rewards: number; clickRate: number; rewardRate: number; inferred?: boolean }>;
     adPlacementFlow?: Array<{ placement: string; requests: number; plays: number; clicks: number }>;
     adsNote?: string | null;
+    systemDailyUsers?: Array<{ date: string; activeUsers: number; loginUsers: number; retainedUsers: number }>;
+    systemCountryUsers?: Array<{ country: string; activeUsers: number; loginUsers: number; retainedUsers: number }>;
+    systemDeviceDistribution?: Array<{ platform: string; users: number; events: number; share: number }>;
     insight: string;
     compareInsight?: string | null;
   };
@@ -433,6 +445,18 @@ export default async function AnalyticsCategoryPage({
   const onboardingRows = category === "onboarding" ? config.onboardingFunnel ?? [] : [];
   const compareOnboardingRows = category === "onboarding" ? config.compareOnboardingFunnel ?? [] : [];
   const onboardingTrendRows = category === "onboarding" ? config.onboardingStepTrend ?? onboardingRows : [];
+  const onboardingDisplayRows = onboardingRows.map((row) => ({
+    ...row,
+    displayName: formatTutorialStepName(row.stepId, row.stepName)
+  }));
+  const onboardingTrendDisplayRows = onboardingTrendRows.map((row) => ({
+    ...row,
+    stepName: formatTutorialStepName(row.stepId, row.stepName)
+  }));
+  const compareOnboardingDisplayRows = compareOnboardingRows.map((row) => ({
+    ...row,
+    stepName: formatTutorialStepName(row.stepId, row.stepName)
+  }));
   const onboardingCompareMap = new Map(compareOnboardingRows.map((row) => [row.stepId || row.stepName, row]));
   const levelRows = category === "level" ? config.levelFunnel ?? [] : [];
   const levelRetryRows = category === "level" ? levelDiagnostics.levelRetryHot : [];
@@ -451,7 +475,7 @@ export default async function AnalyticsCategoryPage({
     levelWorst
       ? {
           title: "先处理失败最集中的关卡",
-          detail: `${levelWorst.levelType ? `${levelWorst.levelId} (${levelWorst.levelType})` : levelWorst.levelId} 当前失败率 ${levelWorst.failRate.toFixed(
+          detail: `${formatLevelName(levelWorst.levelId, levelWorst.levelType)} 当前失败率 ${levelWorst.failRate.toFixed(
             1
           )}% ，主要失败原因是 ${levelWorst.topFailReason || "未记录"}，建议先回看关卡目标、时间压力和关键阻塞交互。`
         }
@@ -462,7 +486,7 @@ export default async function AnalyticsCategoryPage({
     levelRetryHot
       ? {
           title: "复核最高重试热点",
-          detail: `${levelRetryHot.levelType ? `${levelRetryHot.levelId} (${levelRetryHot.levelType})` : levelRetryHot.levelId} 当前重试率 ${levelRetryHot.retryRate.toFixed(
+          detail: `${formatLevelName(levelRetryHot.levelId, levelRetryHot.levelType)} 当前重试率 ${levelRetryHot.retryRate.toFixed(
             1
           )}% ，说明玩家愿意反复尝试但仍过不去，适合优先检查失败反馈和复活/道具承接。`
         }
@@ -514,7 +538,7 @@ export default async function AnalyticsCategoryPage({
     onboardingLargestDrop
       ? {
           title: "优先修复最大流失步骤",
-          detail: `${onboardingLargestDrop.stepName || onboardingLargestDrop.stepId} 当前流失率 ${onboardingDropoffRate.toFixed(
+          detail: `${formatTutorialStepName(onboardingLargestDrop.stepId, onboardingLargestDrop.stepName)} 当前流失率 ${onboardingDropoffRate.toFixed(
             1
           )}% ，建议先检查引导文案、交互反馈和前后步骤衔接。`
         }
@@ -525,7 +549,7 @@ export default async function AnalyticsCategoryPage({
     onboardingSlowestStep
       ? {
           title: "检查异常耗时步骤",
-          detail: `${onboardingSlowestStep.stepName || onboardingSlowestStep.stepId} 平均耗时 ${onboardingSlowestStep.avgDuration.toFixed(
+          detail: `${formatTutorialStepName(onboardingSlowestStep.stepId, onboardingSlowestStep.stepName)} 平均耗时 ${onboardingSlowestStep.avgDuration.toFixed(
             1
           )} 秒，高于步骤均值 ${onboardingAverageDuration.toFixed(1)} 秒，适合优先排查理解成本和等待时机。`
         }
@@ -536,7 +560,7 @@ export default async function AnalyticsCategoryPage({
     onboardingLastStep
       ? {
           title: "复核尾步承接表现",
-          detail: `${onboardingLastStep.stepName || onboardingLastStep.stepId} 完成率 ${onboardingLastStep.completionRate.toFixed(
+          detail: `${formatTutorialStepName(onboardingLastStep.stepId, onboardingLastStep.stepName)} 完成率 ${onboardingLastStep.completionRate.toFixed(
             1
           )}% ，用于确认玩家是否在最后几步被奖励承接或难度陡增挡住。`
         }
@@ -642,6 +666,9 @@ export default async function AnalyticsCategoryPage({
       avgRotateSeconds: rotateAction?.avgDuration ?? 0
     };
   });
+  const systemDailyRows = category === "system" ? config.systemDailyUsers ?? [] : [];
+  const systemCountryRows = category === "system" ? config.systemCountryUsers ?? [] : [];
+  const systemDeviceRows = category === "system" ? config.systemDeviceDistribution ?? [] : [];
 
   return (
     <AppShell currentPath="/analytics">
@@ -816,15 +843,15 @@ export default async function AnalyticsCategoryPage({
               <article className={styles.opsSnapshotPanel}>
                 <div className={styles.opsPanelTitle}>{onboardingSections[0]}</div>
                 <div className={styles.opsFunnelRows}>
-                  {onboardingRows.length ? (
-                    onboardingRows.map((row, index) => {
+                  {onboardingDisplayRows.length ? (
+                    onboardingDisplayRows.map((row, index) => {
                       const width = Math.max(3, (row.arrivals / onboardingFunnelMax) * 100);
                       const isDrop = row.stepId === onboardingLargestDrop?.stepId && row.stepName === onboardingLargestDrop?.stepName;
                       return (
                         <div key={`${row.stepId}-${row.stepName}`} className={styles.opsFunnelRow}>
                           <div className={styles.opsFunnelLabel}>
-                            <strong>{index + 1}. {row.stepName || row.stepId}</strong>
-                            <span>{row.stepId || "未命名步骤"}</span>
+                            <strong>{index + 1}. {row.displayName}</strong>
+                            <span>{row.stepName && row.stepName !== row.displayName ? row.stepName : row.stepId || "未命名步骤"}</span>
                           </div>
                           <div className={styles.opsFunnelTrack}>
                             <span
@@ -851,7 +878,7 @@ export default async function AnalyticsCategoryPage({
                   </div>
                   <div>
                     <span>最大流失步骤</span>
-                    <strong>{onboardingLargestDrop ? onboardingLargestDrop.stepName || onboardingLargestDrop.stepId : "—"}</strong>
+                    <strong>{onboardingLargestDrop ? formatTutorialStepName(onboardingLargestDrop.stepId, onboardingLargestDrop.stepName) : "—"}</strong>
                   </div>
                   <div>
                     <span>最大流失人数</span>
@@ -907,14 +934,14 @@ export default async function AnalyticsCategoryPage({
                       ? `按步骤查看完成率曲线，实线为 ${config.versionLabel}，虚线为 ${config.compareVersionLabel}。`
                       : "按步骤查看完成率曲线，判断是某一步骤突然陡降，还是整体理解成本持续升高。"
                   }
-                  steps={onboardingTrendRows}
-                  compareSteps={config.compareOnboardingStepTrend}
+                  steps={onboardingTrendDisplayRows}
+                  compareSteps={compareOnboardingDisplayRows}
                   color={config.color}
                 />
                 <OnboardingDurationRankingCard
                   title={onboardingSections[4]}
                   copy="查看耗时异常步骤，确认高耗时是否与高流失同时出现。"
-                  steps={onboardingRows}
+                  steps={onboardingDisplayRows.map((row) => ({ ...row, stepName: row.displayName }))}
                 />
               </div>
             </section>
@@ -941,13 +968,13 @@ export default async function AnalyticsCategoryPage({
                   <div className={styles.moduleDetailTableHead}>平均耗时</div>
                   <div className={styles.moduleDetailTableHead}>对比完成率</div>
                 </div>
-                {onboardingRows.map((row) => {
+                {onboardingDisplayRows.map((row) => {
                   const compare = onboardingCompareMap.get(row.stepId || row.stepName);
                   return (
                     <div key={`${row.stepId}-${row.stepName}`} className={styles.moduleDetailTableRow}>
                       <div className={styles.moduleDetailPrimary}>
-                        <strong>{row.stepName || row.stepId}</strong>
-                        <span>{row.stepId || "未命名步骤"}</span>
+                        <strong>{row.displayName}</strong>
+                        <span>{row.stepName && row.stepName !== row.displayName ? row.stepName : row.stepId || "未命名步骤"}</span>
                       </div>
                       <div>{row.arrivals}</div>
                       <div>{row.completions}</div>
@@ -973,9 +1000,9 @@ export default async function AnalyticsCategoryPage({
                 <div className={styles.opsPanelTitle}>{levelSections[0]}</div>
                 {levelWorst ? (
                   <div className={styles.frictionCard}>
-                    <strong>{levelWorst.levelType ? `${levelWorst.levelId} (${levelWorst.levelType})` : `Level ${levelWorst.levelId}`}</strong>
+                    <strong>{formatLevelName(levelWorst.levelId, levelWorst.levelType)}</strong>
                     <span>
-                      开始 {levelWorst.starts} 人，通关率 {levelWorst.completionRate.toFixed(1)}%，失败率 {levelWorst.failRate.toFixed(1)}%，
+                      开始 {levelWorst.starts} 人，通关 {levelWorst.completes} 人，失败 {levelWorst.fails} 人，重开 {levelWorst.retries} 次，通关率 {levelWorst.completionRate.toFixed(1)}%，失败率 {levelWorst.failRate.toFixed(1)}%，
                       问题信号：{levelWorst.topFailReason || "通关率过低 / 重试偏高 / 失败原因缺失"}。
                     </span>
                     {nextWorstLevel ? <em>次高摩擦关卡：Level {nextWorstLevel.levelId}</em> : null}
@@ -991,9 +1018,10 @@ export default async function AnalyticsCategoryPage({
                   {levelSummaryRows.slice(0, 6).map((row) => (
                     <div key={`${row.levelId}-${row.levelType}`} className={styles.pressureRow}>
                       <div className={styles.pressureRowTop}>
-                        <strong>Level {row.levelId}</strong>
-                        <span>通关 {row.completionRate.toFixed(1)}% / 重开 {row.retryRate.toFixed(1)}%</span>
+                        <strong>{formatLevelName(row.levelId, row.levelType)}</strong>
+                        <span className={styles.pressureRowStats}>开始 {row.starts} 人 / 通关 {row.completes} 人 / 失败 {row.fails} 人 / 重开 {row.retries} 次</span>
                       </div>
+                      <div className={styles.pressureRowRates}>通关率 {row.completionRate.toFixed(1)}% / 重开率 {row.retryRate.toFixed(1)}%</div>
                       <div className={styles.pressureTrack}>
                         <span className={styles.pressureWin} style={{ width: `${Math.max(2, row.completionRate)}%` }} />
                       </div>
@@ -1056,8 +1084,8 @@ export default async function AnalyticsCategoryPage({
                   <div className={styles.infoPanelList}>
                     {levelRetryRows.slice(0, 6).map((item) => (
                       <div key={`${item.levelId}-${item.levelType}`} className={styles.infoPanelRow}>
-                        <span>{item.levelType ? `${item.levelId} (${item.levelType})` : item.levelId}</span>
-                        <strong>{item.retryRate.toFixed(1)}%</strong>
+                        <span>{formatLevelName(item.levelId, item.levelType)}</span>
+                        <strong>{item.retries} 次 / {item.retryRate.toFixed(1)}%</strong>
                       </div>
                     ))}
                   </div>
@@ -1141,6 +1169,9 @@ export default async function AnalyticsCategoryPage({
                     <div className={`${styles.levelDetailTableRow} ${styles.levelDetailTableHeaderRow}`}>
                       <div className={styles.levelDetailTableHead}>LEVEL_ID</div>
                       <div className={styles.levelDetailTableHead}>STARTS</div>
+                      <div className={styles.levelDetailTableHead}>COMPLETES</div>
+                      <div className={styles.levelDetailTableHead}>FAILS</div>
+                      <div className={styles.levelDetailTableHead}>RETRIES</div>
                       <div className={styles.levelDetailTableHead}>WIN_RATE</div>
                       <div className={styles.levelDetailTableHead}>RETRY_RATE</div>
                       <div className={styles.levelDetailTableHead}>ITEM_USE_RATE</div>
@@ -1151,10 +1182,13 @@ export default async function AnalyticsCategoryPage({
                       return (
                         <div key={`${row.levelId}-${row.levelType}`} className={styles.levelDetailTableRow}>
                           <div className={styles.levelDetailPrimary}>
-                            <strong>{row.levelType ? `${row.levelId} (${row.levelType})` : row.levelId}</strong>
+                            <strong>{formatLevelName(row.levelId, row.levelType)}</strong>
                             <span>{row.topFailReason || "无主要失败原因"}</span>
                           </div>
                           <div>{row.starts}</div>
+                          <div>{row.completes}</div>
+                          <div>{row.fails}</div>
+                          <div>{row.retries}</div>
                           <div className={styles.moduleDetailStrong}>{row.completionRate.toFixed(1)}%</div>
                           <div>{row.retryRate.toFixed(1)}%</div>
                           <div>{row.itemUseRate.toFixed(1)}%</div>
@@ -1194,6 +1228,82 @@ export default async function AnalyticsCategoryPage({
               </div>
             </section>
           </>
+        ) : null}
+
+        {category === "system" ? (
+          <section className={styles.moduleSection}>
+            <div className={styles.moduleHeader}>
+              <div>
+                <h2 className="section-title" style={{ fontSize: 18 }}>
+                  公共事件维度分析
+                </h2>
+                <p className={styles.sectionCopy}>直接看登录用户、留存用户和设备构成，公共事件不再只显示技术质量。</p>
+              </div>
+              <span className="pill">日期 / 国家 / 设备</span>
+            </div>
+            <div className={styles.systemDimensionGrid}>
+              <article className={styles.systemDimensionPanel}>
+                <div className={styles.infoPanelTitle}>分日期用户</div>
+                <div className={styles.systemDimensionTable}>
+                  <div className={`${styles.systemDimensionRow} ${styles.systemDimensionHeader}`}>
+                    <span>日期</span>
+                    <span>登录用户</span>
+                    <span>留存用户</span>
+                    <span>活跃用户</span>
+                  </div>
+                  {systemDailyRows.slice(-8).map((row) => (
+                    <div key={row.date} className={styles.systemDimensionRow}>
+                      <span>{row.date}</span>
+                      <strong>{row.loginUsers}</strong>
+                      <strong>{row.retainedUsers}</strong>
+                      <strong>{row.activeUsers}</strong>
+                    </div>
+                  ))}
+                </div>
+                {!systemDailyRows.length ? <div className={styles.moduleEmptyState}>当前批次缺少可识别的日期或用户字段。</div> : null}
+              </article>
+
+              <article className={styles.systemDimensionPanel}>
+                <div className={styles.infoPanelTitle}>分国家用户</div>
+                <div className={styles.systemDimensionTable}>
+                  <div className={`${styles.systemDimensionRow} ${styles.systemDimensionHeader}`}>
+                    <span>国家</span>
+                    <span>登录用户</span>
+                    <span>留存用户</span>
+                    <span>活跃用户</span>
+                  </div>
+                  {systemCountryRows.slice(0, 8).map((row) => (
+                    <div key={row.country} className={styles.systemDimensionRow}>
+                      <span>{row.country}</span>
+                      <strong>{row.loginUsers}</strong>
+                      <strong>{row.retainedUsers}</strong>
+                      <strong>{row.activeUsers}</strong>
+                    </div>
+                  ))}
+                </div>
+                {!systemCountryRows.length ? <div className={styles.moduleEmptyState}>当前批次缺少可识别的国家字段。</div> : null}
+              </article>
+
+              <article className={styles.systemDimensionPanel}>
+                <div className={styles.infoPanelTitle}>设备分布</div>
+                <div className={styles.deviceDistributionList}>
+                  {systemDeviceRows.slice(0, 8).map((row) => (
+                    <div key={row.platform} className={styles.deviceDistributionRow}>
+                      <div>
+                        <strong>{row.platform}</strong>
+                        <span>{row.users} 用户 / {row.events} 事件</span>
+                      </div>
+                      <div className={styles.deviceDistributionTrack}>
+                        <span style={{ width: `${Math.max(3, row.share)}%` }} />
+                      </div>
+                      <strong>{row.share.toFixed(1)}%</strong>
+                    </div>
+                  ))}
+                </div>
+                {!systemDeviceRows.length ? <div className={styles.moduleEmptyState}>当前批次缺少可识别的设备字段。</div> : null}
+              </article>
+            </div>
+          </section>
         ) : null}
 
         {category === "system" || category === "custom" ? (

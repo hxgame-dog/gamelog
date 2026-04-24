@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { deriveOnboardingTrendCompareSeries } from "../analytics-ui";
+import { deriveOnboardingTrendCompareSeries, formatTutorialStepName } from "../analytics-ui";
 import { buildImportSummary } from "../import-summary";
 import {
   deriveOnboardingDurationSeries,
@@ -199,6 +199,13 @@ test("deriveOnboardingTrendCompareSeries keeps missing compare steps empty inste
   assert.equal(comparison.compareLatest, null);
 });
 
+test("formatTutorialStepName localizes raw tutorial event and step names", () => {
+  assert.equal(formatTutorialStepName("4", "player_rotate_model"), "完成旋转视角");
+  assert.equal(formatTutorialStepName("5", "the_first_box_clear"), "清除第一个盒子");
+  assert.equal(formatTutorialStepName("6", "guide_finish_drill"), "完成电钻引导");
+  assert.equal(formatTutorialStepName("7", ""), "第 7 步");
+});
+
 test("getOperationsOverviewData links onboarding anomaly shortcut to the redesigned onboarding signal section", async () => {
   delete process.env.DATABASE_URL;
   resetMemoryStore();
@@ -358,9 +365,26 @@ test("level page keeps a dedicated checklist and lower microflow section instead
   assert.match(source, /"局内微观心流"/);
   assert.match(source, /styles\.opsSnapshot/);
   assert.match(source, /levelSummaryRows/);
+  assert.match(source, /开始 \{row\.starts\} 人 \/ 通关 \{row\.completes\} 人 \/ 失败 \{row\.fails\} 人 \/ 重开 \{row\.retries\} 次/);
+  assert.match(source, /COMPLETES/);
+  assert.match(source, /FAILS/);
+  assert.match(source, /RETRIES/);
   assert.match(source, /ITEM_USE_RATE/);
   assert.match(source, /<section id="level-microflow" className=\{styles\.moduleSection\}>/);
   assert.match(source, /<section id="level-detail" className=\{styles\.moduleSection\}>/);
+});
+
+test("system page exposes business dimensions instead of only generic quality charts", () => {
+  const pagePath = path.resolve(process.cwd(), "src/app/analytics/[category]/page.tsx");
+  const source = readFileSync(pagePath, "utf8");
+
+  assert.match(source, /公共事件维度分析/);
+  assert.match(source, /分日期用户/);
+  assert.match(source, /分国家用户/);
+  assert.match(source, /设备分布/);
+  assert.match(source, /systemDailyUsers/);
+  assert.match(source, /systemCountryUsers/);
+  assert.match(source, /systemDeviceDistribution/);
 });
 
 test("monetization and ads pages keep dedicated business sections without top-level quality cards", () => {

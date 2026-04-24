@@ -584,6 +584,31 @@ test("buildImportSummary keeps business failure events analyzable without loweri
   assert.equal(summary.diagnostics?.moduleChecks.level.canAnalyze, true);
 });
 
+test("buildImportSummary builds system dimensions by date, country, and device", () => {
+  const summary = buildImportSummary(
+    [
+      { event_name: "app_start", event_time: "2026-04-20 10:00:00", user_id: "u1", country_code: "CN", platform: "ios" },
+      { event_name: "level_start", event_time: "2026-04-20 10:01:00", user_id: "u1", country_code: "CN", platform: "ios", level_id: "1" },
+      { event_name: "app_start", event_time: "2026-04-21 10:00:00", user_id: "u1", country_code: "CN", platform: "ios" },
+      { event_name: "af_login", event_time: "2026-04-21 10:02:00", user_id: "u2", country_code: "US", platform: "android" },
+      { event_name: "session_start", event_time: "2026-04-21 10:03:00", user_id: "u3", country_code: "CN", platform: "android" }
+    ],
+    [...mappings]
+  );
+
+  const secondDay = summary.systemDailyUsers.find((row) => row.date === "2026-04-21");
+  const china = summary.systemCountryUsers.find((row) => row.country === "CN");
+  const ios = summary.systemDeviceDistribution.find((row) => row.platform === "ios");
+
+  assert.equal(secondDay?.activeUsers, 3);
+  assert.equal(secondDay?.loginUsers, 3);
+  assert.equal(secondDay?.retainedUsers, 1);
+  assert.equal(china?.activeUsers, 2);
+  assert.equal(china?.retainedUsers, 1);
+  assert.equal(ios?.users, 1);
+  assert.equal(ios?.events, 3);
+});
+
 test("buildImportSummary merges level start and completion rows by level_id even when level_type differs", () => {
   const summary = buildImportSummary(
     [
