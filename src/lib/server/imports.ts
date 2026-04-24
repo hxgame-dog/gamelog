@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-import { JobStatus, UploadSource } from "@prisma/client";
+import { JobStatus, ProjectRole, UploadSource } from "@prisma/client";
 import { z } from "zod";
 
 import { buildImportSummary as buildSharedImportSummary, type ImportSummary } from "../import-summary";
@@ -286,6 +286,116 @@ export async function createLogImport(input: unknown) {
     uploadedAt: upload.uploadedAt,
     summary
   };
+}
+
+export async function deleteLogImportForUser(userId: string, importId: string) {
+  const prisma = getPrismaClient();
+
+  if (!prisma || !hasDatabaseUrl()) {
+    const store = getMemoryStore();
+    const upload = store.logUploads.find((item) => item.id === importId);
+    if (!upload) {
+      throw new Error("未找到导入批次。");
+    }
+
+    const membership = store.memberships.find(
+      (item) => item.projectId === upload.projectId && item.userId === userId
+    );
+    if (!membership) {
+      throw new Error("没有权限删除该导入批次。");
+    }
+
+    store.logUploads = store.logUploads.filter((item) => item.id !== importId);
+    const replacement = store.logUploads
+      .filter((item) => item.projectId === upload.projectId && item.version === upload.version)
+      .sort((a, b) => b.uploadedAt - a.uploadedAt)[0];
+
+    store.metricSnapshots = store.metricSnapshots.filter(
+      (item) => !(item.projectId === upload.projectId && item.version === upload.version)
+    );
+
+    const replacementSummary = replacement?.summaryJson as ImportSummary | undefined;
+    replacementSummary?.metrics?.forEach((metric) => {
+      store.metricSnapshots.push({
+        id: crypto.randomUUID(),
+        metricKey: metric.metricKey,
+        metricLabel: metric.metricLabel,
+        metricValue: metric.metricValue,
+        dimension: metric.dimension,
+        version: replacement.version,
+        capturedAt: Date.now(),
+        projectId: replacement.projectId
+      });
+    });
+
+    return {
+      deletedId: importId,
+      nextImportId: replacement?.id ?? null
+    };
+  }
+
+  const upload = await prisma.logUpload.findFirst({
+    where: {
+      id: importId,
+      project: {
+        members: {
+          some: {
+            userId,
+            role: { in: [ProjectRole.OWNER, ProjectRole.EDITOR] }
+          }
+        }
+      }
+    },
+    select: {
+      id: true,
+      projectId: true,
+      version: true
+    }
+  });
+
+  if (!upload) {
+    throw new Error("未找到导入批次，或没有权限删除。");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    await tx.logUpload.delete({
+      where: { id: importId }
+    });
+
+    const replacement = await tx.logUpload.findFirst({
+      where: {
+        projectId: upload.projectId,
+        version: upload.version
+      },
+      orderBy: { uploadedAt: "desc" }
+    });
+
+    await tx.metricSnapshot.deleteMany({
+      where: {
+        projectId: upload.projectId,
+        version: upload.version
+      }
+    });
+
+    const replacementSummary = replacement?.summaryJson as ImportSummary | null;
+    if (replacement && replacementSummary?.metrics?.length) {
+      await tx.metricSnapshot.createMany({
+        data: replacementSummary.metrics.map((metric) => ({
+          metricKey: metric.metricKey,
+          metricLabel: metric.metricLabel,
+          metricValue: metric.metricValue,
+          dimension: metric.dimension,
+          version: replacement.version,
+          projectId: replacement.projectId
+        }))
+      });
+    }
+
+    return {
+      deletedId: importId,
+      nextImportId: replacement?.id ?? null
+    };
+  });
 }
 
 export async function getLatestImportForProject(projectId: string) {

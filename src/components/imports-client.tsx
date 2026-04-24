@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
 import * as XLSX from "xlsx";
 
@@ -265,6 +265,7 @@ export function ImportsClient({
   latestImportsByProject: Record<string, ImportPreview | null>;
   importsHistoryByProject: Record<string, ImportPreview[]>;
 }) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<"real" | "synthetic">("real");
   const [selectedProjectId, setSelectedProjectId] = useState(initialProjectId ?? projects[0]?.id ?? "");
@@ -286,16 +287,19 @@ export function ImportsClient({
   const [latestImportId, setLatestImportId] = useState(
     latestImportsByProject[initialProjectId ?? projects[0]?.id ?? ""]?.id ?? null
   );
+  const [localLatestImportsByProject, setLocalLatestImportsByProject] = useState(latestImportsByProject);
+  const [localImportsHistoryByProject, setLocalImportsHistoryByProject] = useState(importsHistoryByProject);
   const [selectedHistoryImportId, setSelectedHistoryImportId] = useState(
     initialImportId ?? latestImportsByProject[initialProjectId ?? projects[0]?.id ?? ""]?.id ?? null
   );
   const [previewFilter, setPreviewFilter] = useState("");
+  const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const activePlans = plansByProject[selectedProjectId] ?? [];
   const selectedPlan = activePlans.find((plan) => plan.id === selectedPlanId) ?? null;
-  const latestImport = latestImportsByProject[selectedProjectId] ?? null;
-  const importHistory = importsHistoryByProject[selectedProjectId] ?? [];
+  const latestImport = localLatestImportsByProject[selectedProjectId] ?? null;
+  const importHistory = localImportsHistoryByProject[selectedProjectId] ?? [];
   const selectedPersistedImport =
     importHistory.find((item) => item.id === selectedHistoryImportId) ?? latestImport ?? null;
   const { activeImport: selectedHistoryImport, displaySummary } = resolveImportWorkspaceState({
@@ -499,6 +503,25 @@ export function ImportsClient({
       setHasPendingLocalUpload(false);
       setLatestImportId(data.item.id);
       setSelectedHistoryImportId(data.item.id);
+      const persistedImport: ImportPreview = {
+        id: data.item.id,
+        fileName,
+        version,
+        source: "REAL",
+        uploadedAt: new Date().toISOString(),
+        summaryJson: data.item.summary
+      };
+      setLocalLatestImportsByProject((current) => ({
+        ...current,
+        [selectedProjectId]: persistedImport
+      }));
+      setLocalImportsHistoryByProject((current) => ({
+        ...current,
+        [selectedProjectId]: [
+          persistedImport,
+          ...(current[selectedProjectId] ?? []).filter((item) => item.id !== persistedImport.id)
+        ]
+      }));
       setMessage(`日志已导入，已基于 ${compactRows.length} 行清洗结果生成导入摘要并更新聚合指标。`);
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : "日志导入失败。");
@@ -526,7 +549,78 @@ export function ImportsClient({
     setHasPendingLocalUpload(false);
     setLatestImportId(data.id ?? null);
     setSelectedHistoryImportId(data.id ?? null);
+    if (data.id && data.summary) {
+      const persistedImport: ImportPreview = {
+        id: data.id,
+        fileName: `模拟数据-${new Date().toLocaleDateString("zh-CN")}`,
+        version,
+        source: "SYNTHETIC",
+        uploadedAt: new Date().toISOString(),
+        summaryJson: data.summary
+      };
+      setLocalLatestImportsByProject((current) => ({
+        ...current,
+        [selectedProjectId]: persistedImport
+      }));
+      setLocalImportsHistoryByProject((current) => ({
+        ...current,
+        [selectedProjectId]: [
+          persistedImport,
+          ...(current[selectedProjectId] ?? []).filter((item) => item.id !== persistedImport.id)
+        ]
+      }));
+    }
     setMessage(`已生成并导入模拟数据：${data.generatedUsers} 名玩家，覆盖 ${data.days} 天。`);
+  }
+
+  async function deleteImportBatch(importId: string, fileLabel: string) {
+    if (!window.confirm(`确认删除导入批次「${fileLabel}」吗？删除后会同步清理该批次预览和对应版本聚合快照。`)) {
+      return;
+    }
+
+    try {
+      setDeletingImportId(importId);
+      setError(null);
+      setMessage(null);
+
+      const response = await fetch(`/api/imports/${importId}`, {
+        method: "DELETE"
+      });
+      const data = (await response.json()) as { item?: { nextImportId?: string | null }; error?: string };
+      if (!response.ok) {
+        setError(data.error ?? "删除导入批次失败。");
+        return;
+      }
+
+      const currentHistory = localImportsHistoryByProject[selectedProjectId] ?? [];
+      const nextHistory = currentHistory.filter((item) => item.id !== importId);
+      const nextImport =
+        nextHistory.find((item) => item.id === data.item?.nextImportId) ?? nextHistory[0] ?? null;
+
+      setLocalImportsHistoryByProject((current) => ({
+        ...current,
+        [selectedProjectId]: nextHistory
+      }));
+      setLocalLatestImportsByProject((current) => ({
+        ...current,
+        [selectedProjectId]: nextImport
+      }));
+
+      if (importId === selectedHistoryImport?.id || importId === selectedHistoryImportId || importId === latestImportId) {
+        setSelectedHistoryImportId(nextImport?.id ?? null);
+        setLatestImportId(nextImport?.id ?? null);
+        setSummary(null);
+        setHasPendingLocalUpload(false);
+        setPreviewFilter("");
+      }
+
+      setMessage(nextImport ? `已删除导入批次，当前切换到：${nextImport.fileName}` : "已删除导入批次，当前项目暂无导入数据。");
+      router.refresh();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "删除导入批次失败。");
+    } finally {
+      setDeletingImportId(null);
+    }
   }
 
   return (
@@ -543,8 +637,8 @@ export function ImportsClient({
                   const nextProjectId = event.target.value;
                   setSelectedProjectId(nextProjectId);
                   setSelectedPlanId(plansByProject[nextProjectId]?.[0]?.id ?? "");
-                  setLatestImportId(latestImportsByProject[nextProjectId]?.id ?? null);
-                  setSelectedHistoryImportId(latestImportsByProject[nextProjectId]?.id ?? null);
+                  setLatestImportId(localLatestImportsByProject[nextProjectId]?.id ?? null);
+                  setSelectedHistoryImportId(localLatestImportsByProject[nextProjectId]?.id ?? null);
                   setSummary(null);
                   setHasPendingLocalUpload(false);
                   setPreviewFilter("");
@@ -999,24 +1093,36 @@ export function ImportsClient({
                 const itemSummary = item.summaryJson;
                 const active = item.id === (selectedHistoryImport?.id ?? latestImportId);
                 return (
-                  <button
+                  <article
                     key={item.id}
-                    type="button"
                     className={`${styles.historyItem} ${active ? styles.historyItemActive : ""}`}
-                    onClick={() => {
-                      setSelectedHistoryImportId(item.id);
-                      setSummary(null);
-                      setHasPendingLocalUpload(false);
-                      setPreviewFilter("");
-                      setMessage(`已切换到导入批次：${item.fileName}`);
-                      setError(null);
-                    }}
                   >
                     <div className={styles.historyHeader}>
-                      <strong>{item.fileName}</strong>
-                      <span className="pill">
-                        {item.source === "SYNTHETIC" ? "模拟" : "真实"} / v{item.version}
-                      </span>
+                      <button
+                        type="button"
+                        className={styles.historySelectButton}
+                        onClick={() => {
+                          setSelectedHistoryImportId(item.id);
+                          setSummary(null);
+                          setHasPendingLocalUpload(false);
+                          setPreviewFilter("");
+                          setMessage(`已切换到导入批次：${item.fileName}`);
+                          setError(null);
+                        }}
+                      >
+                        <strong>{item.fileName}</strong>
+                        <span className="pill">
+                          {item.source === "SYNTHETIC" ? "模拟" : "真实"} / v{item.version}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.historyDeleteButton}
+                        disabled={deletingImportId === item.id}
+                        onClick={() => deleteImportBatch(item.id, item.fileName)}
+                      >
+                        {deletingImportId === item.id ? "删除中" : "删除"}
+                      </button>
                     </div>
                     <div className={styles.historyMeta}>
                       <span>记录 {itemSummary?.recordCount ?? 0}</span>
@@ -1025,7 +1131,7 @@ export function ImportsClient({
                       </span>
                       <span>{item.uploadedAt ? new Date(item.uploadedAt).toLocaleString("zh-CN") : "刚刚"}</span>
                     </div>
-                  </button>
+                  </article>
                 );
               })}
             </div>

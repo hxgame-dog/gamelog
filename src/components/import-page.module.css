@@ -302,7 +302,6 @@
   border-radius: 14px;
   border: 1px solid var(--border);
   background: #fcfcfb;
-  cursor: pointer;
 }
 
 .historyItemActive {
@@ -316,6 +315,37 @@
   gap: 12px;
   align-items: flex-start;
   flex-wrap: wrap;
+}
+
+.historySelectButton {
+  display: flex;
+  flex: 1;
+  min-width: 220px;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+
+.historyDeleteButton {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(184, 101, 72, 0.18);
+  background: rgba(184, 101, 72, 0.06);
+  color: #9f4b32;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.historyDeleteButton:disabled {
+  cursor: wait;
+  opacity: 0.58;
 }
 
 .historyMeta {

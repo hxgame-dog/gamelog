@@ -16,4 +16,7 @@ test("imports client is organized around status, cleaned preview, strict diagnos
   assert.match(source, /issues/);
   assert.match(source, /buildOperationsHref\("ads"\)/);
   assert.match(source, /buildOperationsHref\("monetization"\)/);
+  assert.match(source, /deleteImportBatch/);
+  assert.match(source, /method: "DELETE"/);
+  assert.match(source, /删除导入批次/);
 });

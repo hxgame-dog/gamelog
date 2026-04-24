@@ -234,7 +234,7 @@ test("homepage anomaly shortcuts preserve analytics context when linking into re
   assert.match(source, /buildAnalyticsCategoryHref\(item\.key, \{\s*compareVersion: compareVersionParam,\s*detailFilter: "abnormal"/);
 });
 
-test("quality cards send imports links with the current compare/filter context", () => {
+test("analytics pages still preserve import preview context while removing business quality cards", () => {
   const pagePath = path.resolve(process.cwd(), "src/app/analytics/[category]/page.tsx");
   const source = readFileSync(pagePath, "utf8");
 
@@ -242,19 +242,8 @@ test("quality cards send imports links with the current compare/filter context",
   assert.match(source, /detailFilter \? \["detailFilter", detailFilter\] : null/);
   assert.match(source, /`\/imports\?\$\{new URLSearchParams\(/);
   assert.match(source, /aria-label="查看技术通过率对应的当前批次导入预览"/);
-  assert.match(source, /aria-label="查看技术异常对应的当前批次导入预览"/);
-  assert.match(source, /aria-label="查看业务失败事件对应的当前批次导入预览"/);
-  assert.match(source, /aria-label="查看模块覆盖率对应的当前批次导入预览"/);
-});
-
-test("level quality cards also send imports links with the current compare\/filter context", () => {
-  const pagePath = path.resolve(process.cwd(), "src/app/analytics/[category]/page.tsx");
-  const source = readFileSync(pagePath, "utf8");
-
-  assert.match(source, /category === "level"/);
-  assert.match(source, /styles\.moduleCardInteractive/);
-  assert.match(source, /styles\.moduleCardLink/);
-  assert.match(source, /aria-label="查看模块覆盖率对应的当前批次导入预览"/);
+  assert.doesNotMatch(source, /function ModuleQualityCards/);
+  assert.doesNotMatch(source, /质量底座/);
 });
 
 test("operations overview entry page uses the new operations-first IA instead of generic analytics cards", () => {
@@ -364,27 +353,31 @@ test("level page keeps a dedicated checklist and lower microflow section instead
   const source = readFileSync(pagePath, "utf8");
 
   assert.match(source, /const levelSections = \[/);
-  assert.match(source, /"数据质量卡"/);
+  assert.match(source, /"高摩擦关卡"/);
+  assert.match(source, /"关卡压力条"/);
   assert.match(source, /"局内微观心流"/);
+  assert.match(source, /styles\.opsSnapshot/);
+  assert.match(source, /levelSummaryRows/);
+  assert.match(source, /ITEM_USE_RATE/);
   assert.match(source, /<section id="level-microflow" className=\{styles\.moduleSection\}>/);
   assert.match(source, /<section id="level-detail" className=\{styles\.moduleSection\}>/);
 });
 
-test("monetization and ads pages keep dedicated dashboard checklists and top signal sections", () => {
+test("monetization and ads pages keep dedicated business sections without top-level quality cards", () => {
   const pagePath = path.resolve(process.cwd(), "src/app/analytics/[category]/page.tsx");
   const source = readFileSync(pagePath, "utf8");
 
   assert.match(source, /const monetizationSections = \[/);
   assert.match(source, /"双漏斗主图"/);
   assert.match(source, /"商业化明细表"/);
-  assert.match(source, /data-monetization-checklist=\{monetizationChecklist\}/);
+  assert.doesNotMatch(source, /data-monetization-checklist=\{monetizationChecklist\}/);
   assert.match(source, /<section id="monetization-signal" className=\{styles\.moduleSection\}>/);
   assert.match(source, /<section id="monetization-main-chart" className=\{styles\.moduleSection\}>/);
 
   assert.match(source, /const adsSections = \[/);
   assert.match(source, /"广告位流转主图"/);
   assert.match(source, /"广告明细表"/);
-  assert.match(source, /data-ads-checklist=\{adsChecklist\}/);
+  assert.doesNotMatch(source, /data-ads-checklist=\{adsChecklist\}/);
   assert.match(source, /<section id="ads-signal" className=\{styles\.moduleSection\}>/);
   assert.match(source, /<section id="ads-main-chart" className=\{styles\.moduleSection\}>/);
 });
@@ -1054,7 +1047,9 @@ test("analytics module pages render a dedicated risk banner for operations categ
   assert.match(source, /function ModuleRiskBanner/);
   assert.match(source, /moduleRisk\?: \{/);
   assert.match(source, /<ModuleRiskBanner moduleRisk=\{config\.moduleRisk\} importPreviewHref=\{importPreviewHref\} \/>/);
-  assert.match(source, /<ModuleQualityCards[\s\S]*?<ModuleRiskBanner moduleRisk=\{config\.moduleRisk\} importPreviewHref=\{importPreviewHref\} \/>[\s\S]*?<ModuleConclusionCards/);
+  assert.match(source, /<section id="onboarding-signal" className=\{styles\.moduleSection\}>[\s\S]*?<ModuleRiskBanner moduleRisk=\{config\.moduleRisk\} importPreviewHref=\{importPreviewHref\} \/>/);
+  assert.doesNotMatch(source, /data-monetization-checklist=\{monetizationChecklist\}/);
+  assert.doesNotMatch(source, /data-ads-checklist=\{adsChecklist\}/);
   assert.match(source, /moduleRisk\.status === "PENDING"/);
   assert.match(source, /"等待诊断"/);
 });

@@ -11,7 +11,6 @@ import {
   AdPlacementFlowCard,
   BarChartCard,
   DonutChartCard,
-  LevelProgressCard,
   LineChartCard,
   MonetizationDualFunnelCard,
   OnboardingDurationRankingCard,
@@ -28,10 +27,9 @@ const validCategories = new Set(["system", "onboarding", "level", "monetization"
 
 // Keep onboarding in this dedicated funnel-analysis sequence instead of the shared analytics chart ordering.
 const onboardingSections = [
-  "数据质量卡",
-  "关键结论卡",
-  "最大流失步骤信号",
-  "步骤漏斗图",
+  "引导漏斗",
+  "关键观察",
+  "数据诊断",
   "步骤完成率曲线",
   "步骤耗时排行",
   "步骤明细表"
@@ -39,12 +37,9 @@ const onboardingSections = [
 
 // Keep level in this dedicated level-first analysis sequence instead of the shared analytics chart ordering.
 const levelSections = [
-  "数据质量卡",
-  "关键结论卡",
-  "失败最集中关卡",
-  "重试最高关卡",
-  "行为占比异常关卡",
-  "关卡漏斗主图",
+  "高摩擦关卡",
+  "关卡压力条",
+  "关卡诊断",
   "失败原因分布",
   "重试排行",
   "局内微观心流",
@@ -53,7 +48,6 @@ const levelSections = [
 ] as const;
 
 const monetizationSections = [
-  "数据质量卡",
   "关键结论卡",
   "最大转化损耗点",
   "最佳礼包/计费点",
@@ -64,7 +58,6 @@ const monetizationSections = [
 ] as const;
 
 const adsSections = [
-  "数据质量卡",
   "关键结论卡",
   "最弱广告位",
   "流量最大广告位",
@@ -94,98 +87,6 @@ function ModuleSectionHeader({
       </div>
       <span className="pill">{badge}</span>
     </div>
-  );
-}
-
-function ModuleQualityCards({
-  importPreviewHref,
-  qualityNote,
-  compareVersionLabel,
-  technicalSuccessRate,
-  technicalErrorCount,
-  businessFailureCount,
-  moduleCoverage,
-  compareTechnicalSuccessRate,
-  compareTechnicalErrorCount,
-  compareBusinessFailureCount,
-  compareModuleCoverage,
-  notes
-}: {
-  importPreviewHref: string | null;
-  qualityNote: string;
-  compareVersionLabel?: string | null;
-  technicalSuccessRate?: number;
-  technicalErrorCount?: number;
-  businessFailureCount?: number;
-  moduleCoverage?: number;
-  compareTechnicalSuccessRate?: number | null;
-  compareTechnicalErrorCount?: number | null;
-  compareBusinessFailureCount?: number | null;
-  compareModuleCoverage?: number | null;
-  notes: {
-    success: string;
-    errors: string;
-    business: string;
-  };
-}) {
-  const cards = [
-    {
-      label: "技术通过率",
-      value: `${technicalSuccessRate?.toFixed(1) ?? "0.0"}%`,
-      compare:
-        compareTechnicalSuccessRate !== null && compareTechnicalSuccessRate !== undefined && compareVersionLabel
-          ? `对比 ${compareVersionLabel}: ${compareTechnicalSuccessRate.toFixed(1)}%`
-          : notes.success
-    },
-    {
-      label: "技术异常",
-      value: `${technicalErrorCount ?? 0}`,
-      compare:
-        compareTechnicalErrorCount !== null && compareTechnicalErrorCount !== undefined && compareVersionLabel
-          ? `对比 ${compareVersionLabel}: ${compareTechnicalErrorCount}`
-          : notes.errors
-    },
-    {
-      label: "业务失败事件",
-      value: `${businessFailureCount ?? 0}`,
-      compare:
-        compareBusinessFailureCount !== null && compareBusinessFailureCount !== undefined && compareVersionLabel
-          ? `对比 ${compareVersionLabel}: ${compareBusinessFailureCount}`
-          : notes.business
-    },
-    {
-      label: "模块覆盖率",
-      value: `${moduleCoverage?.toFixed(1) ?? "0.0"}%`,
-      compare:
-        compareModuleCoverage !== null && compareModuleCoverage !== undefined && compareVersionLabel
-          ? `对比 ${compareVersionLabel}: ${compareModuleCoverage.toFixed(1)}%`
-          : qualityNote
-    }
-  ];
-
-  return (
-    <>
-      <div className={styles.moduleGrid}>
-        {cards.map((card) => (
-          <article key={card.label} className={`${styles.moduleCard} ${importPreviewHref ? styles.moduleCardInteractive : ""}`}>
-            {importPreviewHref ? (
-              <Link
-                href={importPreviewHref}
-                className={styles.moduleCardLink}
-                aria-label={`查看${card.label}对应的当前批次导入预览`}
-              />
-            ) : null}
-            <div className={styles.moduleCardLabel}>{card.label}</div>
-            <div className={styles.moduleCardValue}>{card.value}</div>
-            <div className={styles.moduleCardMeta}>{card.compare}</div>
-          </article>
-        ))}
-      </div>
-      <div className={styles.moduleSubNote}>
-        <span className="pill">质量底座</span>
-        <span>{qualityNote}</span>
-      </div>
-    </>
   );
 }
 
@@ -497,8 +398,6 @@ export default async function AnalyticsCategoryPage({
   const levelRetryHot = levelDiagnostics.levelRetryHot[0] ?? null;
   const microflowHot = levelDiagnostics.microflowHot[0] ?? null;
   const nextWorstLevel = levelDiagnostics.levelWorst[1] ?? null;
-  const nextRetryLevel = levelDiagnostics.levelRetryHot[1] ?? null;
-  const nextMicroflowHot = levelDiagnostics.microflowHot[1] ?? null;
   const storeLossStage = getMonetizationWorstLossStage({
     monetizationStoreFunnel: config.monetizationStoreFunnel,
     monetizationPaymentFunnel: config.monetizationPaymentFunnel
@@ -531,14 +430,11 @@ export default async function AnalyticsCategoryPage({
       : null;
   const onboardingChecklist = onboardingSections.join(" / ");
   const levelChecklist = levelSections.join(" / ");
-  const monetizationChecklist = monetizationSections.join(" / ");
-  const adsChecklist = adsSections.join(" / ");
   const onboardingRows = category === "onboarding" ? config.onboardingFunnel ?? [] : [];
   const compareOnboardingRows = category === "onboarding" ? config.compareOnboardingFunnel ?? [] : [];
   const onboardingTrendRows = category === "onboarding" ? config.onboardingStepTrend ?? onboardingRows : [];
   const onboardingCompareMap = new Map(compareOnboardingRows.map((row) => [row.stepId || row.stepName, row]));
-  const levelRows = category === "level" ? levelDiagnostics.levelWorst : [];
-  const compareLevelMap = new Map((config.compareLevelFunnel ?? []).map((row) => [row.levelId, row]));
+  const levelRows = category === "level" ? config.levelFunnel ?? [] : [];
   const levelRetryRows = category === "level" ? levelDiagnostics.levelRetryHot : [];
   const levelMicroflowRows = category === "level" ? levelDiagnostics.microflowHot : [];
   const levelMicroflowGroups =
@@ -607,6 +503,8 @@ export default async function AnalyticsCategoryPage({
   const onboardingAverageDuration = onboardingRows.length
     ? onboardingRows.reduce((sum, row) => sum + row.avgDuration, 0) / onboardingRows.length
     : 0;
+  const onboardingFunnelMax = Math.max(...onboardingRows.map((row) => row.arrivals), ...onboardingRows.map((row) => row.completions), 1);
+  const onboardingCompletedUsers = onboardingLastStep?.completions ?? 0;
   const onboardingDropoffRate = onboardingLargestDrop
     ? onboardingLargestDrop.arrivals
       ? (onboardingLargestDrop.dropoffCount / onboardingLargestDrop.arrivals) * 100
@@ -728,6 +626,22 @@ export default async function AnalyticsCategoryPage({
           detail: "当前批次 request 与 play 口径清晰，可以直接把表现差异解释为 placement、素材或奖励承接问题。"
         }
   ];
+  const microflowGroupMap = new Map(levelMicroflowGroups.map((group) => [group.levelId, group]));
+  const levelSummaryRows = levelRows.map((row) => {
+    const group = microflowGroupMap.get(row.levelId);
+    const actionRatio = (pattern: RegExp) =>
+      group?.actions.find((action) => pattern.test(action.action))?.ratio ?? 0;
+    const rotateAction = group?.actions.find((action) => /rotate|camera/i.test(action.action));
+    const retryRate = row.starts ? (row.retries / Math.max(row.starts, 1)) * 100 : 0;
+
+    return {
+      ...row,
+      retryRate,
+      itemUseRate: actionRatio(/item|drill|undo|prop|tool/i),
+      extraSlotRate: actionRatio(/extra.*slot|slot/i),
+      avgRotateSeconds: rotateAction?.avgDuration ?? 0
+    };
+  });
 
   return (
     <AppShell currentPath="/analytics">
@@ -898,106 +812,72 @@ export default async function AnalyticsCategoryPage({
 
         {category === "onboarding" ? (
           <>
-            <section className={styles.moduleSection} data-onboarding-checklist={onboardingChecklist}>
-              <ModuleSectionHeader
-                title={onboardingSections[0]}
-                copy="先确认导入质量与版本上下文，再进入步骤漏斗判断，避免把口径问题误当成体验问题。"
-                badge={config.compareVersionLabel ? "带版本对比" : "当前批次"}
-              />
-              <ModuleQualityCards
-                importPreviewHref={importPreviewHref}
-                qualityNote={qualityNote}
-                compareVersionLabel={config.compareVersionLabel}
-                technicalSuccessRate={config.technicalSuccessRate}
-                technicalErrorCount={config.technicalErrorCount}
-                businessFailureCount={config.businessFailureCount}
-                moduleCoverage={config.moduleCoverage}
-                compareTechnicalSuccessRate={config.compareTechnicalSuccessRate}
-                compareTechnicalErrorCount={config.compareTechnicalErrorCount}
-                compareBusinessFailureCount={config.compareBusinessFailureCount}
-                compareModuleCoverage={config.compareModuleCoverage}
-                notes={{
-                  success: "导入质量稳定时，这一页的漏斗结论才更可信。",
-                  errors: "优先排除埋点缺失、字段错位和批次导入异常。",
-                  business: "如果业务失败事件同步增多，先复核是否存在流程阻断。"
-                }}
-              />
-            </section>
+            <section className={styles.opsSnapshot} data-onboarding-checklist={onboardingChecklist}>
+              <article className={styles.opsSnapshotPanel}>
+                <div className={styles.opsPanelTitle}>{onboardingSections[0]}</div>
+                <div className={styles.opsFunnelRows}>
+                  {onboardingRows.length ? (
+                    onboardingRows.map((row, index) => {
+                      const width = Math.max(3, (row.arrivals / onboardingFunnelMax) * 100);
+                      const isDrop = row.stepId === onboardingLargestDrop?.stepId && row.stepName === onboardingLargestDrop?.stepName;
+                      return (
+                        <div key={`${row.stepId}-${row.stepName}`} className={styles.opsFunnelRow}>
+                          <div className={styles.opsFunnelLabel}>
+                            <strong>{index + 1}. {row.stepName || row.stepId}</strong>
+                            <span>{row.stepId || "未命名步骤"}</span>
+                          </div>
+                          <div className={styles.opsFunnelTrack}>
+                            <span
+                              className={`${styles.opsFunnelFill} ${isDrop ? styles.opsFunnelFillWarning : ""}`}
+                              style={{ width: `${width}%` }}
+                            />
+                          </div>
+                          <strong className={styles.opsFunnelValue}>{row.arrivals}</strong>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className={styles.moduleEmptyState}>当前批次还没有可展示的新手引导步骤。</div>
+                  )}
+                </div>
+              </article>
 
-            <ModuleRiskBanner moduleRisk={config.moduleRisk} importPreviewHref={importPreviewHref} />
-
-            <section className={styles.moduleSection}>
-              <ModuleSectionHeader
-                title={onboardingSections[1]}
-                copy="这一段只总结 onboarding 主链路结论，不和其他模块复用通用排行榜结构。"
-                badge={onboardingRows.length ? `${onboardingRows.length} 个步骤` : "等待步骤数据"}
-              />
-              <div className={styles.moduleGrid}>
-                <article className={styles.moduleCard}>
-                  <div className={styles.moduleCardLabel}>引导完成率</div>
-                  <div className={styles.moduleCardValue}>{config.metrics[1]?.value ?? "0.0%"}</div>
-                  <div className={styles.moduleCardMeta}>
-                    {config.metrics[1]?.compareValue
-                      ? `对比 ${config.compareVersionLabel}: ${config.metrics[1].compareValue}`
-                      : "对应整条 onboarding 链路的最终完成表现。"}
+              <article className={styles.opsSnapshotPanel}>
+                <div className={styles.opsPanelTitle}>{onboardingSections[1]}</div>
+                <div className={styles.opsObservationList}>
+                  <div>
+                    <span>完成用户</span>
+                    <strong>{onboardingCompletedUsers}</strong>
                   </div>
-                </article>
-                <article className={styles.moduleCard}>
-                  <div className={styles.moduleCardLabel}>步骤平均完成率</div>
-                  <div className={styles.moduleCardValue}>{onboardingAverageCompletion.toFixed(1)}%</div>
-                  <div className={styles.moduleCardMeta}>
-                    {compareOnboardingAverageCompletion !== null
-                      ? `对比均值 ${(onboardingAverageCompletion - compareOnboardingAverageCompletion > 0 ? "+" : "")}${(
-                          onboardingAverageCompletion - compareOnboardingAverageCompletion
-                        ).toFixed(1)}%`
-                      : "按步骤均值看当前链路是否整体吃力。"}
+                  <div>
+                    <span>最大流失步骤</span>
+                    <strong>{onboardingLargestDrop ? onboardingLargestDrop.stepName || onboardingLargestDrop.stepId : "—"}</strong>
                   </div>
-                </article>
-                <article className={styles.moduleCard}>
-                  <div className={styles.moduleCardLabel}>尾步完成情况</div>
-                  <div className={styles.moduleCardValue}>{onboardingLastStep ? `${onboardingLastStep.completionRate.toFixed(1)}%` : "—"}</div>
-                  <div className={styles.moduleCardMeta}>
-                    {onboardingLastStep
-                      ? `${onboardingLastStep.stepName || onboardingLastStep.stepId} · ${onboardingLastStep.completions}/${onboardingLastStep.arrivals}`
-                      : "当前批次还没有足够的步骤明细。"}
+                  <div>
+                    <span>最大流失人数</span>
+                    <strong>{onboardingLargestDrop?.dropoffCount ?? 0}</strong>
                   </div>
-                </article>
-              </div>
-              <div className={styles.moduleNarrative}>{config.compareInsight ?? config.insight}</div>
+                  <div>
+                    <span>平均完成时长</span>
+                    <strong>{onboardingAverageDuration.toFixed(0)} 秒</strong>
+                  </div>
+                  <div>
+                    <span>步骤平均完成率</span>
+                    <strong>{onboardingAverageCompletion.toFixed(1)}%</strong>
+                  </div>
+                </div>
+              </article>
             </section>
 
             <section id="onboarding-signal" className={styles.moduleSection}>
               <ModuleSectionHeader
                 title={onboardingSections[2]}
-                copy="把最大流失步骤单独抬出来，避免它淹没在通用图表和杂项说明里。"
-                badge="优先处理"
+                copy="这里只保留会影响业务判断的诊断结论：缺事件、缺字段、异常耗时和最大流失点。"
+                badge={config.moduleRisk?.status ?? "WAITING"}
               />
-              <div className={styles.moduleSignalGrid}>
-                <article className={styles.moduleSignalCard}>
-                  <div className={styles.moduleSignalLabel}>最大流失步骤</div>
-                  <div className={styles.moduleSignalTitle}>
-                    {onboardingLargestDrop ? onboardingLargestDrop.stepName || onboardingLargestDrop.stepId : "暂无明显流失步骤"}
-                  </div>
-                  <div className={styles.moduleSignalMeta}>
-                    {onboardingLargestDrop
-                      ? `${onboardingLargestDrop.arrivals} 到达 / ${onboardingLargestDrop.completions} 完成 / 流失 ${onboardingLargestDrop.dropoffCount}`
-                      : "当前批次缺少足够步骤数据，暂时无法判断最大流失点。"}
-                  </div>
-                </article>
-                <article className={styles.moduleSignalCard}>
-                  <div className={styles.moduleSignalLabel}>伴随耗时信号</div>
-                  <div className={styles.moduleSignalTitle}>
-                    {onboardingSlowestStep ? onboardingSlowestStep.stepName || onboardingSlowestStep.stepId : "暂无耗时热点"}
-                  </div>
-                  <div className={styles.moduleSignalMeta}>
-                    {onboardingSlowestStep
-                      ? `平均耗时 ${onboardingSlowestStep.avgDuration.toFixed(1)} 秒，步骤均值 ${onboardingAverageDuration.toFixed(1)} 秒`
-                      : "当前批次缺少耗时样本，暂时无法判断理解成本是否抬升。"}
-                  </div>
-                </article>
-              </div>
+              <ModuleRiskBanner moduleRisk={config.moduleRisk} importPreviewHref={importPreviewHref} />
               <div className={styles.infoPanel}>
-                <div className={styles.infoPanelTitle}>运营建议</div>
+                <div className={styles.infoPanelTitle}>新手引导诊断</div>
                 <div className={styles.infoPanelList}>
                   {onboardingActionItems.map((item) => (
                     <div key={item.title} className={styles.infoPanelRowStack}>
@@ -1013,29 +893,6 @@ export default async function AnalyticsCategoryPage({
               <div className={styles.moduleHeader}>
                 <div>
                   <h2 className="section-title" style={{ fontSize: 18 }}>
-                    漏斗主图
-                  </h2>
-                  <p className={styles.sectionCopy}>主图永远使用 onboarding 专属漏斗卡；即使没有标准漏斗数组，也会用步骤趋势/步骤明细推导后继续渲染。</p>
-                </div>
-                <span className="pill">{onboardingSections[3]}</span>
-              </div>
-              <OnboardingFunnelCard
-                title={onboardingSections[3]}
-                copy={
-                  config.compareVersionLabel
-                    ? `按步骤展示到达、完成与流失，优先看掉队最多的环节；同时对比 ${config.compareVersionLabel} 的完成率变化。`
-                    : chartCopy
-                }
-                steps={onboardingRows}
-                compareSteps={compareOnboardingRows}
-                color={config.color}
-              />
-            </section>
-
-            <section className={styles.moduleSection}>
-              <div className={styles.moduleHeader}>
-                <div>
-                  <h2 className="section-title" style={{ fontSize: 18 }}>
                     趋势 + 耗时排行
                   </h2>
                   <p className={styles.sectionCopy}>完成率曲线回答“哪一步骤开始掉”，耗时排行回答“为什么玩家会在这里犹豫”。</p>
@@ -1044,7 +901,7 @@ export default async function AnalyticsCategoryPage({
               </div>
               <div className={styles.moduleChartGrid}>
                 <OnboardingTrendCard
-                  title={onboardingSections[4]}
+                  title={onboardingSections[3]}
                   copy={
                     config.compareVersionLabel
                       ? `按步骤查看完成率曲线，实线为 ${config.versionLabel}，虚线为 ${config.compareVersionLabel}。`
@@ -1055,7 +912,7 @@ export default async function AnalyticsCategoryPage({
                   color={config.color}
                 />
                 <OnboardingDurationRankingCard
-                  title={onboardingSections[5]}
+                  title={onboardingSections[4]}
                   copy="查看耗时异常步骤，确认高耗时是否与高流失同时出现。"
                   steps={onboardingRows}
                 />
@@ -1066,7 +923,7 @@ export default async function AnalyticsCategoryPage({
               <div className={styles.moduleHeader}>
                 <div>
                   <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {onboardingSections[6]}
+                    {onboardingSections[5]}
                   </h2>
                   <p className={styles.sectionCopy}>用步骤级明细直接核对到达、完成、流失、耗时和版本差异，不再走通用结构化明细表。</p>
                 </div>
@@ -1111,96 +968,53 @@ export default async function AnalyticsCategoryPage({
 
         {category === "level" ? (
           <>
-            <section className={styles.moduleSection} data-level-checklist={levelChecklist}>
-              <ModuleSectionHeader
-                title={levelSections[0]}
-                copy="先确认关卡页的数据质量，再判断失败、重试和行为异常，避免把导入口径问题误判为难度问题。"
-                badge={config.compareVersionLabel ? "带版本对比" : "当前批次"}
-              />
-              <ModuleQualityCards
-                importPreviewHref={importPreviewHref}
-                qualityNote={qualityNote}
-                compareVersionLabel={config.compareVersionLabel}
-                technicalSuccessRate={config.technicalSuccessRate}
-                technicalErrorCount={config.technicalErrorCount}
-                businessFailureCount={config.businessFailureCount}
-                moduleCoverage={config.moduleCoverage}
-                compareTechnicalSuccessRate={config.compareTechnicalSuccessRate}
-                compareTechnicalErrorCount={config.compareTechnicalErrorCount}
-                compareBusinessFailureCount={config.compareBusinessFailureCount}
-                compareModuleCoverage={config.compareModuleCoverage}
-                notes={{
-                  success: "导入质量稳定时，关卡页的失败和重试结论才有解释力。",
-                  errors: "优先排除埋点缺失、level_id 错位或批次导入截断。",
-                  business: "如果失败事件同步抬升，优先结合失败原因分布复核是体验问题还是链路问题。"
-                }}
-              />
-            </section>
+            <section className={styles.opsSnapshot} data-level-checklist={levelChecklist}>
+              <article className={styles.opsSnapshotPanel}>
+                <div className={styles.opsPanelTitle}>{levelSections[0]}</div>
+                {levelWorst ? (
+                  <div className={styles.frictionCard}>
+                    <strong>{levelWorst.levelType ? `${levelWorst.levelId} (${levelWorst.levelType})` : `Level ${levelWorst.levelId}`}</strong>
+                    <span>
+                      开始 {levelWorst.starts} 人，通关率 {levelWorst.completionRate.toFixed(1)}%，失败率 {levelWorst.failRate.toFixed(1)}%，
+                      问题信号：{levelWorst.topFailReason || "通关率过低 / 重试偏高 / 失败原因缺失"}。
+                    </span>
+                    {nextWorstLevel ? <em>次高摩擦关卡：Level {nextWorstLevel.levelId}</em> : null}
+                  </div>
+                ) : (
+                  <div className={styles.moduleEmptyState}>当前批次还没有可识别的高摩擦关卡。</div>
+                )}
+              </article>
 
-            <ModuleRiskBanner moduleRisk={config.moduleRisk} importPreviewHref={importPreviewHref} />
+              <article className={styles.opsSnapshotPanel}>
+                <div className={styles.opsPanelTitle}>{levelSections[1]}</div>
+                <div className={styles.pressureRows}>
+                  {levelSummaryRows.slice(0, 6).map((row) => (
+                    <div key={`${row.levelId}-${row.levelType}`} className={styles.pressureRow}>
+                      <div className={styles.pressureRowTop}>
+                        <strong>Level {row.levelId}</strong>
+                        <span>通关 {row.completionRate.toFixed(1)}% / 重开 {row.retryRate.toFixed(1)}%</span>
+                      </div>
+                      <div className={styles.pressureTrack}>
+                        <span className={styles.pressureWin} style={{ width: `${Math.max(2, row.completionRate)}%` }} />
+                      </div>
+                      <div className={styles.pressureTrack}>
+                        <span className={styles.pressureRetry} style={{ width: `${Math.max(2, Math.min(100, row.retryRate))}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            </section>
 
             <section className={styles.moduleSection}>
               <ModuleSectionHeader
-                title={levelSections[1]}
-                copy="关键指标只服务关卡诊断叙事，帮助团队先判断是整体难度、失败密度，还是重试黏滞在变坏。"
-                badge={levelRows.length ? `${levelRows.length} 个关卡` : "等待关卡数据"}
+                title={levelSections[2]}
+                copy="这里只保留关卡难度判断需要的诊断：失败集中、重试堆积、失败原因和局内行为异常。"
+                badge={config.moduleRisk?.status ?? "WAITING"}
               />
-              <ModuleConclusionCards
-                metrics={config.metrics}
-                color={config.color}
-                compareVersionLabel={config.compareVersionLabel}
-                emptyLabel="用于判断当前关卡链路是整体波动还是局部卡点。"
-              />
-              <div className={styles.moduleNarrative}>{config.compareInsight ?? config.insight}</div>
-            </section>
-
-            <section id="level-signal" className={styles.moduleSection}>
-              <ModuleSectionHeader
-                title="失败 / 重试 / 行为异常信号"
-                copy="这里直接使用排序后的一级诊断信号，不再把关卡热点埋在通用排行或附属图表里。"
-                badge="level first signals"
-              />
-              <div className={styles.levelSignalGrid}>
-                <article className={styles.moduleSignalCard}>
-                  <div className={styles.moduleSignalLabel}>{levelSections[2]}</div>
-                  <div className={styles.moduleSignalTitle}>
-                    {levelWorst ? (levelWorst.levelType ? `${levelWorst.levelId} (${levelWorst.levelType})` : levelWorst.levelId) : "暂无高失败关卡"}
-                  </div>
-                  <div className={styles.moduleSignalMeta}>
-                    {levelWorst
-                      ? `失败率 ${levelWorst.failRate.toFixed(1)}%，失败 ${levelWorst.fails} 次，主要失败原因 ${levelWorst.topFailReason || "未记录"}。${nextWorstLevel ? `其次是 ${nextWorstLevel.levelType ? `${nextWorstLevel.levelId} (${nextWorstLevel.levelType})` : nextWorstLevel.levelId}。` : ""}`
-                      : "当前批次还没有足够的关卡样本，暂时无法判断失败最集中关卡。"}
-                  </div>
-                </article>
-                <article className={styles.moduleSignalCard}>
-                  <div className={styles.moduleSignalLabel}>{levelSections[3]}</div>
-                  <div className={styles.moduleSignalTitle}>
-                    {levelRetryHot
-                      ? levelRetryHot.levelType
-                        ? `${levelRetryHot.levelId} (${levelRetryHot.levelType})`
-                        : levelRetryHot.levelId
-                      : "暂无重试热点"}
-                  </div>
-                  <div className={styles.moduleSignalMeta}>
-                    {levelRetryHot
-                      ? `重试率 ${levelRetryHot.retryRate.toFixed(1)}%，累计 ${levelRetryHot.retries} 次。${nextRetryLevel ? `次高为 ${nextRetryLevel.levelType ? `${nextRetryLevel.levelId} (${nextRetryLevel.levelType})` : nextRetryLevel.levelId}。` : ""}`
-                      : "当前批次未识别到显著的重试堆积。"}
-                  </div>
-                </article>
-                <article className={styles.moduleSignalCard}>
-                  <div className={styles.moduleSignalLabel}>{levelSections[4]}</div>
-                  <div className={styles.moduleSignalTitle}>
-                    {microflowHot ? `${microflowHot.levelId} / ${microflowHot.action}` : "暂无异常行为占比"}
-                  </div>
-                  <div className={styles.moduleSignalMeta}>
-                    {microflowHot
-                      ? `占比 ${microflowHot.ratio.toFixed(1)}%，平均耗时 ${microflowHot.avgDuration.toFixed(1)} 秒。${nextMicroflowHot ? `次高异常为 ${nextMicroflowHot.levelId} / ${nextMicroflowHot.action}。` : ""}`
-                      : "当前批次未识别到需要单独抬出的局内行为异常。"}
-                  </div>
-                </article>
-              </div>
+              <ModuleRiskBanner moduleRisk={config.moduleRisk} importPreviewHref={importPreviewHref} />
               <div className={styles.infoPanel}>
-                <div className={styles.infoPanelTitle}>关卡运营建议</div>
+                <div className={styles.infoPanelTitle}>关卡摘要与诊断</div>
                 <div className={styles.infoPanelList}>
                   {levelActionItems.map((item) => (
                     <div key={item.title} className={styles.infoPanelRowStack}>
@@ -1216,32 +1030,6 @@ export default async function AnalyticsCategoryPage({
               <div className={styles.moduleHeader}>
                 <div>
                   <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {levelSections[5]}
-                  </h2>
-                  <p className={styles.sectionCopy}>主图只服务关卡漏斗判断，先确认哪些关卡通关率塌陷，再回看失败原因和微观心流。</p>
-                </div>
-                <span className="pill">{config.compareVersionLabel ? "带版本对比" : "当前批次"}</span>
-              </div>
-              {levelRows.length ? (
-                <LevelProgressCard
-                  title={levelSections[5]}
-                  copy={
-                    config.compareVersionLabel
-                      ? `按关卡展示开始、完成、失败与重试，并对比 ${config.compareVersionLabel} 的通关率变化。`
-                      : "按关卡展示开始、完成、失败与重试，优先判断问题是少数关卡集中失守，还是整条关卡链路普遍吃力。"
-                  }
-                  rows={levelRows}
-                  compareRows={config.compareLevelFunnel}
-                />
-              ) : (
-                <div className={styles.moduleEmptyState}>当前批次还没有可展示的关卡漏斗主图，导入 level_start / level_complete / level_fail 后会自动补齐。</div>
-              )}
-            </section>
-
-            <section className={styles.moduleSection}>
-              <div className={styles.moduleHeader}>
-                <div>
-                  <h2 className="section-title" style={{ fontSize: 18 }}>
                     失败原因 + 重试排行
                   </h2>
                   <p className={styles.sectionCopy}>失败原因解释“为什么卡住”，重试排行解释“玩家是否被迫反复尝试”，两者一起看才知道优先级。</p>
@@ -1250,7 +1038,7 @@ export default async function AnalyticsCategoryPage({
               </div>
               <div className={styles.sideBySidePanels}>
                 <div className={styles.infoPanel}>
-                  <div className={styles.infoPanelTitle}>{levelSections[6]}</div>
+                  <div className={styles.infoPanelTitle}>{levelSections[3]}</div>
                   <div className={styles.infoPanelList}>
                     {(config.levelFailReasonDistribution ?? []).slice(0, 6).map((item) => (
                       <div key={item.name} className={styles.infoPanelRow}>
@@ -1264,7 +1052,7 @@ export default async function AnalyticsCategoryPage({
                   ) : null}
                 </div>
                 <div className={styles.infoPanel}>
-                  <div className={styles.infoPanelTitle}>{levelSections[7]}</div>
+                  <div className={styles.infoPanelTitle}>{levelSections[4]}</div>
                   <div className={styles.infoPanelList}>
                     {levelRetryRows.slice(0, 6).map((item) => (
                       <div key={`${item.levelId}-${item.levelType}`} className={styles.infoPanelRow}>
@@ -1282,7 +1070,7 @@ export default async function AnalyticsCategoryPage({
               <div className={styles.moduleHeader}>
                 <div>
                   <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {levelSections[8]}
+                    {levelSections[5]}
                   </h2>
                   <p className={styles.sectionCopy}>微观心流保留在关卡页下半区，单独解释玩家在局内到底被什么动作拖慢，而不是挤在侧栏里当附属信息。</p>
                 </div>
@@ -1348,32 +1136,30 @@ export default async function AnalyticsCategoryPage({
               </div>
               <div className={styles.levelDetailTables}>
                 <div className={styles.levelDetailBlock}>
-                  <div className={styles.levelDetailBlockTitle}>{levelSections[9]}</div>
+                  <div className={styles.levelDetailBlockTitle}>{levelSections[6]}</div>
                   <div className={styles.levelDetailTable}>
                     <div className={`${styles.levelDetailTableRow} ${styles.levelDetailTableHeaderRow}`}>
-                      <div className={styles.levelDetailTableHead}>关卡</div>
-                      <div className={styles.levelDetailTableHead}>开始</div>
-                      <div className={styles.levelDetailTableHead}>完成</div>
-                      <div className={styles.levelDetailTableHead}>失败率</div>
-                      <div className={styles.levelDetailTableHead}>重试率</div>
-                      <div className={styles.levelDetailTableHead}>主要失败原因</div>
-                      <div className={styles.levelDetailTableHead}>对比通关率</div>
+                      <div className={styles.levelDetailTableHead}>LEVEL_ID</div>
+                      <div className={styles.levelDetailTableHead}>STARTS</div>
+                      <div className={styles.levelDetailTableHead}>WIN_RATE</div>
+                      <div className={styles.levelDetailTableHead}>RETRY_RATE</div>
+                      <div className={styles.levelDetailTableHead}>ITEM_USE_RATE</div>
+                      <div className={styles.levelDetailTableHead}>EXTRA_SLOT_RATE</div>
+                      <div className={styles.levelDetailTableHead}>AVG_ROTATE_SECONDS</div>
                     </div>
-                    {levelRows.map((row) => {
-                      const compare = compareLevelMap.get(row.levelId);
-                      const retryRate = row.starts ? (row.retries / Math.max(row.starts, 1)) * 100 : 0;
+                    {levelSummaryRows.map((row) => {
                       return (
                         <div key={`${row.levelId}-${row.levelType}`} className={styles.levelDetailTableRow}>
                           <div className={styles.levelDetailPrimary}>
                             <strong>{row.levelType ? `${row.levelId} (${row.levelType})` : row.levelId}</strong>
-                            <span>{row.completes} 完成 / {row.fails} 失败</span>
+                            <span>{row.topFailReason || "无主要失败原因"}</span>
                           </div>
                           <div>{row.starts}</div>
-                          <div>{row.completes}</div>
-                          <div className={styles.moduleDetailStrong}>{row.failRate.toFixed(1)}%</div>
-                          <div>{retryRate.toFixed(1)}%</div>
-                          <div>{row.topFailReason || "—"}</div>
-                          <div>{compare ? `${compare.completionRate.toFixed(1)}%` : "—"}</div>
+                          <div className={styles.moduleDetailStrong}>{row.completionRate.toFixed(1)}%</div>
+                          <div>{row.retryRate.toFixed(1)}%</div>
+                          <div>{row.itemUseRate.toFixed(1)}%</div>
+                          <div>{row.extraSlotRate.toFixed(1)}%</div>
+                          <div>{row.avgRotateSeconds.toFixed(0)} 秒</div>
                         </div>
                       );
                     })}
@@ -1381,7 +1167,7 @@ export default async function AnalyticsCategoryPage({
                   {!levelRows.length ? <div className={styles.moduleEmptyState}>当前批次还没有可展示的关卡明细。</div> : null}
                 </div>
                 <div className={styles.levelDetailBlock}>
-                  <div className={styles.levelDetailBlockTitle}>{levelSections[10]}</div>
+                  <div className={styles.levelDetailBlockTitle}>{levelSections[7]}</div>
                   <div className={styles.levelFlowTable}>
                     <div className={`${styles.levelFlowTableRow} ${styles.levelFlowTableHeaderRow}`}>
                       <div className={styles.levelDetailTableHead}>关卡</div>
@@ -1456,37 +1242,11 @@ export default async function AnalyticsCategoryPage({
 
         {category === "monetization" ? (
           <>
-            <section className={styles.moduleSection} data-monetization-checklist={monetizationChecklist}>
-              <ModuleSectionHeader
-                title={monetizationSections[0]}
-                copy="先确认导入质量与版本上下文，再判断商业化损耗，不让口径问题混进转化分析。"
-                badge={config.compareVersionLabel ? "带版本对比" : "当前批次"}
-              />
-              <ModuleQualityCards
-                importPreviewHref={importPreviewHref}
-                qualityNote={qualityNote}
-                compareVersionLabel={config.compareVersionLabel}
-                technicalSuccessRate={config.technicalSuccessRate}
-                technicalErrorCount={config.technicalErrorCount}
-                businessFailureCount={config.businessFailureCount}
-                moduleCoverage={config.moduleCoverage}
-                compareTechnicalSuccessRate={config.compareTechnicalSuccessRate}
-                compareTechnicalErrorCount={config.compareTechnicalErrorCount}
-                compareBusinessFailureCount={config.compareBusinessFailureCount}
-                compareModuleCoverage={config.compareModuleCoverage}
-                notes={{
-                  success: "技术通过率稳定时，双漏斗里的损耗结论才值得直接讨论。",
-                  errors: "优先排除礼包字段缺失、支付阶段漏记和批次截断。",
-                  business: "如果业务失败事件同步抬升，要先确认支付链路是否存在结构性中断。"
-                }}
-              />
-            </section>
-
             <ModuleRiskBanner moduleRisk={config.moduleRisk} importPreviewHref={importPreviewHref} />
 
             <section className={styles.moduleSection}>
               <ModuleSectionHeader
-                title={monetizationSections[1]}
+                title={monetizationSections[0]}
                 copy="这里先给商业化团队一个能直接复述的版本结论，再往下展开损耗和礼包分布。"
                 badge={config.metrics.length ? `${config.metrics.length} 个结论指标` : "等待商业化数据"}
               />
@@ -1507,7 +1267,7 @@ export default async function AnalyticsCategoryPage({
               />
               <div className={styles.moduleSignalGrid}>
                 <article className={styles.moduleSignalCard}>
-                  <div className={styles.moduleSignalLabel}>{monetizationSections[2]}</div>
+                  <div className={styles.moduleSignalLabel}>{monetizationSections[1]}</div>
                   <div className={styles.moduleSignalTitle}>
                     {storeLossStage ? `${storeLossStage.funnelLabel} · ${storeLossStage.label}` : "暂无明显损耗阶段"}
                   </div>
@@ -1518,7 +1278,7 @@ export default async function AnalyticsCategoryPage({
                   </div>
                 </article>
                 <article className={styles.moduleSignalCard}>
-                  <div className={styles.moduleSignalLabel}>{monetizationSections[3]}</div>
+                  <div className={styles.moduleSignalLabel}>{monetizationSections[2]}</div>
                   <div className={styles.moduleSignalTitle}>{bestPack?.name ?? "暂无礼包 / 计费点数据"}</div>
                   <div className={styles.moduleSignalMeta}>
                     {bestPack
@@ -1544,7 +1304,7 @@ export default async function AnalyticsCategoryPage({
               <div className={styles.moduleHeader}>
                 <div>
                   <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {monetizationSections[4]}
+                    {monetizationSections[3]}
                   </h2>
                   <p className={styles.sectionCopy}>先讲清楚哪些阶段是显式统计、哪些阶段带有兼容推断，避免把口径边界当成产品结论。</p>
                 </div>
@@ -1572,7 +1332,7 @@ export default async function AnalyticsCategoryPage({
               <div className={styles.moduleHeader}>
                 <div>
                   <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {monetizationSections[5]}
+                    {monetizationSections[4]}
                   </h2>
                   <p className={styles.sectionCopy}>主图固定使用双漏斗，先判断损耗发生在商店入口还是支付落地，再决定后续优化方向。</p>
                 </div>
@@ -1580,7 +1340,7 @@ export default async function AnalyticsCategoryPage({
               </div>
               {config.monetizationStoreFunnel?.length ? (
                 <MonetizationDualFunnelCard
-                  title={monetizationSections[5]}
+                  title={monetizationSections[4]}
                   copy={
                     config.compareVersionLabel
                       ? `双漏斗主图展示 ${config.versionLabel} 当前批次的入口链路和支付链路；版本差异结论保留在上方关键结论卡中统一阅读。`
@@ -1598,7 +1358,7 @@ export default async function AnalyticsCategoryPage({
               <div className={styles.moduleHeader}>
                 <div>
                   <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {monetizationSections[6]}
+                    {monetizationSections[5]}
                   </h2>
                   <p className={styles.sectionCopy}>分布图回答“主要量级落在哪些礼包”，右侧列表回答“谁既有量又有转化”。</p>
                 </div>
@@ -1607,7 +1367,7 @@ export default async function AnalyticsCategoryPage({
               <div className={styles.moduleChartGrid}>
                 {monetizationDistributionValues.length ? (
                   <DonutChartCard
-                    title={monetizationSections[6]}
+                    title={monetizationSections[5]}
                     copy="按曝光量查看主要礼包 / 计费点构成，帮助团队判断营收承接是否过度集中。"
                     values={monetizationDistributionValues}
                     labels={monetizationDistributionLabels}
@@ -1641,7 +1401,7 @@ export default async function AnalyticsCategoryPage({
               <div className={styles.moduleHeader}>
                 <div>
                   <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {monetizationSections[7]}
+                    {monetizationSections[6]}
                   </h2>
                   <p className={styles.sectionCopy}>把礼包和计费点的曝光、点击、下单、成功拉平到一张表里，方便直接落到运营动作。</p>
                 </div>
@@ -1683,37 +1443,11 @@ export default async function AnalyticsCategoryPage({
 
         {category === "ads" ? (
           <>
-            <section className={styles.moduleSection} data-ads-checklist={adsChecklist}>
-              <ModuleSectionHeader
-                title={adsSections[0]}
-                copy="先确认广告链路的导入质量，再判断 placement 强弱，避免把 request/play 歧义误判成真实流量损耗。"
-                badge={config.compareVersionLabel ? "带版本对比" : "当前批次"}
-              />
-              <ModuleQualityCards
-                importPreviewHref={importPreviewHref}
-                qualityNote={qualityNote}
-                compareVersionLabel={config.compareVersionLabel}
-                technicalSuccessRate={config.technicalSuccessRate}
-                technicalErrorCount={config.technicalErrorCount}
-                businessFailureCount={config.businessFailureCount}
-                moduleCoverage={config.moduleCoverage}
-                compareTechnicalSuccessRate={config.compareTechnicalSuccessRate}
-                compareTechnicalErrorCount={config.compareTechnicalErrorCount}
-                compareBusinessFailureCount={config.compareBusinessFailureCount}
-                compareModuleCoverage={config.compareModuleCoverage}
-                notes={{
-                  success: "广告位判断之前先确认导入链路没有明显缺口。",
-                  errors: "优先排除 placement 缺失、request 事件漏记和字段混写。",
-                  business: "如果业务失败事件同步增多，要同时检查广告回调和发奖链路。"
-                }}
-              />
-            </section>
-
             <ModuleRiskBanner moduleRisk={config.moduleRisk} importPreviewHref={importPreviewHref} />
 
             <section className={styles.moduleSection}>
               <ModuleSectionHeader
-                title={adsSections[1]}
+                title={adsSections[0]}
                 copy="关键指标只服务广告位经营判断，帮助团队先回答“哪里最弱、哪里最占量、发奖是否稳定”。"
                 badge={config.metrics.length ? `${config.metrics.length} 个结论指标` : "等待广告位数据"}
               />
@@ -1734,7 +1468,7 @@ export default async function AnalyticsCategoryPage({
               />
               <div className={styles.moduleSignalGrid}>
                 <article className={styles.moduleSignalCard}>
-                  <div className={styles.moduleSignalLabel}>{adsSections[2]}</div>
+                  <div className={styles.moduleSignalLabel}>{adsSections[1]}</div>
                   <div className={styles.moduleSignalTitle}>{weakestPlacement?.placement ?? "暂无最弱广告位"}</div>
                   <div className={styles.moduleSignalMeta}>
                     {weakestPlacement
@@ -1743,7 +1477,7 @@ export default async function AnalyticsCategoryPage({
                   </div>
                 </article>
                 <article className={styles.moduleSignalCard}>
-                  <div className={styles.moduleSignalLabel}>{adsSections[3]}</div>
+                  <div className={styles.moduleSignalLabel}>{adsSections[2]}</div>
                   <div className={styles.moduleSignalTitle}>{highestVolumePlacement?.placement ?? "暂无主流量广告位"}</div>
                   <div className={styles.moduleSignalMeta}>
                     {highestVolumePlacement
@@ -1769,7 +1503,7 @@ export default async function AnalyticsCategoryPage({
               <div className={styles.moduleHeader}>
                 <div>
                   <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {adsSections[4]}
+                    {adsSections[3]}
                   </h2>
                   <p className={styles.sectionCopy}>广告页必须把 request/play 的解释边界讲清楚，特别是导入里没有显式 request 事件的时候。</p>
                 </div>
@@ -1793,7 +1527,7 @@ export default async function AnalyticsCategoryPage({
               <div className={styles.moduleHeader}>
                 <div>
                   <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {adsSections[5]}
+                    {adsSections[4]}
                   </h2>
                   <p className={styles.sectionCopy}>主图固定使用广告位流转卡，先看 placement 间的 request、play、click、reward 差异，再决定优化顺序。</p>
                 </div>
@@ -1801,7 +1535,7 @@ export default async function AnalyticsCategoryPage({
               </div>
               {config.adPlacementBreakdown?.length ? (
                 <AdPlacementFlowCard
-                  title={adsSections[5]}
+                  title={adsSections[4]}
                   copy={
                     config.compareVersionLabel
                       ? `广告位流转主图聚焦 ${config.versionLabel} 当前批次；版本差异结论保留在上方关键结论卡中统一阅读。`
@@ -1819,14 +1553,14 @@ export default async function AnalyticsCategoryPage({
               <div className={styles.moduleHeader}>
                 <div>
                   <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {adsSections[6]}
+                    {adsSections[5]}
                   </h2>
                   <p className={styles.sectionCopy}>排行先按流量规模排序，再补充点击率和发奖率，方便商业化和运营一起排优先级。</p>
                 </div>
                 <span className="pill">{adsRankingRows.length ? `${adsRankingRows.length} 个广告位` : "等待广告位排行"}</span>
               </div>
               <div className={styles.infoPanel}>
-                <div className={styles.infoPanelTitle}>{adsSections[6]}</div>
+                <div className={styles.infoPanelTitle}>{adsSections[5]}</div>
                 <div className={styles.infoPanelList}>
                   {adsRankingRows.slice(0, 8).map((item) => (
                     <div key={item.placement} className={styles.infoPanelRow}>
@@ -1843,7 +1577,7 @@ export default async function AnalyticsCategoryPage({
               <div className={styles.moduleHeader}>
                 <div>
                   <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {adsSections[7]}
+                    {adsSections[6]}
                   </h2>
                   <p className={styles.sectionCopy}>构成图帮助团队识别主要流量是否过度集中在少数 placement，上线节奏是否需要重新均衡。</p>
                 </div>
@@ -1851,7 +1585,7 @@ export default async function AnalyticsCategoryPage({
               </div>
               {adsCompositionValues.length ? (
                 <DonutChartCard
-                  title={adsSections[7]}
+                  title={adsSections[6]}
                   copy="按请求量查看广告位构成，判断流量是否过度集中在少数 placement。"
                   values={adsCompositionValues}
                   labels={adsCompositionLabels}
@@ -1870,7 +1604,7 @@ export default async function AnalyticsCategoryPage({
               <div className={styles.moduleHeader}>
                 <div>
                   <h2 className="section-title" style={{ fontSize: 18 }}>
-                    {adsSections[8]}
+                    {adsSections[7]}
                   </h2>
                   <p className={styles.sectionCopy}>广告明细表保留 request / play / click / reward 全量列，方便直接核对 placement 级问题和埋点口径。</p>
                 </div>
