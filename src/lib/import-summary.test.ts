@@ -654,3 +654,40 @@ test("detectAndParseRawTelemetryCsv expands raw AppsFlyer payloads and normalize
     trigger_scene: "shop"
   });
 });
+
+test("detectAndParseRawTelemetryCsv expands comma-delimited raw AppsFlyer exports", () => {
+  const fillerHeaders = Array.from({ length: 38 }, (_, index) => `filler_${index + 1}`);
+  const headerRow = [
+    "event_name",
+    "event_time",
+    "customer_user_id",
+    ...fillerHeaders,
+    "event_value",
+    "custom_data",
+    "event_revenue"
+  ]
+    .map((value) => `"${value.replace(/"/g, '""')}"`)
+    .join(",");
+  const dataRow = [
+    "tutorial_step",
+    "2026-04-22 10:00:00",
+    "u1",
+    ...fillerHeaders.map(() => ""),
+    '{"step_id":"guide_01","step_name":"引导开始","duration_seconds":"3,5"}',
+    "{}",
+    ""
+  ]
+    .map((value) => `"${value.replace(/"/g, '""')}"`)
+    .join(",");
+
+  const parsed = detectAndParseRawTelemetryCsv([headerRow, dataRow].join("\n"));
+  if (!parsed) {
+    throw new Error("expected comma-delimited raw AppsFlyer CSV to be detected");
+  }
+
+  assert.match(parsed.notice, /逗号分隔/);
+  assert.equal(parsed.rows[0]?.event_name, "tutorial_step");
+  assert.equal(parsed.rows[0]?.step_id, "guide_01");
+  assert.equal(parsed.rows[0]?.step_name, "引导开始");
+  assert.equal(parsed.rows[0]?.duration_sec, 3.5);
+});

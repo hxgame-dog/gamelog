@@ -27,7 +27,18 @@ const rawTelemetrySupplementalKeys = [
 
 function looksLikeRawTelemetryCsv(text: string) {
   const firstLine = text.split(/\r?\n/, 1)[0] ?? "";
-  return firstLine.includes('"event_name"') && firstLine.includes('"event_value"') && firstLine.split(";").length > 40;
+  const delimiter = detectRawTelemetryDelimiter(firstLine);
+  return Boolean(delimiter) && firstLine.includes('"event_name"') && firstLine.includes('"event_value"');
+}
+
+function detectRawTelemetryDelimiter(firstLine: string) {
+  const semicolonCount = firstLine.split(";").length;
+  const commaCount = firstLine.split(",").length;
+  const candidateCount = Math.max(semicolonCount, commaCount);
+  if (candidateCount <= 40) {
+    return null;
+  }
+  return semicolonCount >= commaCount ? ";" : ",";
 }
 
 function parseDelimitedText(text: string, delimiter: string) {
@@ -159,7 +170,12 @@ export function detectAndParseRawTelemetryCsv(text: string): RawTelemetryUpload 
     return null;
   }
 
-  const matrix = parseDelimitedText(text, ";");
+  const firstLine = text.split(/\r?\n/, 1)[0] ?? "";
+  const delimiter = detectRawTelemetryDelimiter(firstLine);
+  if (!delimiter) {
+    return null;
+  }
+  const matrix = parseDelimitedText(text, delimiter);
   const [headerRow = [], ...dataRows] = matrix;
   const headers = headerRow.map((cell) => cell.trim());
 
@@ -228,6 +244,6 @@ export function detectAndParseRawTelemetryCsv(text: string): RawTelemetryUpload 
   return {
     rows,
     headers: cleanedHeaders.filter((header, index, collection) => collection.indexOf(header) === index),
-    notice: "已识别为分号分隔的原始日志导出，并自动展开 event_value/custom_data。当前映射的是清洗后的业务字段。"
+    notice: `已识别为${delimiter === ";" ? "分号" : "逗号"}分隔的原始日志导出，并自动展开 event_value/custom_data。当前映射的是清洗后的业务字段。`
   };
 }
