@@ -962,7 +962,7 @@ export function buildImportSummary(
     if (category === "level") {
       perCategory.level.count += 1;
       const levelKey = levelId || eventName;
-      const levelDisplayKey = levelId ? `${levelId}${levelType ? ` (${levelType})` : ""}` : eventName;
+      const levelDisplayKey = levelId || eventName;
       levelCounts.set(levelKey, (levelCounts.get(levelKey) ?? 0) + 1);
       const currentLevel = levelStats.get(levelDisplayKey) ?? {
         levelId: levelId || levelDisplayKey,
@@ -973,6 +973,9 @@ export function buildImportSummary(
         retries: 0,
         failReasons: new Map<string, number>()
       };
+      if (!currentLevel.levelType && levelType) {
+        currentLevel.levelType = levelType;
+      }
       if (isLevelStart) {
         currentLevel.starts += 1;
         if (userId) {

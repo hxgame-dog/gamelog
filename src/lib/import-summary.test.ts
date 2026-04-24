@@ -584,6 +584,25 @@ test("buildImportSummary keeps business failure events analyzable without loweri
   assert.equal(summary.diagnostics?.moduleChecks.level.canAnalyze, true);
 });
 
+test("buildImportSummary merges level start and completion rows by level_id even when level_type differs", () => {
+  const summary = buildImportSummary(
+    [
+      { event_name: "level_start", user_id: "u1", level_id: "1", level_type: "1" },
+      { event_name: "af_level_achieved", user_id: "u1", level_id: "1", result: "success", duration_sec: 26 },
+      { event_name: "level_start", user_id: "u2", level_id: "1", level_type: "1" },
+      { event_name: "level_fail", user_id: "u2", level_id: "1", result: "fail", fail_reason: "timeout" }
+    ],
+    [...mappings]
+  );
+
+  assert.equal(summary.levelFunnel?.length, 1);
+  assert.equal(summary.levelFunnel?.[0]?.levelId, "1");
+  assert.equal(summary.levelFunnel?.[0]?.starts, 2);
+  assert.equal(summary.levelFunnel?.[0]?.completes, 1);
+  assert.equal(summary.levelFunnel?.[0]?.fails, 1);
+  assert.equal(summary.levelFunnel?.[0]?.completionRate, 50);
+});
+
 test("detectAndParseRawTelemetryCsv expands raw AppsFlyer payloads and normalizes comma decimals", () => {
   const fillerHeaders = Array.from({ length: 38 }, (_, index) => `filler_${index + 1}`);
   const headerRow = [
