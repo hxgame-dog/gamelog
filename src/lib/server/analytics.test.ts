@@ -387,6 +387,95 @@ test("system page exposes business dimensions instead of only generic quality ch
   assert.match(source, /systemDeviceDistribution/);
 });
 
+test("module diagnostics link each issue back to filtered import preview rows", () => {
+  const pagePath = path.resolve(process.cwd(), "src/app/analytics/[category]/page.tsx");
+  const importsPath = path.resolve(process.cwd(), "src/components/imports-client.tsx");
+  const pageSource = readFileSync(pagePath, "utf8");
+  const importsSource = readFileSync(importsPath, "utf8");
+
+  assert.match(pageSource, /buildImportIssueHref\(importPreviewHref, issue\.target\)/);
+  assert.match(pageSource, /查看相关清洗行/);
+  assert.match(importsSource, /searchParams\.get\("q"\)/);
+  assert.match(importsSource, /const \[previewFilter, setPreviewFilter\] = useState\(initialPreviewFilter\)/);
+});
+
+test("operations detail rows expose severity and import preview drilldown queries", async () => {
+  delete process.env.DATABASE_URL;
+  resetMemoryStore();
+
+  const projectId = "project-detail-drilldown";
+  seedImportSummary("import-detail-drilldown", projectId, "7.1.0", 71, {
+    categories: {
+      level: {
+        metrics: { completionRate: 33, failRate: 67, startRate: 100, retryAvg: 2 },
+        main: [100, 33, 67],
+        aux: [],
+        auxLabels: [],
+        ranking: [],
+        insight: "Level 2 当前失败明显。"
+      }
+    },
+    levelFunnel: [
+      {
+        levelId: "2",
+        levelType: "hard",
+        starts: 100,
+        completes: 20,
+        fails: 80,
+        retries: 70,
+        completionRate: 20,
+        failRate: 80,
+        topFailReason: "timeout"
+      }
+    ],
+    levelRetryRanking: [
+      {
+        levelId: "2",
+        levelType: "hard",
+        starts: 100,
+        retries: 70,
+        retryRate: 70
+      }
+    ]
+  });
+  seedMetricSnapshot(projectId, "7.1.0", "level_start_rate", 100, "level", 71);
+  seedMetricSnapshot(projectId, "7.1.0", "level_completion_rate", 20, "level", 71);
+  seedMetricSnapshot(projectId, "7.1.0", "level_fail_rate", 80, "level", 71);
+  seedMetricSnapshot(projectId, "7.1.0", "level_retry_avg", 2, "level", 71);
+
+  const data = await getAnalyticsCategoryData("level", projectId, null, "import-detail-drilldown");
+  const row = (data as any).detailRows.find((item: any) => item.label.includes("2"));
+
+  assert.equal(row?.severity, "critical");
+  assert.equal(row?.previewQuery, "2");
+});
+
+test("analytics detail client supports actionable filtering, sorting, and import preview links", () => {
+  const pagePath = path.resolve(process.cwd(), "src/app/analytics/[category]/page.tsx");
+  const clientPath = path.resolve(process.cwd(), "src/components/analytics-detail-client.tsx");
+  const pageSource = readFileSync(pagePath, "utf8");
+  const clientSource = readFileSync(clientPath, "utf8");
+
+  assert.match(clientSource, /severity\?: "normal" \| "warning" \| "critical"/);
+  assert.match(clientSource, /parseDetailDelta/);
+  assert.match(clientSource, /row\.severity && row\.severity !== "normal"/);
+  assert.match(clientSource, /previewQuery/);
+  assert.match(clientSource, /查看样本/);
+  assert.match(pageSource, /importPreviewHref=\{importPreviewHref\}/);
+});
+
+test("dedicated operations module detail tables link rows back to filtered import previews", () => {
+  const pagePath = path.resolve(process.cwd(), "src/app/analytics/[category]/page.tsx");
+  const source = readFileSync(pagePath, "utf8");
+
+  assert.match(source, /const onboardingSampleHref = buildImportIssueHref\(importPreviewHref, row\.stepName \|\| row\.stepId\)/);
+  assert.match(source, /const levelSampleHref = buildImportIssueHref\(importPreviewHref, row\.levelId\)/);
+  assert.match(source, /const microflowSampleHref = buildImportIssueHref\(importPreviewHref, row\.action\)/);
+  assert.match(source, /const monetizationSampleHref = buildImportIssueHref\(importPreviewHref, item\.name\)/);
+  assert.match(source, /const adsSampleHref = buildImportIssueHref\(importPreviewHref, item\.placement\)/);
+  assert.match(source, /styles\.moduleSampleLink/);
+});
+
 test("monetization and ads pages keep dedicated business sections without top-level quality cards", () => {
   const pagePath = path.resolve(process.cwd(), "src/app/analytics/[category]/page.tsx");
   const source = readFileSync(pagePath, "utf8");

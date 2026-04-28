@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import styles from "./analytics-page.module.css";
@@ -11,7 +12,30 @@ type DetailRow = {
   compare?: string | null;
   delta?: string | null;
   note: string;
+  kind?: "metric" | "step" | "level" | "action";
+  severity?: "normal" | "warning" | "critical";
+  previewQuery?: string;
 };
+
+function parseDetailDelta(delta?: string | null) {
+  if (!delta || delta === "—") {
+    return 0;
+  }
+
+  const value = Number(delta.replace(/[^\d.-]/g, ""));
+  return Number.isFinite(value) ? Math.abs(value) : 0;
+}
+
+function buildPreviewHref(importPreviewHref: string | null | undefined, previewQuery: string | undefined) {
+  if (!importPreviewHref || !previewQuery) {
+    return null;
+  }
+
+  const [path, query = ""] = importPreviewHref.split("?");
+  const params = new URLSearchParams(query);
+  params.set("q", previewQuery);
+  return `${path}?${params.toString()}`;
+}
 
 export function AnalyticsDetailClient({
   ranking,
@@ -21,7 +45,8 @@ export function AnalyticsDetailClient({
   insight,
   compareInsight,
   color,
-  initialFilter = "all"
+  initialFilter = "all",
+  importPreviewHref
 }: {
   ranking: Array<[string, string]>;
   detailRows: DetailRow[];
@@ -31,6 +56,7 @@ export function AnalyticsDetailClient({
   compareInsight?: string | null;
   color: string;
   initialFilter?: "all" | "abnormal" | "delta";
+  importPreviewHref?: string | null;
 }) {
   const [selectedDetailLabel, setSelectedDetailLabel] = useState<string | null>(null);
   const [detailFilter, setDetailFilter] = useState<"all" | "abnormal" | "delta">(initialFilter);
@@ -64,12 +90,15 @@ export function AnalyticsDetailClient({
   const filteredDetailRows = useMemo(() => {
     if (detailFilter === "abnormal") {
       return detailRows.filter((row) =>
+        (row.severity && row.severity !== "normal") ||
         /异常|失败|流失|告警|超时|error|drop/i.test(`${row.label} ${row.note} ${row.current} ${row.compare ?? ""}`)
       );
     }
 
     if (detailFilter === "delta") {
-      return detailRows.filter((row) => row.delta && row.delta !== "—" && row.delta !== "+0.0%" && row.delta !== "0.0%");
+      return detailRows
+        .filter((row) => parseDetailDelta(row.delta) > 0)
+        .sort((left, right) => parseDetailDelta(right.delta) - parseDetailDelta(left.delta));
     }
 
     return detailRows;
@@ -159,26 +188,43 @@ export function AnalyticsDetailClient({
             <div className={styles.detailTableCellMuted}>指标 / 项</div>
             <div className={styles.detailTableCellMuted}>{versionLabel}</div>
             <div className={styles.detailTableCellMuted}>{compareVersionLabel ?? "未选择对比"}</div>
-            <div className={styles.detailTableCellMuted}>变化</div>
-            <div className={styles.detailTableCellMuted}>说明</div>
-          </div>
-          {filteredDetailRows.map((row) => (
-            <div
-              key={`${row.label}-${row.current}`}
-              ref={(node) => {
-                rowRefs.current[row.label] = node;
-              }}
-              className={`${styles.detailTableRow} ${selectedDetailLabel === row.label ? styles.detailTableRowActive : ""}`}
-            >
-              <div className={styles.detailTableCellStrong}>{row.label}</div>
-              <div>{row.current}</div>
-              <div>{row.compare ?? "—"}</div>
-              <div className={row.delta?.startsWith("-") ? styles.detailDeltaNegative : styles.detailDelta}>
-                {row.delta ?? "—"}
-              </div>
-              <div className={styles.detailTableNote}>{row.note}</div>
+              <div className={styles.detailTableCellMuted}>变化</div>
+              <div className={styles.detailTableCellMuted}>说明</div>
             </div>
-          ))}
+          {filteredDetailRows.map((row) => {
+            const previewHref = buildPreviewHref(importPreviewHref, row.previewQuery);
+            return (
+              <div
+                key={`${row.label}-${row.current}`}
+                ref={(node) => {
+                  rowRefs.current[row.label] = node;
+                }}
+                className={`${styles.detailTableRow} ${selectedDetailLabel === row.label ? styles.detailTableRowActive : ""}`}
+              >
+                <div className={styles.detailTableCellStrong}>
+                  <span>{row.label}</span>
+                  {row.severity && row.severity !== "normal" ? (
+                    <span className={`${styles.detailSeverityBadge} ${row.severity === "critical" ? styles.detailSeverityCritical : styles.detailSeverityWarning}`}>
+                      {row.severity === "critical" ? "高风险" : "需关注"}
+                    </span>
+                  ) : null}
+                </div>
+                <div>{row.current}</div>
+                <div>{row.compare ?? "—"}</div>
+                <div className={row.delta?.startsWith("-") ? styles.detailDeltaNegative : styles.detailDelta}>
+                  {row.delta ?? "—"}
+                </div>
+                <div className={styles.detailTableNote}>
+                  <span>{row.note}</span>
+                  {previewHref ? (
+                    <Link href={previewHref} className={styles.detailPreviewLink}>
+                      查看样本
+                    </Link>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
         </div>
         {!filteredDetailRows.length ? (
           <div className={styles.emptyDetailState}>当前筛选下没有符合条件的明细项，建议切回“全部明细”查看完整结构。</div>

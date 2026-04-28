@@ -15,6 +15,18 @@ type ImportCategorySummary = {
   insight: string;
 };
 
+type DetailSeverity = "normal" | "warning" | "critical";
+type DetailRow = {
+  label: string;
+  current: string;
+  compare?: string | null;
+  delta?: string | null;
+  note: string;
+  kind?: "metric" | "step" | "level" | "action";
+  severity?: DetailSeverity;
+  previewQuery?: string;
+};
+
 type ImportSummary = {
   technicalSuccessRate?: number;
   technicalErrorCount?: number;
@@ -126,12 +138,14 @@ type ImportSummary = {
     activeUsers: number;
     loginUsers: number;
     retainedUsers: number;
+    retentionRate: number;
   }>;
   systemCountryUsers?: Array<{
     country: string;
     activeUsers: number;
     loginUsers: number;
     retainedUsers: number;
+    retentionRate: number;
   }>;
   systemDeviceDistribution?: Array<{
     platform: string;
@@ -604,7 +618,9 @@ function buildOnboardingStepRows(summary: ImportSummary, compareSummary?: Import
       compare: compare ? `${compare.arrivals} 到达 / ${compare.completions} 完成` : null,
       delta: versionDelta(step.completionRate, compare?.completionRate ?? null),
       note: `完成率 ${step.completionRate.toFixed(1)}%，平均耗时 ${step.avgDuration.toFixed(1)} 秒`,
-      kind: "step" as const
+      kind: "step" as const,
+      severity: step.dropoffCount >= Math.max(5, step.arrivals * 0.3) || step.completionRate < 50 ? "critical" : step.dropoffCount > 0 ? "warning" : "normal",
+      previewQuery: step.stepName || step.stepId
     };
   });
 }
@@ -695,7 +711,9 @@ function buildLevelRows(summary: ImportSummary, compareSummary?: ImportSummary) 
         : null,
       delta: versionDelta(currentCompletion, compareCompletion),
       note: `失败率 ${level.failRate.toFixed(1)}%，主要失败原因：${level.topFailReason || "—"}`,
-      kind: "level" as const
+      kind: "level" as const,
+      severity: level.failRate >= 50 || level.completionRate < 30 ? "critical" : level.failRate > 0 || level.retries > 0 ? "warning" : "normal",
+      previewQuery: level.levelId
     };
   });
 }
@@ -713,7 +731,9 @@ function buildMicroflowRows(summary: ImportSummary) {
     compare: null,
     delta: `${item.ratio.toFixed(1)}%`,
     note: `平均耗时 ${item.avgDuration.toFixed(1)} 秒`,
-    kind: "action" as const
+    kind: "action" as const,
+    severity: item.ratio >= 50 ? "critical" : item.ratio >= 20 ? "warning" : "normal",
+    previewQuery: item.action
   }));
 }
 
@@ -742,7 +762,9 @@ function buildMonetizationRows(summary: ImportSummary, compareSummary?: ImportSu
         : null,
       delta: versionDelta(item.successRate, compare?.successRate ?? null),
       note: `${item.inferred ? "部分推断" : "显式链路"}，成功率 ${item.successRate.toFixed(1)}%`,
-      kind: "action" as const
+      kind: "action" as const,
+      severity: item.successRate < 20 || item.orders > item.successes ? "critical" : item.successRate < 50 ? "warning" : "normal",
+      previewQuery: item.name
     };
   });
 }
@@ -758,7 +780,9 @@ function buildAdRows(summary: ImportSummary, compareSummary?: ImportSummary) {
         : null,
       delta: versionDelta(item.clickRate, compare?.clickRate ?? null),
       note: `${item.inferred ? "请求数部分推断" : "显式链路"}，点击率 ${item.clickRate.toFixed(1)}%，发奖率 ${item.rewardRate.toFixed(1)}%`,
-      kind: "action" as const
+      kind: "action" as const,
+      severity: item.clickRate < 1 || item.rewardRate < 50 ? "critical" : item.clickRate < 5 || item.rewardRate < 80 ? "warning" : "normal",
+      previewQuery: item.placement
     };
   });
 }
@@ -1021,7 +1045,7 @@ function buildDetailRows(
   compare: ImportCategorySummary | undefined,
   compareVersionLabel?: string | null
 ) {
-  const rows: Array<{ label: string; current: string; compare?: string | null; delta?: string | null; note: string }> = [];
+  const rows: DetailRow[] = [];
 
   if (category === "system") {
     rows.push(

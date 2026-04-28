@@ -178,12 +178,14 @@ export type ImportSummary = {
     activeUsers: number;
     loginUsers: number;
     retainedUsers: number;
+    retentionRate: number;
   }>;
   systemCountryUsers: Array<{
     country: string;
     activeUsers: number;
     loginUsers: number;
     retainedUsers: number;
+    retentionRate: number;
   }>;
   systemDeviceDistribution: Array<{
     platform: string;
@@ -837,8 +839,8 @@ export function buildImportSummary(
     {
       stepId: string;
       stepName: string;
-      arrivals: number;
-      completions: number;
+      arrivalUsers: Set<string>;
+      completionUsers: Set<string>;
       durationTotal: number;
       durationCount: number;
     }
@@ -848,10 +850,10 @@ export function buildImportSummary(
     {
       levelId: string;
       levelType: string;
-      starts: number;
-      completes: number;
-      fails: number;
-      retries: number;
+      startUsers: Set<string>;
+      completeUsers: Set<string>;
+      failUsers: Set<string>;
+      retryUsers: Set<string>;
       failReasons: Map<string, number>;
     }
   >();
@@ -886,7 +888,7 @@ export function buildImportSummary(
   };
   const cleanedDiagnosticRows: ImportRow[] = [];
 
-  rows.forEach((row) => {
+  rows.forEach((row, rowIndex) => {
     const rawEventName = readRowText(row, eventMapping?.target, eventMapping?.source, "event_name");
     const eventName = normalizeImportedEventName(rawEventName);
     const eventTime = readRowText(row, eventTimeMapping?.target, eventTimeMapping?.source, "event_time");
@@ -898,6 +900,7 @@ export function buildImportSummary(
     const price = readRowNumber(row, priceMapping?.target, priceMapping?.source, "price");
     const duration = readRowNumber(row, durationMapping?.target, durationMapping?.source, "duration_sec");
     const userId = readRowText(row, userMapping?.target, userMapping?.source, "user_id");
+    const rowUserKey = userId || `__row_${rowIndex}`;
     const reason = readRowText(row, reasonMapping?.target, reasonMapping?.source, "fail_reason", "reason");
     const rewardType = readRowText(row, rewardMapping?.target, rewardMapping?.source, "reward_type");
     const levelType = readRowText(row, levelTypeMapping?.target, levelTypeMapping?.source, "level_type");
@@ -1034,15 +1037,15 @@ export function buildImportSummary(
       const currentStep = stepStats.get(stepKey) ?? {
         stepId: stepId || stepKey,
         stepName: stepName || stepKey,
-        arrivals: 0,
-        completions: 0,
+        arrivalUsers: new Set<string>(),
+        completionUsers: new Set<string>(),
         durationTotal: 0,
         durationCount: 0
       };
-      currentStep.arrivals += 1;
+      currentStep.arrivalUsers.add(rowUserKey);
       if (result === "success" || result === "complete" || /complete|finish|done/i.test(eventName)) {
         perCategory.onboarding.success += 1;
-        currentStep.completions += 1;
+        currentStep.completionUsers.add(rowUserKey);
       }
       if (duration !== null) {
         perCategory.onboarding.durationTotal += duration;
@@ -1061,17 +1064,17 @@ export function buildImportSummary(
       const currentLevel = levelStats.get(levelDisplayKey) ?? {
         levelId: levelId || levelDisplayKey,
         levelType,
-        starts: 0,
-        completes: 0,
-        fails: 0,
-        retries: 0,
+        startUsers: new Set<string>(),
+        completeUsers: new Set<string>(),
+        failUsers: new Set<string>(),
+        retryUsers: new Set<string>(),
         failReasons: new Map<string, number>()
       };
       if (!currentLevel.levelType && levelType) {
         currentLevel.levelType = levelType;
       }
       if (isLevelStart) {
-        currentLevel.starts += 1;
+        currentLevel.startUsers.add(rowUserKey);
         if (userId) {
           const perUser = levelUserStarts.get(levelDisplayKey) ?? new Map<string, number>();
           perUser.set(userId, (perUser.get(userId) ?? 0) + 1);
@@ -1079,15 +1082,15 @@ export function buildImportSummary(
         }
       }
       if (looksRetryEvent(eventName)) {
-        currentLevel.retries += 1;
+        currentLevel.retryUsers.add(rowUserKey);
       }
       if (isLevelComplete) {
         perCategory.level.success += 1;
-        currentLevel.completes += 1;
+        currentLevel.completeUsers.add(rowUserKey);
       }
       if (isLevelFail) {
         perCategory.level.fail += 1;
-        currentLevel.fails += 1;
+        currentLevel.failUsers.add(rowUserKey);
         if (reason) {
           failReasonCounts.set(reason, (failReasonCounts.get(reason) ?? 0) + 1);
           currentLevel.failReasons.set(reason, (currentLevel.failReasons.get(reason) ?? 0) + 1);
@@ -1335,23 +1338,29 @@ export function buildImportSummary(
   );
   const systemDailyUsers = [...dailyActiveUsers.entries()]
     .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
-    .map(([date, users]) => ({
-      date,
-      activeUsers: users.size,
-      loginUsers: (dailyLoginUsers.get(date) ?? new Set<string>()).size,
-      retainedUsers: [...users].filter((userId) => {
+    .map(([date, users]) => {
+      const retainedUsers = [...users].filter((userId) => {
         const firstDate = userFirstDate.get(userId);
         return firstDate ? firstDate < date : false;
-      }).length
-    }));
+      }).length;
+      return {
+        date,
+        activeUsers: users.size,
+        loginUsers: (dailyLoginUsers.get(date) ?? new Set<string>()).size,
+        retainedUsers,
+        retentionRate: clampPercent(users.size ? (retainedUsers / users.size) * 100 : 0)
+      };
+    });
   const systemCountryUsers = [...countryActiveUsers.entries()]
     .map(([country, users]) => {
       const userDates = countryUserDates.get(country) ?? new Map<string, Set<string>>();
+      const retainedUsers = [...userDates.values()].filter((dates) => dates.size > 1).length;
       return {
         country,
         activeUsers: users.size,
         loginUsers: (countryLoginUsers.get(country) ?? new Set<string>()).size,
-        retainedUsers: [...userDates.values()].filter((dates) => dates.size > 1).length
+        retainedUsers,
+        retentionRate: clampPercent(users.size ? (retainedUsers / users.size) * 100 : 0)
       };
     })
     .sort((a, b) => b.activeUsers - a.activeUsers || b.loginUsers - a.loginUsers)
@@ -1378,9 +1387,9 @@ export function buildImportSummary(
     .map((item) => ({
       stepId: item.stepId,
       stepName: item.stepName,
-      arrivals: item.arrivals,
-      completions: item.completions,
-      completionRate: clampPercent(item.arrivals ? (item.completions / item.arrivals) * 100 : 0),
+      arrivals: item.arrivalUsers.size,
+      completions: item.completionUsers.size,
+      completionRate: clampPercent(item.arrivalUsers.size ? (item.completionUsers.size / item.arrivalUsers.size) * 100 : 0),
       avgDuration: Number((item.durationCount ? item.durationTotal / item.durationCount : 0).toFixed(2))
     }));
   const onboardingFunnel = onboardingSteps.map((item, index) => {
@@ -1393,16 +1402,18 @@ export function buildImportSummary(
   const levelProgress = [...levelStats.values()]
     .map((item) => {
       const userStartMap = levelUserStarts.get(item.levelId + (item.levelType ? ` (${item.levelType})` : "")) ?? levelUserStarts.get(item.levelId) ?? new Map<string, number>();
-      const inferredRetries = [...userStartMap.values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0);
-      const retries = item.retries > 0 ? item.retries : inferredRetries;
+      const inferredRetryUsers = new Set(
+        [...userStartMap.entries()].filter(([, count]) => count > 1).map(([userId]) => userId)
+      );
+      const retryUsers = item.retryUsers.size > 0 ? item.retryUsers : inferredRetryUsers;
       const topFailReason = [...item.failReasons.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "—";
       return {
         levelId: item.levelId,
         levelType: item.levelType,
-        starts: item.starts,
-        completes: item.completes,
-        fails: item.fails,
-        retries,
+        starts: item.startUsers.size,
+        completes: item.completeUsers.size,
+        fails: item.failUsers.size,
+        retries: retryUsers.size,
         topFailReason
       };
     })

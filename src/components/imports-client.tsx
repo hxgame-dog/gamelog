@@ -292,7 +292,8 @@ export function ImportsClient({
   const [selectedHistoryImportId, setSelectedHistoryImportId] = useState(
     initialImportId ?? latestImportsByProject[initialProjectId ?? projects[0]?.id ?? ""]?.id ?? null
   );
-  const [previewFilter, setPreviewFilter] = useState("");
+  const initialPreviewFilter = searchParams.get("q") ?? "";
+  const [previewFilter, setPreviewFilter] = useState(initialPreviewFilter);
   const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 

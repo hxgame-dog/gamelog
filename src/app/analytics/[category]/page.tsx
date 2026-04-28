@@ -202,12 +202,20 @@ function ModuleRiskBanner({
 
       {moduleRisk.topIssues.length ? (
         <div className={styles.riskBannerIssueList}>
-          {moduleRisk.topIssues.map((issue) => (
-            <div key={`${issue.severity}-${issue.target}`} className={styles.riskBannerIssue}>
-              <strong>{issue.target}</strong>
-              <span>{issue.message}</span>
-            </div>
-          ))}
+          {moduleRisk.topIssues.map((issue) => {
+            const issueHref = buildImportIssueHref(importPreviewHref, issue.target);
+            return (
+              <div key={`${issue.severity}-${issue.target}`} className={styles.riskBannerIssue}>
+                <strong>{issue.target}</strong>
+                <span>{issue.message}</span>
+                {issueHref ? (
+                  <Link href={issueHref} className={styles.riskBannerIssueLink}>
+                    查看相关清洗行
+                  </Link>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       ) : null}
 
@@ -218,6 +226,17 @@ function ModuleRiskBanner({
       ) : null}
     </section>
   );
+}
+
+function buildImportIssueHref(importPreviewHref: string | null, target: string) {
+  if (!importPreviewHref || !target) {
+    return null;
+  }
+
+  const [path, query = ""] = importPreviewHref.split("?");
+  const params = new URLSearchParams(query);
+  params.set("q", target);
+  return `${path}?${params.toString()}`;
 }
 
 function ModuleConclusionCards({
@@ -347,8 +366,8 @@ export default async function AnalyticsCategoryPage({
     adPlacementBreakdown?: Array<{ placement: string; requests: number; plays: number; clicks: number; rewards: number; clickRate: number; rewardRate: number; inferred?: boolean }>;
     adPlacementFlow?: Array<{ placement: string; requests: number; plays: number; clicks: number }>;
     adsNote?: string | null;
-    systemDailyUsers?: Array<{ date: string; activeUsers: number; loginUsers: number; retainedUsers: number }>;
-    systemCountryUsers?: Array<{ country: string; activeUsers: number; loginUsers: number; retainedUsers: number }>;
+    systemDailyUsers?: Array<{ date: string; activeUsers: number; loginUsers: number; retainedUsers: number; retentionRate: number }>;
+    systemCountryUsers?: Array<{ country: string; activeUsers: number; loginUsers: number; retainedUsers: number; retentionRate: number }>;
     systemDeviceDistribution?: Array<{ platform: string; users: number; events: number; share: number }>;
     insight: string;
     compareInsight?: string | null;
@@ -970,11 +989,17 @@ export default async function AnalyticsCategoryPage({
                 </div>
                 {onboardingDisplayRows.map((row) => {
                   const compare = onboardingCompareMap.get(row.stepId || row.stepName);
+                  const onboardingSampleHref = buildImportIssueHref(importPreviewHref, row.stepName || row.stepId);
                   return (
                     <div key={`${row.stepId}-${row.stepName}`} className={styles.moduleDetailTableRow}>
                       <div className={styles.moduleDetailPrimary}>
                         <strong>{row.displayName}</strong>
                         <span>{row.stepName && row.stepName !== row.displayName ? row.stepName : row.stepId || "未命名步骤"}</span>
+                        {onboardingSampleHref ? (
+                          <Link href={onboardingSampleHref} className={styles.moduleSampleLink}>
+                            查看样本
+                          </Link>
+                        ) : null}
                       </div>
                       <div>{row.arrivals}</div>
                       <div>{row.completions}</div>
@@ -1179,11 +1204,17 @@ export default async function AnalyticsCategoryPage({
                       <div className={styles.levelDetailTableHead}>AVG_ROTATE_SECONDS</div>
                     </div>
                     {levelSummaryRows.map((row) => {
+                      const levelSampleHref = buildImportIssueHref(importPreviewHref, row.levelId);
                       return (
                         <div key={`${row.levelId}-${row.levelType}`} className={styles.levelDetailTableRow}>
                           <div className={styles.levelDetailPrimary}>
                             <strong>{formatLevelName(row.levelId, row.levelType)}</strong>
                             <span>{row.topFailReason || "无主要失败原因"}</span>
+                            {levelSampleHref ? (
+                              <Link href={levelSampleHref} className={styles.moduleSampleLink}>
+                                查看样本
+                              </Link>
+                            ) : null}
                           </div>
                           <div>{row.starts}</div>
                           <div>{row.completes}</div>
@@ -1210,18 +1241,26 @@ export default async function AnalyticsCategoryPage({
                       <div className={styles.levelDetailTableHead}>占比</div>
                       <div className={styles.levelDetailTableHead}>平均耗时</div>
                     </div>
-                    {levelMicroflowRows.slice(0, 12).map((row) => (
-                      <div key={`${row.levelId}-${row.action}`} className={styles.levelFlowTableRow}>
-                        <div className={styles.levelDetailPrimary}>
-                          <strong>{row.levelId}</strong>
-                          <span>行为热点</span>
+                    {levelMicroflowRows.slice(0, 12).map((row) => {
+                      const microflowSampleHref = buildImportIssueHref(importPreviewHref, row.action);
+                      return (
+                        <div key={`${row.levelId}-${row.action}`} className={styles.levelFlowTableRow}>
+                          <div className={styles.levelDetailPrimary}>
+                            <strong>{row.levelId}</strong>
+                            <span>行为热点</span>
+                            {microflowSampleHref ? (
+                              <Link href={microflowSampleHref} className={styles.moduleSampleLink}>
+                                查看样本
+                              </Link>
+                            ) : null}
+                          </div>
+                          <div>{row.action}</div>
+                          <div>{row.count}</div>
+                          <div className={styles.moduleDetailStrong}>{row.ratio.toFixed(1)}%</div>
+                          <div>{row.avgDuration.toFixed(1)} 秒</div>
                         </div>
-                        <div>{row.action}</div>
-                        <div>{row.count}</div>
-                        <div className={styles.moduleDetailStrong}>{row.ratio.toFixed(1)}%</div>
-                        <div>{row.avgDuration.toFixed(1)} 秒</div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                   {!levelMicroflowRows.length ? <div className={styles.moduleEmptyState}>当前批次还没有可展示的心流明细。</div> : null}
                 </div>
@@ -1249,6 +1288,7 @@ export default async function AnalyticsCategoryPage({
                     <span>日期</span>
                     <span>登录用户</span>
                     <span>留存用户</span>
+                    <span>留存率</span>
                     <span>活跃用户</span>
                   </div>
                   {systemDailyRows.slice(-8).map((row) => (
@@ -1256,6 +1296,7 @@ export default async function AnalyticsCategoryPage({
                       <span>{row.date}</span>
                       <strong>{row.loginUsers}</strong>
                       <strong>{row.retainedUsers}</strong>
+                      <strong>{(row.retentionRate ?? 0).toFixed(1)}%</strong>
                       <strong>{row.activeUsers}</strong>
                     </div>
                   ))}
@@ -1270,6 +1311,7 @@ export default async function AnalyticsCategoryPage({
                     <span>国家</span>
                     <span>登录用户</span>
                     <span>留存用户</span>
+                    <span>留存率</span>
                     <span>活跃用户</span>
                   </div>
                   {systemCountryRows.slice(0, 8).map((row) => (
@@ -1277,6 +1319,7 @@ export default async function AnalyticsCategoryPage({
                       <span>{row.country}</span>
                       <strong>{row.loginUsers}</strong>
                       <strong>{row.retainedUsers}</strong>
+                      <strong>{(row.retentionRate ?? 0).toFixed(1)}%</strong>
                       <strong>{row.activeUsers}</strong>
                     </div>
                   ))}
@@ -1529,20 +1572,28 @@ export default async function AnalyticsCategoryPage({
                   <div className={styles.moduleDetailTableHead}>成功率</div>
                   <div className={styles.moduleDetailTableHead}>口径</div>
                 </div>
-                {monetizationDistributionRows.map((item) => (
-                  <div key={item.name} className={styles.moduleDetailTableRow}>
-                    <div className={styles.moduleDetailPrimary}>
-                      <strong>{item.name}</strong>
-                      <span>{item.inferred ? "部分阶段为兼容推断" : "显式链路"}</span>
+                {monetizationDistributionRows.map((item) => {
+                  const monetizationSampleHref = buildImportIssueHref(importPreviewHref, item.name);
+                  return (
+                    <div key={item.name} className={styles.moduleDetailTableRow}>
+                      <div className={styles.moduleDetailPrimary}>
+                        <strong>{item.name}</strong>
+                        <span>{item.inferred ? "部分阶段为兼容推断" : "显式链路"}</span>
+                        {monetizationSampleHref ? (
+                          <Link href={monetizationSampleHref} className={styles.moduleSampleLink}>
+                            查看样本
+                          </Link>
+                        ) : null}
+                      </div>
+                      <div>{item.exposures}</div>
+                      <div>{item.clicks}</div>
+                      <div>{item.orders}</div>
+                      <div>{item.successes}</div>
+                      <div className={styles.moduleDetailStrong}>{item.successRate.toFixed(1)}%</div>
+                      <div>{item.inferred ? "推断" : "显式"}</div>
                     </div>
-                    <div>{item.exposures}</div>
-                    <div>{item.clicks}</div>
-                    <div>{item.orders}</div>
-                    <div>{item.successes}</div>
-                    <div className={styles.moduleDetailStrong}>{item.successRate.toFixed(1)}%</div>
-                    <div>{item.inferred ? "推断" : "显式"}</div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               {!monetizationDistributionRows.length ? (
                 <div className={styles.moduleEmptyState}>当前批次还没有可展示的商业化明细表。</div>
@@ -1732,20 +1783,28 @@ export default async function AnalyticsCategoryPage({
                   <div className={styles.moduleDetailTableHead}>点击率 / 发奖率</div>
                   <div className={styles.moduleDetailTableHead}>口径</div>
                 </div>
-                {adsRankingRows.map((item) => (
-                  <div key={item.placement} className={styles.moduleDetailTableRow}>
-                    <div className={styles.moduleDetailPrimary}>
-                      <strong>{item.placement}</strong>
-                      <span>{item.inferred ? "request 由播放兼容推断" : "显式 request / play"}</span>
+                {adsRankingRows.map((item) => {
+                  const adsSampleHref = buildImportIssueHref(importPreviewHref, item.placement);
+                  return (
+                    <div key={item.placement} className={styles.moduleDetailTableRow}>
+                      <div className={styles.moduleDetailPrimary}>
+                        <strong>{item.placement}</strong>
+                        <span>{item.inferred ? "request 由播放兼容推断" : "显式 request / play"}</span>
+                        {adsSampleHref ? (
+                          <Link href={adsSampleHref} className={styles.moduleSampleLink}>
+                            查看样本
+                          </Link>
+                        ) : null}
+                      </div>
+                      <div>{item.requests}</div>
+                      <div>{item.plays}</div>
+                      <div>{item.clicks}</div>
+                      <div>{item.rewards}</div>
+                      <div className={styles.moduleDetailStrong}>{`${item.clickRate.toFixed(1)}% / ${item.rewardRate.toFixed(1)}%`}</div>
+                      <div>{item.inferred ? "推断" : "显式"}</div>
                     </div>
-                    <div>{item.requests}</div>
-                    <div>{item.plays}</div>
-                    <div>{item.clicks}</div>
-                    <div>{item.rewards}</div>
-                    <div className={styles.moduleDetailStrong}>{`${item.clickRate.toFixed(1)}% / ${item.rewardRate.toFixed(1)}%`}</div>
-                    <div>{item.inferred ? "推断" : "显式"}</div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               {!adsRankingRows.length ? <div className={styles.moduleEmptyState}>当前批次还没有可展示的广告明细表。</div> : null}
             </section>
@@ -1762,6 +1821,7 @@ export default async function AnalyticsCategoryPage({
             compareInsight={config.compareInsight}
             color={config.color}
             initialFilter={detailFilter ?? "all"}
+            importPreviewHref={importPreviewHref}
           />
         ) : null}
       </div>

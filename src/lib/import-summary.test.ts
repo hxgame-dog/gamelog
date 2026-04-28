@@ -547,7 +547,7 @@ test("buildImportSummary returns module payloads for onboarding, level, monetiza
   const adPlacement = summary.adPlacementBreakdown?.find((item) => item.placement === "FreeBox1");
 
   assert.equal(summary.onboardingFunnel?.[0]?.stepId, "1");
-  assert.equal(summary.onboardingFunnel?.[0]?.dropoffCount, 4);
+  assert.equal(summary.onboardingFunnel?.[0]?.dropoffCount, 2);
   assert.equal(summary.levelFunnel?.[0]?.retries, 1);
   assert.equal(summary.levelFailReasonDistribution?.[0]?.name, "timeout");
   assert.equal(typeof summary.technicalSuccessRate, "number");
@@ -563,6 +563,52 @@ test("buildImportSummary returns module payloads for onboarding, level, monetiza
   assert.equal(adPlacement?.requests, 1);
   assert.equal(adPlacement?.plays, 1);
   assert.equal(adPlacement?.clicks, 1);
+});
+
+test("buildImportSummary builds onboarding funnel with unique users instead of duplicate step events", () => {
+  const summary = buildImportSummary(
+    [
+      { event_name: "tutorial_step", user_id: "u1", step_id: "1", step_name: "show_click_guide", duration_sec: 3 },
+      { event_name: "tutorial_step", user_id: "u1", step_id: "1", step_name: "show_click_guide", duration_sec: 4 },
+      { event_name: "tutorial_step_complete", user_id: "u1", step_id: "1", step_name: "show_click_guide", result: "success", duration_sec: 5 },
+      { event_name: "tutorial_step", user_id: "u2", step_id: "1", step_name: "show_click_guide", duration_sec: 6 },
+      { event_name: "tutorial_step", user_id: "u1", step_id: "2", step_name: "player_click", duration_sec: 7 }
+    ],
+    [...mappings]
+  );
+
+  const firstStep = summary.onboardingFunnel.find((row) => row.stepId === "1");
+  const secondStep = summary.onboardingFunnel.find((row) => row.stepId === "2");
+
+  assert.equal(firstStep?.arrivals, 2);
+  assert.equal(firstStep?.completions, 1);
+  assert.equal(firstStep?.dropoffCount, 1);
+  assert.equal(firstStep?.completionRate, 50);
+  assert.equal(secondStep?.arrivals, 1);
+});
+
+test("buildImportSummary builds level funnel with unique users for starts, clears, fails, and retries", () => {
+  const summary = buildImportSummary(
+    [
+      { event_name: "level_start", user_id: "u1", level_id: "2", level_type: "normal" },
+      { event_name: "level_start", user_id: "u1", level_id: "2", level_type: "normal" },
+      { event_name: "level_start", user_id: "u2", level_id: "2", level_type: "normal" },
+      { event_name: "level_complete", user_id: "u1", level_id: "2", level_type: "normal", result: "success" },
+      { event_name: "level_fail", user_id: "u2", level_id: "2", level_type: "normal", result: "fail", fail_reason: "timeout" },
+      { event_name: "af_BattleReTry", user_id: "u2", level_id: "2", level_type: "normal" },
+      { event_name: "af_BattleReTry", user_id: "u2", level_id: "2", level_type: "normal" }
+    ],
+    [...mappings]
+  );
+
+  const level = summary.levelFunnel.find((row) => row.levelId === "2");
+
+  assert.equal(level?.starts, 2);
+  assert.equal(level?.completes, 1);
+  assert.equal(level?.fails, 1);
+  assert.equal(level?.retries, 1);
+  assert.equal(level?.completionRate, 50);
+  assert.equal(summary.levelRetryRanking.find((row) => row.levelId === "2")?.retryRate, 50);
 });
 
 test("buildImportSummary keeps business failure events analyzable without lowering technical success", () => {
@@ -603,8 +649,10 @@ test("buildImportSummary builds system dimensions by date, country, and device",
   assert.equal(secondDay?.activeUsers, 3);
   assert.equal(secondDay?.loginUsers, 3);
   assert.equal(secondDay?.retainedUsers, 1);
+  assert.equal(secondDay?.retentionRate, 33.33);
   assert.equal(china?.activeUsers, 2);
   assert.equal(china?.retainedUsers, 1);
+  assert.equal(china?.retentionRate, 50);
   assert.equal(ios?.users, 1);
   assert.equal(ios?.events, 3);
 });

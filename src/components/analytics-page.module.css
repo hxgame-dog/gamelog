@@ -1001,6 +1001,18 @@
   font-size: 12px;
 }
 
+.moduleSampleLink {
+  width: fit-content;
+  color: #0f8f78;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.moduleSampleLink:hover {
+  text-decoration: underline;
+}
+
 .moduleDetailStrong {
   font-weight: 700;
   color: var(--text);
@@ -1171,7 +1183,7 @@
 
 .systemDimensionRow {
   display: grid;
-  grid-template-columns: 1.2fr repeat(3, minmax(0, 0.8fr));
+  grid-template-columns: 1.2fr repeat(4, minmax(0, 0.8fr));
   gap: 10px;
   align-items: center;
   padding: 10px 0;
@@ -1188,6 +1200,18 @@
 .systemDimensionRow strong {
   color: var(--text);
   font-family: var(--font-number);
+}
+
+.riskBannerIssueLink {
+  width: fit-content;
+  color: #0f8f78;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.riskBannerIssueLink:hover {
+  text-decoration: underline;
 }
 
 .deviceDistributionList {
@@ -1366,7 +1390,29 @@
 }
 
 .detailTableCellStrong {
+  display: grid;
+  gap: 6px;
   font-weight: 600;
+}
+
+.detailSeverityBadge {
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.detailSeverityCritical {
+  color: #a73b29;
+  background: rgba(198, 82, 56, 0.12);
+  border: 1px solid rgba(198, 82, 56, 0.18);
+}
+
+.detailSeverityWarning {
+  color: #a16c05;
+  background: rgba(194, 136, 18, 0.12);
+  border: 1px solid rgba(194, 136, 18, 0.18);
 }
 
 @media (max-width: 1080px) {
@@ -1391,8 +1437,22 @@
 }
 
 .detailTableNote {
+  display: grid;
+  gap: 8px;
   color: var(--muted);
   line-height: 1.6;
+}
+
+.detailPreviewLink {
+  width: fit-content;
+  color: #0f8f78;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.detailPreviewLink:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 1280px) {
